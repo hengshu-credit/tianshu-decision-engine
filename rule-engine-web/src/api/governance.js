@@ -1,5 +1,5 @@
 import request from './request'
-import { notifyDraftChange } from '@/utils/governanceWorkspace'
+import { APPROVAL_REFRESH_KEY, notifyDraftChange } from '@/utils/governanceWorkspace'
 import { metadataResponse, parseMetadataResponse } from '@/utils/metadataResponse'
 export { notifyDraftChange } from '@/utils/governanceWorkspace'
 
@@ -70,8 +70,11 @@ export function submitGovernanceRequest(id, comment, expectedSnapshotDigest) {
   return changed(request.post(`/rule/governance/requests/${id}/submit`, { comment, ...(expectedSnapshotDigest ? { expectedSnapshotDigest } : {}) }, metadataResponse))
 }
 
-export function approveGovernanceRequest(id, comment) {
-  return changed(request.post(`/rule/governance/requests/${id}/approve`, { comment }, metadataResponse))
+export async function approveGovernanceRequest(id, comment) {
+  const response = await changed(request.post(`/rule/governance/requests/${id}/approve`, { comment }, metadataResponse))
+  // Other open tabs re-read their own authorized projections. Only an invalidation marker is shared.
+  try { window.localStorage.setItem(APPROVAL_REFRESH_KEY, String(Date.now())) } catch { /* focus also refreshes */ }
+  return response
 }
 
 export function rejectGovernanceRequest(id, comment) {

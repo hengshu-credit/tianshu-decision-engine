@@ -36,6 +36,17 @@ public class RuleBillingServiceTest {
         org.junit.Assert.assertEquals("BRANCH", RuleBillingService.apiBillingMode(api));
         api.setBillingCondition("{\"mode\":\"STEP_RESPONSE\",\"stepId\":\"apply\",\"flagPath\":\"response.body.billable\"}");
         org.junit.Assert.assertEquals("STEP_RESPONSE", RuleBillingService.apiBillingMode(api));
+        var policy = RuleBillingService.describeApiBilling(api);
+        org.junit.Assert.assertEquals(RuleBillingService.apiBillingMode(api), policy.mode());
+        org.junit.Assert.assertTrue(policy.dedicated());
+        org.junit.Assert.assertEquals("apply", policy.stepId());
+        org.junit.Assert.assertEquals("response.body.billable", policy.flagPath());
+        api.setExecutionConfig(null);
+        api.setBillingCondition("{\"mode\":\"HIT\"}");
+        var legacy = RuleBillingService.describeApiBilling(api);
+        org.junit.Assert.assertEquals("HIT", legacy.mode());
+        org.junit.Assert.assertFalse(legacy.dedicated());
+        org.junit.Assert.assertNull(legacy.flagPath());
     }
     @Test public void billingRetainsExecutedVersionWhenLatestChangesBeforePersistence() {
         KeyedBillingService service = new KeyedBillingService();

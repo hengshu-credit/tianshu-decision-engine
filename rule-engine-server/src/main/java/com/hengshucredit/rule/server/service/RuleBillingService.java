@@ -141,6 +141,25 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         return "QUERY".equalsIgnoreCase(mode) ? "QUERY" : "HIT";
     }
 
+    public record ApiBillingPolicy(String mode, boolean dedicated, String stepId, String flagPath) {}
+
+    /** Read the effective API projection, independently of any open billing or API draft. */
+    public ApiBillingPolicy getApiBillingPolicy(long apiId) {
+        var api = apiConfigMapper.selectOne(new LambdaQueryWrapper<RuleExternalApiConfig>()
+                .select(RuleExternalApiConfig::getId, RuleExternalApiConfig::getExecutionConfig, RuleExternalApiConfig::getBillingCondition)
+                .eq(RuleExternalApiConfig::getId, apiId));
+        if (api == null) throw new IllegalArgumentException("外数接口不存在或不可访问");
+        return describeApiBilling(api);
+    }
+
+    static ApiBillingPolicy describeApiBilling(RuleExternalApiConfig api) {
+        var mode = apiBillingMode(api);
+        var step = ExternalApiStepBilling.MODE.equals(mode)
+                ? ExternalApiStepBilling.from(com.alibaba.fastjson.JSON.parseObject(api.getBillingCondition())) : null;
+        return new ApiBillingPolicy(mode, api.getExecutionConfig() != null,
+                step == null ? null : step.stepId(), step == null ? null : step.flagPath());
+    }
+
     public IPage<RuleBillingRecord> pageRecords(int pageNum, int pageSize, String billingTarget, String billingCode,
                                                 String projectCode, String projectName, String authType, String authCode,
                                                 String tokenCode, String beginTime, String endTime) {

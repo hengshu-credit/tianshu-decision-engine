@@ -42,15 +42,15 @@
     @change="$emit('change', $event)"
     @popup-scroll="handleDropdownScroll"
   >
-    <template v-if="contentType" #label><content-reference v-if="selectedContent" :value="{ ...selectedContent, refType: contentType }" /></template>
+    <template v-if="contentType" #label><content-reference :show-value-type="showValueType" v-if="selectedContent" :value="{ ...selectedContent, refType: contentType }" /></template>
     <el-option v-if="selectedOption && String(optionValue(selectedOption)) === String(value) && !options.some(option => String(optionValue(option)) === String(value))"
-      :key="'selected:' + value" :label="optionLabel(selectedOption)" :value="value"><content-reference v-if="contentType" :value="{ ...selectedOption, refType: contentType }" /></el-option>
+      :key="'selected:' + value" :label="optionLabel(selectedOption)" :value="value"><content-reference :show-value-type="showValueType" v-if="contentType" :value="{ ...selectedOption, refType: contentType }" /></el-option>
     <el-option
       v-for="option in options"
       :key="optionValue(option)"
       :label="optionLabel(option)"
       :value="optionValue(option)"
-    ><content-reference v-if="contentType" :value="{ ...option, refType: contentType }" /></el-option>
+    ><content-reference :show-value-type="showValueType" v-if="contentType" :value="{ ...option, refType: contentType }" /></el-option>
   </el-select>
 </template>
 
@@ -72,6 +72,7 @@ export default {
     optionValueKey: { type: String, default: 'value' },
     optionFields: { type: Array, default: () => [] },
     selectedOption: { type: Object, default: null },
+    showValueType: { type: Boolean, default: true },
     contentType: { type: String, default: '' },
     pageSize: { type: Number, default: 20 },
     allowFreeInput: { type: Boolean, default: false },

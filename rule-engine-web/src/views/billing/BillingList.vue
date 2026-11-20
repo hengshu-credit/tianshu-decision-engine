@@ -145,7 +145,9 @@
           </el-table-column>
           <el-table-column v-if="columnKey === 'chargeType'" label="方式" min-width="120" align="center">
             <template v-slot="{ row }">{{
-              apiBillingModeLabels[row.apiBillingMode] || optionLabel(chargeTypeOptions, row.chargeType)
+              row.billingTarget === 'API' && row.targetRefId
+                ? apiBillingModeLabels[row.apiBillingMode] || '接口方式未获取'
+                : optionLabel(chargeTypeOptions, row.chargeType)
             }}</template>
           </el-table-column>
           <el-table-column v-if="columnKey === 'unitPrice'" label="单价" width="110" align="right">
@@ -798,8 +800,24 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="计费方式" prop="chargeType">
-              <el-select v-model="configForm.chargeType" style="width: 100%">
+            <el-form-item label="计费方式" :prop="policyApiId ? undefined : 'chargeType'">
+              <div v-if="policyApiId" class="billing-api-policy" data-testid="billing-api-policy">
+                <el-input :model-value="policyLabel" readonly aria-label="接口计费方式（只读）" />
+                <div v-if="policyError" role="alert">
+                  {{ policyError }} <el-button link size="small" @click="loadApiPolicy">重试</el-button>
+                </div>
+                <div v-else class="field-help">
+                  {{ apiPolicy?.mode === 'BRANCH' ? '本页只读。收费由接口执行配置中的响应分支决定，审批生效后自动同步。' : '本页只读。请在外数 API 的计费配置中调整，审批生效后自动同步。' }}
+                  <el-button v-permission="'datasource:view'" link type="primary" size="small" @click="openApiBillingSource">查看接口计费配置</el-button>
+                </div>
+                <div v-if="apiPolicy?.stepId" class="field-help">
+                  步骤 {{ apiPolicy.stepId }} 成功且 {{ apiPolicy.flagPath }} 为 true 时计费。
+                </div>
+                <div v-if="apiPolicy?.dedicated && configForm.billingCode === 'API_' + policyApiId && configForm.chargeType !== 'COUNT'" class="field-help">
+                  当前计量方式为{{ optionLabel(chargeTypeOptions, configForm.chargeType) }}，接口重新生效时同步为按次计量。
+                </div>
+              </div>
+              <el-select v-else v-model="configForm.chargeType" style="width: 100%">
                 <el-option
                   v-for="item in chargeTypeOptions"
                   :key="item.value"
@@ -810,6 +828,14 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item v-if="apiPolicy && !apiPolicy.dedicated && policyApiId" label="计量方式" prop="chargeType">
+          <el-select v-model="configForm.chargeType">
+            <el-option v-for="item in chargeTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <div v-if="policyApiId && apiPolicy?.dedicated && configForm.billingCode !== 'API_' + policyApiId" class="field-help">
+          此接口使用专属计费项 API_{{ policyApiId }} 结算。
+        </div>
         <el-row :gutter="12">
           <el-col :span="24">
             <el-form-item label="指定对象">
@@ -818,6 +844,7 @@
                 v-model:value="configForm.targetRefId"
                 :fetch-options="loadTargetOptions"
                 :content-type="({ ENGINE: 'RULE', API: 'EXTERNAL_API', DB: 'DATABASE' })[configForm.billingTarget]"
+                :show-value-type="false"
                 :selected-option="selectedTargetOption"
                 option-value-key="id"
                 option-label-key="displayName"
@@ -913,6 +940,7 @@
 
 <script>
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
+import { APPROVAL_REFRESH_KEY } from '@/utils/governanceWorkspace'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ExecutionVersionFilter from '@/components/common/ExecutionVersionFilter.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -930,6 +958,7 @@ import {
   createBillingConfigDraft,
   deleteBillingConfigDraft,
   listBillingConfigs,
+  getApiBillingPolicy,
   listBillingRecords,
   listBillingSummaries,
   refreshBillingSummary,
@@ -1012,6 +1041,10 @@ export default {
       configRequestId: 0,
       configError: '',
       configDialogVisible: false,
+      apiPolicy: null,
+      policyError: '',
+      policyRequestId: 0,
+      refreshConfigOnReturn: false,
       configOriginalStatus: null,
       configSaving: false,
       configQuery: {
@@ -1130,6 +1163,13 @@ export default {
   components: { DismissibleGuidance, ExecutionVersionFilter, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus, ProjectFilterSelect, ProjectResourceSelect, RemoteFilterSelect, TableColumnSettings },
   computed: {
+    policyApiId() {
+      return this.configDialogVisible && this.configForm.billingTarget === 'API' ? this.configForm.targetRefId : null
+    },
+    policyLabel() {
+      if (this.policyError) return '接口方式未获取'
+      return this.apiPolicy ? this.apiBillingModeLabels[this.apiPolicy.mode] || '未知计费方式' : '正在读取接口配置…'
+    },
     selectedTargetOption() {
       const item = this.targetKnownOptions?.[`${this.configForm?.billingTarget}:${this.configForm?.targetRefId}`]
       return item ? { ...item, displayName: this.targetOptionLabel(item) } : null
@@ -1149,12 +1189,15 @@ export default {
     },
   },
   watch: {
+    policyApiId() { this.loadApiPolicy() },
     refreshDate() { if (this.activeTab === 'summary') this.loadSummaryRefreshTask() },
   },
   created() {
     this.loadConfigs()
   },
+  mounted() { this.listenForConfigChanges() },
   beforeUnmount() {
+    this.stopListeningForConfigChanges()
     this.stopSummaryRefresh()
     this.configRequestId++
     this.recordRequestId++
@@ -1162,9 +1205,54 @@ export default {
     this.closeConfigDialog()
     this.closeTrialDetail()
   },
-  deactivated() { this.stopSummaryRefresh() },
-  activated() { if (this.activeTab === 'summary') this.loadSummaryRefreshTask() },
+  deactivated() {
+    this.stopSummaryRefresh()
+    this.stopListeningForConfigChanges()
+    this.refreshConfigOnReturn = true
+  },
+  activated() {
+    this.listenForConfigChanges()
+    if (this.refreshConfigOnReturn) this.refreshEffectiveConfigs()
+    this.refreshConfigOnReturn = false
+    if (this.activeTab === 'summary') this.loadSummaryRefreshTask()
+  },
   methods: {
+    openApiBillingSource() {
+      const route = this.$router.resolve({ path: '/datasource/api/' + this.policyApiId, query: { tab: 'billing' } })
+      window.open(route.href, '_blank', 'noopener')
+    },
+    listenForConfigChanges() {
+      window.addEventListener('focus', this.refreshEffectiveConfigs)
+      window.addEventListener('storage', this.onApprovalInOtherTab)
+      window.addEventListener('tianshu:resource-draft-change', this.refreshEffectiveConfigs)
+    },
+    stopListeningForConfigChanges() {
+      window.removeEventListener('focus', this.refreshEffectiveConfigs)
+      window.removeEventListener('storage', this.onApprovalInOtherTab)
+      window.removeEventListener('tianshu:resource-draft-change', this.refreshEffectiveConfigs)
+    },
+    onApprovalInOtherTab(event) {
+      if (event.key === APPROVAL_REFRESH_KEY) this.refreshEffectiveConfigs()
+    },
+    refreshEffectiveConfigs() {
+      if (this.activeTab === 'config') this.loadConfigs()
+      if (this.policyApiId) this.loadApiPolicy()
+    },
+    async loadApiPolicy() {
+      const id = this.policyApiId
+      const requestId = ++this.policyRequestId
+      this.apiPolicy = null
+      this.policyError = ''
+      if (!id) return
+      try {
+        const response = await getApiBillingPolicy(id)
+        if (requestId !== this.policyRequestId || id !== this.policyApiId) return
+        if (!response?.data?.mode) throw new Error('缺少接口计费方式')
+        this.apiPolicy = response.data
+      } catch {
+        if (requestId === this.policyRequestId && id === this.policyApiId) this.policyError = '生效计费方式读取失败'
+      }
+    },
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     trialStatusLabel,
     trialStatusType,
@@ -1514,6 +1602,7 @@ export default {
       this.loadTargetOptions()
     },
     closeConfigDialog() {
+      this.policyRequestId++
       this.targetRequestId++
       this.targetLoading = false
       this.targetOptions = []
@@ -1573,6 +1662,7 @@ export default {
     },
     normalizeConfig(form) {
       const data = { ...form }
+      delete data.apiBillingMode
       if (data.scope === 'GLOBAL') data.projectId = 0
       if (!data.targetRefId) data.targetRefId = null
       if (!data.effectiveTime) data.effectiveTime = null
@@ -1607,6 +1697,13 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.billing-api-policy {
+  width: 100%;
+  min-width: 0;
+
+  .field-help { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--tianshu-text-secondary); overflow-wrap: anywhere; }
+}
+
 .summary-refresh-status {
   flex-shrink: 0;
   margin-bottom: 12px;

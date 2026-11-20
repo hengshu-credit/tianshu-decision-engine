@@ -1,3 +1,5 @@
+export const APPROVAL_REFRESH_KEY = 'tianshu:governance-approved'
+
 /** Keep saving a workspace separate from submitting it for production approval. */
 export function notifyDraftChange() {
   window.dispatchEvent(new CustomEvent('tianshu:resource-draft-change'))

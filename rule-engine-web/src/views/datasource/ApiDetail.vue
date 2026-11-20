@@ -1667,7 +1667,12 @@ export default {
         if (!this.isCurrentInitialization(requestId)) return
         this.form = this.emptyForm()
         this.activeConfigGroup = 'business'
-        this.activeConfigTab = 'auth'
+        if (this.$route.query?.tab === 'billing') {
+          this.activeConfigGroup = 'reliability'
+          this.activeConfigTab = 'billing'
+        } else {
+          this.activeConfigTab = 'auth'
+        }
         this.invokeResultText = ''
         this.requestPreviewText = ''
         this.previewToken = ''

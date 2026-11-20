@@ -5,6 +5,10 @@ export function listBillingConfigs(params) {
   return request({ url: '/rule/billing/config/list', method: 'get', params })
 }
 
+export function getApiBillingPolicy(apiId) {
+  return request.get('/rule/billing/config/api/' + encodeURIComponent(apiId) + '/policy')
+}
+
 export function createBillingConfigDraft(data) {
   return createResourceDraft('BILLING_CONFIG', data, 'CREATE', {
     projectId: data && data.scope === 'GLOBAL' ? 0 : data && data.projectId,

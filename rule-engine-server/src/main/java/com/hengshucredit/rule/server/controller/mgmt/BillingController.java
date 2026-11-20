@@ -44,6 +44,12 @@ public class BillingController {
                 billingTarget, billingCode, status));
     }
 
+    @GetMapping("/config/api/{apiId:\\d+}/policy")
+    @com.hengshucredit.rule.server.security.RequirePermission("billing:view")
+    public ApiResponse<RuleBillingService.ApiBillingPolicy> apiPolicy(@PathVariable long apiId) {
+        return ApiResponse.ok(billingService.getApiBillingPolicy(apiId));
+    }
+
     @PostMapping("/config")
     @GovernedProjectionMutation
     public ApiResponse<Void> createConfig(@RequestBody RuleBillingConfig config) {

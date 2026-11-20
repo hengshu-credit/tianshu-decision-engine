@@ -9,8 +9,11 @@ import { contentReferenceParts, contentPartClass } from '@/utils/contentReferenc
 export default {
   name: 'ContentReference',
   inject: { getTraceVersionContext: { default: null } },
-  props: { value: { type: [Object, String, Number, Boolean, Array], default: null }, options: { type: Array, default: () => [] }, sensitive: Boolean, wrap: Boolean, cellRole: { type: String, default: '' }, mode: { type: String, default: 'configuration' } },
-  computed: { parts() { return contentReferenceParts(this.value, this.options, this.sensitive, this.mode, this.getTraceVersionContext?.()) } },
+  props: { showValueType: { type: Boolean, default: true }, value: { type: [Object, String, Number, Boolean, Array], default: null }, options: { type: Array, default: () => [] }, sensitive: Boolean, wrap: Boolean, cellRole: { type: String, default: '' }, mode: { type: String, default: 'configuration' } },
+  computed: { parts() {
+    const parts = contentReferenceParts(this.value, this.options, this.sensitive, this.mode, this.getTraceVersionContext?.())
+    return this.showValueType ? parts : parts.filter(part => part.key !== 'type')
+  } },
   methods: { partClass: contentPartClass },
 }
 </script>

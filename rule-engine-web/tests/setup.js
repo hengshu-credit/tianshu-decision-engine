@@ -347,6 +347,7 @@ vi.mock('@/api/database', () => ({
 }))
 vi.mock('@/api/billing', () => ({
   listBillingConfigs: vi.fn(),
+  getApiBillingPolicy: vi.fn(),
   createBillingConfigDraft: vi.fn(),
   updateBillingConfigDraft: vi.fn(),
   changeBillingConfigStatusDraft: vi.fn(),

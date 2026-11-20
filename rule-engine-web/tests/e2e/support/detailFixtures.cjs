@@ -255,6 +255,7 @@ function createDetailApiData() {
     tokenCacheSeconds: 300,
     status: 1
   })
+  routes.set('GET /api/rule/datasource/api-config/22/test-cases', [])
   routes.set('/api/rule/datasource/api-config/22', {
     id: 22,
     datasourceId: 21,
@@ -303,6 +304,7 @@ function createDetailApiData() {
     status: 1
   })
 
+  routes.set('GET /api/rule/model/41/test-cases', [])
   routes.set('/api/rule/model/41', {
     id: 41,
     projectId: 1,

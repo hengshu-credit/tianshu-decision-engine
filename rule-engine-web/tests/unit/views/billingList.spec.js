@@ -8,6 +8,7 @@ import { ElTable, ElTableColumn } from 'element-plus/es/components/table/index.m
 import { ElButton } from 'element-plus/es/components/button/index.mjs'
 import { ElAlert } from 'element-plus/es/components/alert/index.mjs'
 import { ElTag } from 'element-plus/es/components/tag/index.mjs'
+import { ElInput } from 'element-plus/es/components/input/index.mjs'
 import { listDbDatasources } from '@/api/database'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
@@ -538,5 +539,52 @@ describe('BillingList target selector', () => {
     expect(billingApi.updateBillingConfigDraft).not.toHaveBeenCalled()
     expect(ctx.$router.push).not.toHaveBeenCalled()
     expect(ctx.$message.success).toHaveBeenCalledWith(expect.stringContaining('草稿已保存'))
+  })
+})
+describe('计费面板读取生效接口条件', () => {
+  const open = async (mode, props = {}) => {
+    billingApi.listBillingConfigs.mockResolvedValue({ data: { records: [], total: 0 } })
+    billingApi.getApiBillingPolicy.mockResolvedValue({ data: { mode, dedicated: true, ...props } })
+    const wrapper = shallowMount(BillingList, { stubs: { 'el-input': ElInput } })
+    await wrapper.setData({ configDialogVisible: true, configForm: { ...wrapper.vm.configForm, billingTarget: 'API', targetRefId: 17, chargeType: 'COUNT', billingName: '未保存的名称' } })
+    await flushPromises()
+    return wrapper
+  }
+
+  test.each([['QUERY', '查询计费'], ['HIT', '查得计费'], ['BRANCH', '响应分支计费'], ['STEP_RESPONSE', '步骤响应计费']])('%s 与计量字段独立', async (mode, label) => {
+    const wrapper = await open(mode)
+    try {
+      expect(wrapper.vm.policyLabel).toBe(label)
+      const field = wrapper.get('[data-testid="billing-api-policy"] input').element
+      expect(field.value).toBe(label)
+      expect(field.readOnly).toBe(true)
+      expect(billingApi.getApiBillingPolicy).toHaveBeenCalledWith(17)
+      expect(wrapper.vm.normalizeConfig({ ...wrapper.vm.configForm, apiBillingMode: mode })).not.toHaveProperty('apiBillingMode')
+      expect(wrapper.vm.configForm.chargeType).toBe('COUNT')
+    } finally { wrapper.unmount() }
+  })
+
+  test('跨页审批只刷新生效口径，接口切换丢弃迟到响应', async () => {
+    const wrapper = await open('HIT')
+    try {
+      const stale = deferred()
+      billingApi.getApiBillingPolicy.mockReturnValueOnce(stale.promise)
+      window.dispatchEvent(new StorageEvent('storage', { key: 'tianshu:governance-approved' }))
+      billingApi.getApiBillingPolicy.mockResolvedValueOnce({ data: { mode: 'STEP_RESPONSE', dedicated: true, stepId: 'apply', flagPath: 'response.body.billable' } })
+      wrapper.vm.configForm.targetRefId = 18
+      await flushPromises()
+      stale.resolve({ data: { mode: 'QUERY' } })
+      await flushPromises()
+      expect(wrapper.vm.policyLabel).toBe('步骤响应计费')
+      expect(wrapper.vm.apiPolicy.flagPath).toBe('response.body.billable')
+      expect(wrapper.vm.configForm.billingName).toBe('未保存的名称')
+      billingApi.getApiBillingPolicy.mockRejectedValueOnce(new Error('unavailable'))
+      await wrapper.vm.loadApiPolicy()
+      expect(wrapper.vm.policyLabel).toBe('接口方式未获取')
+      wrapper.vm.configForm.targetRefId = null
+      await flushPromises()
+      expect(wrapper.vm.policyApiId).toBeNull()
+      expect(wrapper.vm.apiPolicy).toBeNull()
+    } finally { wrapper.unmount() }
   })
 })
