@@ -6,6 +6,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.*;
@@ -19,6 +20,28 @@ public class DecisionFlowCompilerTest {
     public void setUp() {
         compiler = new DecisionFlowCompiler();
         engine = new QLExpressEngine();
+    }
+
+    @Test
+    public void returnFiveLandmarksFromAnOperandOnlyAssignmentAfterRenamingTheTarget() {
+        String graph = """
+                {"nodes":[{"id":"start","type":"start"},{"id":"detect","type":"task","actionData":[
+                    {"type":"assign",
+                     "targetOperand":{"kind":"REFERENCE","refId":7,"refType":"VARIABLE","code":"oldName"},
+                     "valueOperand":{"kind":"REFERENCE","refId":9,"refType":"VARIABLE","code":"predictedPoints"}}
+                ]},{"id":"end","type":"end"}],"edges":[{"source":"start","target":"detect"},{"source":"detect","target":"end"}]}
+                """;
+        VarContext references = new VarContext(Map.of(), Map.of(),
+                Map.of("VARIABLE:7", "landmarks", "VARIABLE:9", "predictedPoints"));
+        CompileResult compiled = compiler.compile(graph, references);
+        assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
+        List<List<Integer>> points = List.of(List.of(31, 44), List.of(72, 43), List.of(52, 65),
+                List.of(35, 81), List.of(69, 80));
+        Map<String, Object> input = new HashMap<>();
+        input.put("predictedPoints", points);
+        RuleResult executed = engine.execute(compiled.getCompiledScript(), input);
+        assertTrue(executed.getErrorMessage(), executed.isSuccess());
+        assertEquals(Map.of("landmarks", points), executed.getResult());
     }
 
     @Test

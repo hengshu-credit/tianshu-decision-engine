@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.transfer;
 
+import com.hengshucredit.rule.server.service.ModelFileStore;
+
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.governance.GovernedResourceAdapter;
@@ -36,6 +38,7 @@ import java.util.Set;
  */
 @Service
 public class OfflineResourceTransferService {
+    @Resource private ModelFileStore modelFiles;
     @Resource private com.hengshucredit.rule.server.security.ConsoleResourceAccess consoleResources;
     @Resource
     private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
@@ -61,6 +64,7 @@ public class OfflineResourceTransferService {
     @Resource
     private com.hengshucredit.rule.server.mapper.RuleDefinitionMapper ruleDefinitionMapper;
     @Resource private com.hengshucredit.rule.server.mapper.RuleModelVersionMapper modelVersions;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper modelOutputs;
     @Resource
     private com.hengshucredit.rule.server.mapper.TransferProjectResourceMapper projectResourceMapper;
     private final TransferBundleCodec codec = new TransferBundleCodec();
@@ -124,6 +128,12 @@ public class OfflineResourceTransferService {
                     configuration.put("modelContent", fileVersion.getModelContent());
                 }
             }
+            if (key.type() == TransferResourceType.MODEL && configuration.get("modelContent") instanceof String content
+                    && ModelFileStore.isReference(content)) {
+                Long owner = configuration.get("projectId") == null ? 0L : Long.valueOf(configuration.get("projectId").toString());
+                configuration.put("modelContent", java.util.Base64.getEncoder().encodeToString(modelFiles.model(owner,
+                        String.valueOf(configuration.get("modelFileName")), content, (String) configuration.get("modelDigest"))));
+            }
             List<TransferBundle.Reference> references = new ArrayList<>();
             var fixedVersions = TransferVersionReferences.scan(configuration);
             Set<String> versionPaths = new LinkedHashSet<>(); fixedVersions.forEach(value -> versionPaths.addAll(value.ownedPaths()));
@@ -132,6 +142,21 @@ public class OfflineResourceTransferService {
                 if (versionPaths.contains(toPointer(dependency.referencePath()))) continue;
                 if (dependency.targetResourceType() == null || dependency.targetResourceId() == null) {
                     if (dependency.required()) throw new IllegalArgumentException("离线导出存在缺失依赖: " + key.value());
+                    continue;
+                }
+                if ("MODEL_OUTPUT".equalsIgnoreCase(dependency.targetResourceType())) {
+                    String pointer = toPointer(dependency.referencePath());
+                    Long fieldId = dependency.targetResourceId();
+                    if (!fieldId.equals(longValue(TransferJsonPath.read(configuration, pointer)))) throw new IllegalArgumentException("模型输出引用路径与字段 ID 不一致");
+                    var field = modelOutputs.selectById(fieldId);
+                    if (field == null || field.getModelId() == null) throw new IllegalArgumentException("模型输出字段不存在：" + fieldId);
+                    TransferKey owner = new TransferKey(TransferResourceType.MODEL,field.getModelId());
+                    if (consoleResources != null) consoleResources.require("MODEL",owner.id(),"view");
+                    var modelSnapshot = exportSnapshot(owner, selectedVersions.get(owner.value()), adapterRegistry.require("MODEL"));
+                    String slot = TransferModelFields.outputPath(CanonicalJson.readMap(modelSnapshot.snapshotJson()),fieldId);
+                    var identity = resourceIdentity(owner.type(),owner.id());
+                    references.add(new TransferBundle.Reference(pointer,owner.value(),slot,!includeDependencies,identity.get("code"),identity.get("name")));
+                    if (includeDependencies) queue.addLast(owner);
                     continue;
                 }
                 TransferResourceType targetType;
@@ -379,7 +404,7 @@ public class OfflineResourceTransferService {
             item.put("resourceType", type.name());
             item.put("projectId", row.getProjectId());
             item.put("status", row.getEffectiveStatus());
-            if (type == TransferResourceType.DATA_OBJECT) {
+            if (type == TransferResourceType.DATA_OBJECT || type == TransferResourceType.MODEL) {
                 item.put("fields", resourceFields(type.name(), row.getResourceId()));
             }
             result.add(item);
@@ -399,22 +424,23 @@ public class OfflineResourceTransferService {
 
     public List<Map<String, Object>> resourceFields(String resourceType, Long resourceId) {
         if (accessGuard != null) accessGuard.requireResource(resourceType, "view");
-        if (resourceId == null || !"DATA_OBJECT".equalsIgnoreCase(resourceType) || adapterRegistry == null) {
+        boolean model = "MODEL".equalsIgnoreCase(resourceType);
+        if (resourceId == null || (!model && !"DATA_OBJECT".equalsIgnoreCase(resourceType)) || adapterRegistry == null) {
             return List.of();
         }
         try {
             Map<String, Object> configuration = CanonicalJson.readMap(
-                    adapterRegistry.require("DATA_OBJECT").loadEffective(resourceId).snapshotJson());
-            Object fields = configuration.get("fields");
+                    adapterRegistry.require(model ? "MODEL" : "DATA_OBJECT").loadEffective(resourceId).snapshotJson());
+            Object fields = configuration.get(model ? "outputFields" : "fields");
             if (!(fields instanceof List<?> list)) return List.of();
             List<Map<String, Object>> result = new ArrayList<>();
             for (Object value : list) {
                 if (!(value instanceof Map<?, ?> raw)) continue;
                 Map<String, Object> field = new LinkedHashMap<>();
                 field.put("id", raw.get("id"));
-                field.put("code", raw.get("varCode"));
-                field.put("name", raw.get("varLabel"));
-                field.put("type", raw.get("varType"));
+                field.put("code", raw.get(model ? "fieldName" : "varCode"));
+                field.put("name", raw.get(model ? "fieldLabel" : "varLabel"));
+                field.put("type", raw.get(model ? "fieldType" : "varType"));
                 result.add(field);
             }
             return result;
@@ -592,6 +618,12 @@ public class OfflineResourceTransferService {
                 boolean reused = "REUSE".equals(action) && canReuse;
                 Map<String, Long> childIds = key.type() == TransferResourceType.DATA_OBJECT && reused
                         ? previewFieldIds(resource.configuration(), current) : Map.of();
+                if (key.type() == TransferResourceType.MODEL && reused) {
+                    var fields = TransferModelFields.outputMapping(resource.configuration(), current);
+                    Map<String,Long> modelChildren = new LinkedHashMap<>();
+                    fields.forEach((source, actual) -> modelChildren.put(TransferModelFields.outputPath(resource.configuration(), source), actual));
+                    childIds = modelChildren;
+                }
                 targets.put(resource.key(), new PreviewTarget(candidate.getResourceId(), childIds, reused));
             }
             if ("REUSE".equals(action) && !canReuse) action = "SUFFIX";
@@ -609,7 +641,7 @@ public class OfflineResourceTransferService {
     }
 
     private Map<String, Object> previewConfiguration(TransferBundle.Resource resource, Map<String, PreviewTarget> targets) {
-        Map<String, Object> value = CanonicalJson.readMap(CanonicalJson.write(resource.configuration()));
+        Map<String, Object> value = TransferBundle.copyConfiguration(resource.configuration());
         for (TransferBundle.Reference reference : resource.references()) {
             PreviewTarget target = targets.get(reference.targetKey());
             Object replacement = "UNRESOLVED_TARGET:" + reference.targetKey();

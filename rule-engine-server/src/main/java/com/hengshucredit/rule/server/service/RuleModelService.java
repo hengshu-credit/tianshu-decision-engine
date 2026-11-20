@@ -41,6 +41,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class RuleModelService {
+    @Resource private ModelFileStore modelFiles;
+    @Resource private ModelReloadService modelReload;
+    @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess modelProjects;
     @Resource @org.springframework.context.annotation.Lazy private ResourceVersionService resourceVersions;
     @Resource @org.springframework.context.annotation.Lazy
     private ModelVersionTestService modelVersionTests;
@@ -258,9 +261,10 @@ public class RuleModelService {
         try {
             String normalizedScope = validateModelIdentity(
                     modelCode, modelName, scope, projectId, null);
+            if (modelProjects != null) modelProjects.requirePermission("model:edit", SCOPE_GLOBAL.equals(normalizedScope) ? 0L : projectId);
             validateModelFileSize(file);
-            byte[] fileBytes = file.getBytes();
-            String modelContent = Base64.getEncoder().encodeToString(fileBytes);
+            byte[] fileBytes = com.hengshucredit.rule.server.upload.UploadSecurity.read(file, maxModelFileBytes > 0 ? maxModelFileBytes : DEFAULT_MAX_MODEL_FILE_BYTES);
+            String modelContent = modelFiles.accept(SCOPE_GLOBAL.equals(normalizedScope) ? 0L : projectId, file.getOriginalFilename(), fileBytes);
             ValidatedModelFile parsed = validateModelFile(fileBytes, file.getOriginalFilename(),
                     modelType, testParams, onnxTaskType, onnxConfig);
             String modelFormat = parsed.modelFormat;
@@ -292,7 +296,7 @@ public class RuleModelService {
             model.setDescription(description);
             model.setModelContent(modelContent);
             model.setModelFileName(file.getOriginalFilename());
-            model.setModelFileSize(file.getSize());
+            model.setModelFileSize((long) fileBytes.length);
             model.setModelDigest(validationReport.getModelDigest());
             model.setInputSchemaJson(com.alibaba.fastjson.JSON.toJSONString(validationReport.getInputSchema()));
             model.setOutputSchemaJson(com.alibaba.fastjson.JSON.toJSONString(validationReport.getOutputSchema()));
@@ -350,6 +354,7 @@ public class RuleModelService {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("模型文件不能为空");
         }
+        detectFormat(file.getOriginalFilename());
         long limit = maxModelFileBytes > 0 ? maxModelFileBytes : DEFAULT_MAX_MODEL_FILE_BYTES;
         if (file.getSize() > limit) {
             throw new IllegalArgumentException("模型文件不能超过 " + (limit / 1024 / 1024) + " MB");
@@ -681,6 +686,13 @@ public class RuleModelService {
             model.setStatus(1);
         }
         fillProjectCode(model);
+        if (model.getModelContent() != null && !model.getModelContent().isBlank()) {
+            if (ModelFileStore.isReference(model.getModelContent())) throw new IllegalArgumentException("创建模型需要原始文件");
+            byte[] original = Base64.getDecoder().decode(model.getModelContent());
+            model.setModelContent(modelFiles.accept(model.getProjectId(), model.getModelFileName(), original));
+            model.setModelFileSize((long) original.length);
+            model.setModelDigest(com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(original));
+        }
         modelMapper.insert(model);
         return model;
     }
@@ -817,8 +829,10 @@ public class RuleModelService {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
         try {
+            if (modelProjects != null) modelProjects.requirePermission("model:edit", model.getProjectId());
             validateModelFileSize(file);
-            byte[] fileBytes = file.getBytes();
+            byte[] fileBytes = com.hengshucredit.rule.server.upload.UploadSecurity.read(file, maxModelFileBytes > 0 ? maxModelFileBytes : DEFAULT_MAX_MODEL_FILE_BYTES);
+            String modelContent = modelFiles.accept(model.getProjectId(), file.getOriginalFilename(), fileBytes);
             ValidatedModelFile parsed = validateModelFile(fileBytes, file.getOriginalFilename(),
                     model.getModelType(), testParams, onnxTaskType, onnxConfig);
             ModelValidationReport report = parsed.validationReport;
@@ -826,9 +840,9 @@ public class RuleModelService {
 
             model.setModelType(parsed.modelType == null ? model.getModelType() : parsed.modelType);
             model.setModelFormat(parsed.modelFormat);
-            model.setModelContent(Base64.getEncoder().encodeToString(fileBytes));
+            model.setModelContent(modelContent);
             model.setModelFileName(file.getOriginalFilename());
-            model.setModelFileSize(file.getSize());
+            model.setModelFileSize((long) fileBytes.length);
             model.setModelDigest(report.getModelDigest());
             model.setInputSchemaJson(com.alibaba.fastjson.JSON.toJSONString(report.getInputSchema()));
             model.setOutputSchemaJson(com.alibaba.fastjson.JSON.toJSONString(report.getOutputSchema()));
@@ -870,8 +884,10 @@ public class RuleModelService {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
         try {
+            if (modelProjects != null) modelProjects.requirePermission("model:edit", model.getProjectId());
             validateModelFileSize(file);
-            byte[] fileBytes = file.getBytes();
+            byte[] fileBytes = com.hengshucredit.rule.server.upload.UploadSecurity.read(file, maxModelFileBytes > 0 ? maxModelFileBytes : DEFAULT_MAX_MODEL_FILE_BYTES);
+            String modelContent = modelFiles.accept(model.getProjectId(), file.getOriginalFilename(), fileBytes);
             ValidatedModelFile parsed = validateModelFile(
                     fileBytes, file.getOriginalFilename(),
                     model.getModelType(), testParams,
@@ -880,10 +896,9 @@ public class RuleModelService {
             model.setModelType(parsed.modelType == null
                     ? model.getModelType() : parsed.modelType);
             model.setModelFormat(parsed.modelFormat);
-            model.setModelContent(
-                    Base64.getEncoder().encodeToString(fileBytes));
+            model.setModelContent(modelContent);
             model.setModelFileName(file.getOriginalFilename());
-            model.setModelFileSize(file.getSize());
+            model.setModelFileSize((long) fileBytes.length);
             model.setModelDigest(report.getModelDigest());
             model.setInputSchemaJson(
                     com.alibaba.fastjson.JSON.toJSONString(
@@ -936,6 +951,10 @@ public class RuleModelService {
         if (model == null) throw new IllegalArgumentException("模型不存在");
         validateSupportedFormat(model);
         validatePublishFields(modelId);
+        if (modelFiles != null) {
+            String fileName = model.getModelFileName() == null ? "model." + model.getModelFormat().toLowerCase(Locale.ROOT) : model.getModelFileName();
+            model.setModelContent(modelFiles.relocate(model.getProjectId(), fileName, model.getModelContent(), model.getModelDigest()));
+        }
 
         int newVersion = nextVersionNumber(modelId);
         Integer maximum = versionMapper.maxBusinessVersion(modelId);
@@ -947,6 +966,7 @@ public class RuleModelService {
 
         saveVersionSnapshot(model, newVersion, changeLog, publishBy,
                 sampleStatus(model.getValidationReportJson()));
+        if (modelReload != null) modelReload.afterPublication(model.getId(), newVersion);
     }
 
     /**
@@ -1065,7 +1085,9 @@ public class RuleModelService {
             throw new IllegalArgumentException("Version not found");
         }
         Map<String, Object> result = new LinkedHashMap<>();
-        boolean modelContentChanged = !equalsText(left.getModelContent(), right.getModelContent());
+        boolean modelContentChanged = left.getModelDigest() != null && right.getModelDigest() != null
+                ? !left.getModelDigest().equalsIgnoreCase(right.getModelDigest())
+                : !equalsText(left.getModelContent(), right.getModelContent());
         left.setModelContent(null);
         left.setExecutionSnapshotJson(null);
         right.setModelContent(null);
@@ -1682,6 +1704,15 @@ public class RuleModelService {
         }
     }
 
+    private byte[] modelBytes(RuleModel model) {
+        return ModelFileStore.bytes(modelFiles, model.getProjectId(), model.getModelFileName(),
+                model.getModelFormat(), model.getModelContent(), model.getModelDigest());
+    }
+
+    void preloadPmml(byte[] bytes) {
+        pmmlExecutor.preload(bytes);
+    }
+
     private int normalizedExecutionTimeout(Integer timeoutMs) {
         int value = timeoutMs == null ? DEFAULT_EXECUTION_TIMEOUT_MS : timeoutMs;
         if (value < MIN_EXECUTION_TIMEOUT_MS || value > MAX_EXECUTION_TIMEOUT_MS) {
@@ -1726,7 +1757,7 @@ public class RuleModelService {
             } catch (IllegalArgumentException ignored) {
                 // The execution service owns task validation; keep its original error contract.
             }
-            byte[] modelBytes = Base64.getDecoder().decode(model.getModelContent());
+            byte[] modelBytes = modelBytes(model);
             Map<String, Object> rawOutputs = onnxModelExecutionService.execute(
                     modelBytes, model.getModelConfig(), params);
             if (runtimeConfig != null) {
@@ -1992,7 +2023,7 @@ public class RuleModelService {
         result.put("configurationDigest", modelConfigurationDigest(model));
 
         try {
-            Map<String, Object> rawOutputs = pmmlExecutor.evaluate(model.getModelContent(), params);
+            Map<String, Object> rawOutputs = pmmlExecutor.evaluateBytes(modelBytes(model), params);
             Map<String, Object> outputs = applyOutputTransforms(
                     model, transformContext, rawOutputs, functions);
             result.put("success", true);

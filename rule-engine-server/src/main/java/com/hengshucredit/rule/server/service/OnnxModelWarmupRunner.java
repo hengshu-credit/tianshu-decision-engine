@@ -25,6 +25,7 @@ import java.util.Map;
 
 @Component
 public class OnnxModelWarmupRunner implements ApplicationRunner {
+    @Resource private ModelFileStore modelFiles;
 
     private static final Logger log = LoggerFactory.getLogger(OnnxModelWarmupRunner.class);
 
@@ -67,7 +68,7 @@ public class OnnxModelWarmupRunner implements ApplicationRunner {
         List<RuleModel> candidates;
         try {
             candidates = modelMapper.selectList(new QueryWrapper<RuleModel>()
-                    .select("id", "model_code", "model_name", "model_format", "status", "preload_on_startup", "published_version")
+                    .select("id", "model_code", "model_name", "model_format", "status", "preload_on_startup", "published_version", "project_id")
                     .eq("status", 1).eq("preload_on_startup", 1).gt("published_version", 0));
         } catch (RuntimeException | LinkageError e) {
             warmupStatus.fail(e);
@@ -101,7 +102,7 @@ public class OnnxModelWarmupRunner implements ApplicationRunner {
                 if (!"ONNX".equals(effectiveFormat(candidate, version))) {
                     throw new IllegalStateException("发布 ONNX 模型快照格式已变化");
                 }
-                byte[] modelBytes = Base64.getDecoder().decode(version.getModelContent());
+                byte[] modelBytes = ModelFileStore.bytes(modelFiles, candidate.getProjectId(), version.getModelFileName(), "ONNX", version.getModelContent(), version.getModelDigest());
                 if (modelBytes.length == 0) throw new IllegalStateException("发布模型内容为空");
                 if (version.getModelDigest() != null && !version.getModelDigest().isBlank()
                         && !version.getModelDigest().equalsIgnoreCase(Sha256Digests.bytes(modelBytes))) {

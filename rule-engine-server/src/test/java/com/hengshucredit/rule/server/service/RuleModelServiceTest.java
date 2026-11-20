@@ -49,6 +49,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleModelServiceTest {
+    @org.junit.Rule public org.junit.rules.TemporaryFolder modelFolder = new org.junit.rules.TemporaryFolder();
     @Test
     public void detectsPmmlStructuralTypesWithoutConfusingRegressionAndClassification() {
         var service = new RuleModelService();
@@ -99,7 +100,7 @@ public class RuleModelServiceTest {
             return ReflectionTestUtils.invokeMethod(service, "executeOnnx", model, Map.of(), Map.of(), Map.of());
         }
         ReflectionTestUtils.setField(service, "pmmlExecutor", new PMMLModelExecutor() {
-            @Override public Map<String, Object> evaluate(String content, Map<String, Object> params) {
+            @Override public Map<String, Object> evaluateBytes(byte[] content, Map<String, Object> params) {
                 throw failure;
             }
         });
@@ -395,12 +396,14 @@ public class RuleModelServiceTest {
     }
 
     @Test
-    public void uploadOnnxValidatesMetadataAndCreatesTaskTemplateFields() {
+    public void uploadOnnxValidatesMetadataAndCreatesTaskTemplateFields() throws Exception {
         List<RuleModelInputField> inputs = new ArrayList<>();
         List<RuleModelOutputField> outputs = new ArrayList<>();
         AtomicReference<RuleModel> insertedModel = new AtomicReference<>();
         AtomicReference<String> persistedContent = new AtomicReference<>();
         RuleModelService service = new RuleModelService();
+        var store = ModelFileStoreTest.store(modelFolder.getRoot().toPath(), "CLEAN");
+        ReflectionTestUtils.setField(service, "modelFiles", store);
         ReflectionTestUtils.setField(service, "onnxSessionManager", new OnnxRuntimeSessionManager() {
             @Override
             public Map<String, Object> inspect(byte[] modelBytes) {
@@ -444,7 +447,10 @@ public class RuleModelServiceTest {
         ReflectionTestUtils.setField(service, "versionMapper", mapper(RuleModelVersionMapper.class,
                 (proxy, method, args) -> "insert".equals(method.getName()) ? 1 : defaultValue(method.getReturnType())));
         ModelVersionTestService versionTests = new ModelVersionTestService();
-        ReflectionTestUtils.setField(versionTests, "dependencyClosure", new com.hengshucredit.rule.server.artifact.RuleDependencyClosureService());
+        var closure = new com.hengshucredit.rule.server.artifact.RuleDependencyClosureService();
+        ReflectionTestUtils.setField(closure, "modelFiles", store);
+        ReflectionTestUtils.setField(versionTests, "modelFiles", store);
+        ReflectionTestUtils.setField(versionTests, "dependencyClosure", closure);
         ReflectionTestUtils.setField(versionTests, "runtimeSnapshots", new com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService());
         ReflectionTestUtils.setField(versionTests, "schemas", new RuleTestSchemaService() {
             @Override public com.hengshucredit.rule.model.dto.RuleTestSchema buildModelSnapshot(RuleModel model,
@@ -454,16 +460,19 @@ public class RuleModelServiceTest {
         });
         ReflectionTestUtils.setField(service, "modelVersionTests", versionTests);
 
+        byte[] modelBytes;
+        try (var input = getClass().getResourceAsStream("/onnx-smoke/linear.onnx")) { modelBytes = input.readAllBytes(); }
         MockMultipartFile upload = new MockMultipartFile(
                 "file", "anti-spoof-mn3.onnx",
-                "application/octet-stream", new byte[]{1, 2, 3});
+                "application/octet-stream", modelBytes);
         RuleModel draft = service.buildUploadSnapshot(
                 upload, null, "GLOBAL", "mn3", "MN3",
                 "NEURAL_NET", null, null,
                 "MN3_ANTISPOOF", "{}", 1, 90000);
 
         assertEquals(null, insertedModel.get());
-        assertEquals("AQID", draft.getModelContent());
+        assertTrue(ModelFileStore.isReference(draft.getModelContent()));
+        org.junit.Assert.assertArrayEquals(modelBytes, store.model(null, "anti-spoof-mn3.onnx", draft.getModelContent(), null));
         assertEquals(2, draft.getInputFields().size());
         assertEquals(2, draft.getOutputFields().size());
 
@@ -477,7 +486,7 @@ public class RuleModelServiceTest {
         assertEquals(Arrays.asList("results", "rawOutputs"), Arrays.asList(outputs.get(0).getFieldName(), outputs.get(1).getFieldName()));
         assertEquals(null, inputs.get(0).getScriptName());
         assertEquals(null, model.getModelContent());
-        assertEquals("AQID", persistedContent.get());
+        assertEquals(draft.getModelContent(), persistedContent.get());
         assertTrue(insertedModel.get().getModelConfig().contains("MN3_ANTISPOOF"));
         assertTrue(insertedModel.get().getModelConfig().contains("output1"));
         assertFalse(insertedModel.get().getModelConfig().contains("testParams"));

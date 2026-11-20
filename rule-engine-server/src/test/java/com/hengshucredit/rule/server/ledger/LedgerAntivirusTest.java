@@ -1,5 +1,8 @@
 package com.hengshucredit.rule.server.ledger;
 
+import com.hengshucredit.rule.server.upload.UploadSecurity;
+import com.hengshucredit.rule.server.upload.UploadScanProperties;
+
 import org.junit.Test;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -9,7 +12,7 @@ import java.util.concurrent.Executors;
 import static org.junit.Assert.*;
 
 public class LedgerAntivirusTest {
-    private LedgerAntivirus.Result scan(String response, boolean terminated) throws Exception {
+    private UploadSecurity.Result scan(String response, boolean terminated) throws Exception {
         try (var server=new ServerSocket(0)) {
             var executor=Executors.newSingleThreadExecutor();
             try {
@@ -21,8 +24,8 @@ public class LedgerAntivirusTest {
                     while((length=in.readInt())!=0){assertTrue(length>0&&length<=8192);bytes.write(in.readNBytes(length));}
                     socket.getOutputStream().write((response+(terminated?"\0":"")).getBytes(StandardCharsets.UTF_8));return bytes.toByteArray();
                 }});
-                var properties=new LedgerProperties();properties.setAntivirusHost("127.0.0.1");properties.setAntivirusPort(server.getLocalPort());properties.setAntivirusTimeoutMs(1000);
-                byte[] input="scan exact bytes".getBytes(StandardCharsets.UTF_8);var result=new LedgerAntivirus(properties).scan(input);
+                var properties=new UploadScanProperties();properties.setAntivirusHost("127.0.0.1");properties.setAntivirusPort(server.getLocalPort());properties.setAntivirusTimeoutMs(1000);
+                byte[] input="scan exact bytes".getBytes(StandardCharsets.UTF_8);var result=new UploadSecurity(properties).scan(input);
                 assertArrayEquals(input,received.get());return result;
             } finally { executor.shutdownNow(); }
         }
@@ -35,7 +38,7 @@ public class LedgerAntivirusTest {
     }
     @Test public void threatsAreQuarantinedAndMissingScannerNeverBypassesChecking() throws Exception {
         assertEquals("QUARANTINED",scan("stream: Test.Signature FOUND",true).status());
-        assertEquals("PENDING",new LedgerAntivirus(new LedgerProperties()).scan(new byte[]{1}).status());
+        assertEquals("PENDING",new UploadSecurity(new UploadScanProperties()).scan(new byte[]{1}).status());
     }
     @Test public void rejectsForgedExtensionsControlCharactersAndOversizedPixelHeaders() throws Exception {
         assertThrows(IllegalArgumentException.class,()->LedgerAssetService.detect("not an image".getBytes(StandardCharsets.UTF_8),"sample.png"));

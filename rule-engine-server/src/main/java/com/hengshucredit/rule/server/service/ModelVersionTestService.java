@@ -28,6 +28,7 @@ import java.util.Set;
 /** 模型版本测试只消费该版本保存的资源；没有完整快照时不回读当前配置补齐。 */
 @Service
 public class ModelVersionTestService {
+    @Resource private ModelFileStore modelFiles;
     @Resource private RuleDependencyClosureService dependencyClosure;
     @Resource private ArtifactRuntimeSnapshotService runtimeSnapshots;
     @Resource private ModelExternalBindings externalBindings;
@@ -101,7 +102,8 @@ public class ModelVersionTestService {
         snapshot.put("formatVersion", 1);
         snapshot.put("model", metadata);
         snapshot.put("schema", schema);
-        snapshot.put("packageContent", Base64.getEncoder().encodeToString(encoded));
+        if (modelFiles != null) snapshot.put("packageFile", modelFiles.savePackage(encoded));
+        else snapshot.put("packageContent", Base64.getEncoder().encodeToString(encoded));
         snapshot.put("packageDigest", decoded.getPackageDigest());
         snapshot.put("artifactDigest", decoded.getArtifactDigest());
         snapshot.put("unavailableReasons", unavailable.stream().distinct().toList());
@@ -194,10 +196,7 @@ public class ModelVersionTestService {
         if (json == null || json.isBlank() || version.getExecutionSnapshotDigest() == null) {
             throw new IllegalArgumentException("该历史模型版本缺少完整执行快照，不能执行；请保存并审批新的模型配置版本");
         }
-        if (!Sha256Digests.text(json).equals(version.getExecutionSnapshotDigest())) {
-            throw new IllegalArgumentException("模型版本执行快照摘要校验失败");
-        }
-        Map<String, Object> snapshot = exactJson.readJsonObject(json, "模型版本快照");
+        Map<String, Object> snapshot = ModelFileStore.checkedSnapshot(modelFiles, json, version.getExecutionSnapshotDigest());
         if (!"1".equals(String.valueOf(snapshot.get("formatVersion")))) throw new IllegalArgumentException("模型版本执行快照格式不支持");
         if (!(snapshot.get("model") instanceof Map<?, ?> rawModel)
                 || !String.valueOf(version.getModelId()).equals(String.valueOf(rawModel.get("id")))
@@ -212,7 +211,7 @@ public class ModelVersionTestService {
         RuleTestSchema schema = objectMapper.convertValue(snapshot.get("schema"), RuleTestSchema.class);
         RuleModel modelMetadata = objectMapper.convertValue(rawModel, RuleModel.class);
         byte[] content;
-        try { content = Base64.getDecoder().decode(String.valueOf(snapshot.get("packageContent"))); }
+        try { content = ModelFileStore.snapshotBytes(modelFiles, snapshot); }
         catch (IllegalArgumentException error) { throw new IllegalArgumentException("模型版本执行制品内容损坏", error); }
         var runtime = runtimeSnapshots.loadModelVersion(content, String.valueOf(snapshot.get("artifactDigest")),
                 String.valueOf(snapshot.get("packageDigest")), modelMetadata.getProjectId(), requireExecutable);
@@ -222,7 +221,7 @@ public class ModelVersionTestService {
         if (!java.util.Objects.equals(root.getModelDigest(), modelMetadata.getModelDigest())) {
             throw new IllegalArgumentException("模型版本文件摘要不一致");
         }
-        if (!root.getModelDigest().equals(Sha256Digests.bytes(Base64.getDecoder().decode(root.getModelContent())))) {
+        if (!root.getModelDigest().equals(Sha256Digests.bytes(ModelFileStore.bytes(modelFiles, root.getProjectId(), root.getModelFileName(), root.getModelFormat(), root.getModelContent(), root.getModelDigest())))) {
             throw new IllegalArgumentException("模型版本文件内容与摘要不一致");
         }
         return new Loaded(root, modelMetadata, schema, runtime);

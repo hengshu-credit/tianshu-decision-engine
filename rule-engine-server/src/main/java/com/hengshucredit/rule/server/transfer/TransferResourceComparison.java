@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.transfer;
 
+import com.hengshucredit.rule.server.service.ModelFileStore;
+
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import java.util.HashMap;
@@ -47,7 +49,10 @@ final class TransferResourceComparison {
     }
 
     private static Map<String, Object> normalize(TransferResourceType type, Map<String, Object> input) {
-        Map<String, Object> config = CanonicalJson.readMap(CanonicalJson.write(input));
+        Map<String, Object> config = TransferBundle.copyConfiguration(input);
+        if (type == TransferResourceType.MODEL && config.get("modelContent") instanceof String content) {
+            config.put("modelContent", ModelFileStore.contentDigest(content));
+        }
         entity(config);
         switch (type) {
             case VARIABLE -> children(config.get("options"), "variableId");

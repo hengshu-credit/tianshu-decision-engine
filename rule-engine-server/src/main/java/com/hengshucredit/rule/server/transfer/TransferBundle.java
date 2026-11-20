@@ -12,6 +12,14 @@ public record TransferBundle(List<String> roots, List<Resource> resources, List<
         warnings = List.copyOf(warnings);
     }
 
+    static Map<String, Object> copyConfiguration(Map<String, Object> value) {
+        Map<String, Object> metadata = new java.util.LinkedHashMap<>(value);
+        Object model = metadata.remove("modelContent");
+        Map<String, Object> result = CanonicalJson.readMap(CanonicalJson.write(metadata));
+        if (value.containsKey("modelContent")) result.put("modelContent", model);
+        return result;
+    }
+
     public record Resource(String key, Map<String, Object> configuration, List<Reference> references,
                            List<String> requiredEnvironmentFields, List<Map<String, Object>> versionReferences) {
         public Resource(String key, Map<String, Object> configuration, List<Reference> references, List<String> requiredEnvironmentFields) {
@@ -19,7 +27,7 @@ public record TransferBundle(List<String> roots, List<Resource> resources, List<
         }
         public Resource {
             TransferKey.parse(key);
-            configuration = CanonicalJson.readMap(CanonicalJson.write(configuration));
+            configuration = copyConfiguration(configuration);
             references = List.copyOf(references);
             requiredEnvironmentFields = List.copyOf(requiredEnvironmentFields);
             versionReferences = versionReferences == null ? List.of() : versionReferences.stream()

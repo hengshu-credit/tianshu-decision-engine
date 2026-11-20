@@ -13,6 +13,25 @@ import java.util.List;
 import java.util.Map;
 
 public class ArtifactRuntimeSnapshotServiceTest {
+    @org.junit.Rule public org.junit.rules.TemporaryFolder modelStore = new org.junit.rules.TemporaryFolder();
+
+    @Test
+    public void verifiesPackageWhenRevisionCallerSuppliesRawDatabaseReference() {
+        var pack = new DecisionArtifactPackage();
+        pack.addComponent("rules/example.txt", "text/plain", new byte[]{1,2,3});
+        byte[] original = new DecisionArtifactPackageCodec().encode(pack);
+        var files = new com.hengshucredit.rule.server.service.ModelFileStore(modelStore.getRoot().toString(), 1024, 0, null);
+        var entity = new DecisionArtifact();
+        entity.setPackageContent(files.savePackage(original).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        entity.setPackageDigest(Sha256Digests.bytes(original));
+        entity.setArtifactDigest(new DecisionArtifactPackageCodec().decode(original).getArtifactDigest());
+        var service = new ArtifactRuntimeSnapshotService();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "modelFiles", files);
+        Assert.assertArrayEquals(new byte[]{1,2,3}, service.decodeVerified(entity).getArtifactPackage()
+                .getComponent("rules/example.txt").getContent());
+        entity.setPackageDigest(Sha256Digests.bytes(new byte[]{0}));
+        Assert.assertThrows(IllegalArgumentException.class, () -> service.decodeVerified(entity));
+    }
 
     @Test
     public void modelApiNeedsASeparateFrozenVersionAndCannotUseSourceEnvironmentIdsAfterImport() {

@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.artifact;
 
+import com.hengshucredit.rule.server.service.ModelFileStore;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.dto.RulePreflightReport;
 import com.hengshucredit.rule.model.entity.DecisionArtifact;
@@ -30,6 +32,7 @@ import java.util.Map;
 
 @Service
 public class DecisionArtifactService {
+    @Resource private ModelFileStore modelFiles;
     @Resource
     private RuleRevisionMapper revisionMapper;
     @Resource
@@ -159,11 +162,12 @@ public class DecisionArtifactService {
         artifact.setManifestJson(buildManifestJson(artifactPackage, decoded.getArtifactDigest()));
         artifact.setValidationReportJson(CanonicalJson.write(validation));
         artifact.setRuntimeConstraintsJson(runtimeConstraints(closure.getDependencies()));
-        artifact.setPackageContent(packageContent);
+        artifact.setPackageContent(modelFiles == null ? packageContent : modelFiles.artifactContent(artifactPackage, packageContent));
         artifact.setPackageSize((long) packageContent.length);
         artifact.setCreateBy(actor);
         artifact.setCreateTime(LocalDateTime.now());
         insertArtifact(artifact);
+        artifact.setPackageContent(packageContent);
 
         Map<String, ArtifactDependency> byPath = new HashMap<>();
         for (ArtifactDependency dependency : closure.getDependencies()) {
@@ -191,7 +195,7 @@ public class DecisionArtifactService {
     }
 
     public DecisionArtifact getById(Long artifactId) {
-        return artifactMapper.selectById(artifactId);
+        return ModelFileStore.hydrated(modelFiles, artifactMapper.selectById(artifactId));
     }
 
     public RuntimeProjection loadRuntimeProjection(Long artifactId) {
@@ -293,8 +297,8 @@ public class DecisionArtifactService {
     }
 
     protected DecisionArtifact findByDigest(String artifactDigest) {
-        return artifactMapper.selectOne(new LambdaQueryWrapper<DecisionArtifact>()
-                .eq(DecisionArtifact::getArtifactDigest, artifactDigest).last("LIMIT 1"));
+        return ModelFileStore.hydrated(modelFiles, artifactMapper.selectOne(new LambdaQueryWrapper<DecisionArtifact>()
+                .eq(DecisionArtifact::getArtifactDigest, artifactDigest).last("LIMIT 1")));
     }
 
     protected void insertArtifact(DecisionArtifact artifact) {

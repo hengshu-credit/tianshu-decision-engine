@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.artifact;
 
+import com.hengshucredit.rule.server.service.ModelFileStore;
+
 import com.hengshucredit.rule.server.service.onnx.OnnxRuntimeSessionManager;
 import com.hengshucredit.rule.server.model.ModelArtifactValidator;
 import com.hengshucredit.rule.server.model.ModelValidationReport;
@@ -15,6 +17,7 @@ import java.util.Map;
 
 @Service
 public class RuntimeCompatibilityService {
+    @Resource private ModelFileStore modelFiles;
     private static final int JAVA_MAJOR = 17;
     private static final String QL_EXPRESS_VERSION = "4.1.3";
     private static final String JPMML_VERSION = "1.7.7";
@@ -28,6 +31,7 @@ public class RuntimeCompatibilityService {
     private ModelArtifactValidator modelArtifactValidator;
 
     public CompatibilityReport validate(DecisionArtifactPackage artifactPackage) {
+        if (modelFiles != null) modelFiles.screenEmbeddedModels(artifactPackage);
         List<String> errors = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
         Map<String, Object> metadata = artifactPackage.getMetadata();

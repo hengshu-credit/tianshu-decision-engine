@@ -202,6 +202,13 @@ public final class CreditExampleImport {
         long id = db.queryForObject("SELECT @sample_model", Long.class);
         var models = context.getBean(RuleModelService.class);
         var model = context.getBean(RuleModelMapper.class).selectById(id);
+        var files = context.getBean(com.hengshucredit.rule.server.service.ModelFileStore.class);
+        byte[] original = com.hengshucredit.rule.server.service.ModelFileStore.bytes(files, model.getProjectId(),
+                model.getModelFileName(), model.getModelFormat(), model.getModelContent(), model.getModelDigest());
+        String file = files.accept(model.getProjectId(), model.getModelFileName(), original);
+        db.update("UPDATE rule_model SET model_content=? WHERE id=?", file, id);
+        db.update("UPDATE rule_model_version SET model_content=? WHERE id=@sample_model_version AND model_id=?", file, id);
+        model.setModelContent(file);
         var fields = models.getDetail(id);
         model.setInputFields(fields.getInputFields());
         model.setOutputFields(fields.getOutputFields());

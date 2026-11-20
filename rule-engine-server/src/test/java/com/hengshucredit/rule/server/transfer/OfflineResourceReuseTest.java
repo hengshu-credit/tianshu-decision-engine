@@ -140,10 +140,10 @@ public class OfflineResourceReuseTest {
     }
 
     @Test public void modelBinaryIsPartOfTheComparedConfiguration() {
-        var left = Map.<String, Object>of("modelCode", "model", "modelContent", "SOURCE_BYTES");
+        var left = Map.<String, Object>of("modelCode", "model", "modelContent", "U09VUkNFX0JZVEVT");
         assertEquals("IDENTICAL", TransferResourceComparison.conflict(TransferResourceType.MODEL, left, left, "ACTIVE"));
         assertEquals("CONFIG_CONFLICT", TransferResourceComparison.conflict(TransferResourceType.MODEL, left,
-                Map.of("modelCode", "model", "modelContent", "OTHER_BYTES"), "ACTIVE"));
+                Map.of("modelCode", "model", "modelContent", "T1RIRVJfQllURVM="), "ACTIVE"));
     }
 
     private static Map<String, Object> objectFields(long firstId) {

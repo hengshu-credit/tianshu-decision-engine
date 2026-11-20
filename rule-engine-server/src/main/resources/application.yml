@@ -64,6 +64,10 @@ spring:
       namespace: ${SESSION_REDIS_NAMESPACE:tianshu:session}
 
 rule-engine:
+  upload:
+    antivirus-host: ${UPLOAD_ANTIVIRUS_HOST:${rule-engine.ledger.antivirus-host:}}
+    antivirus-port: ${UPLOAD_ANTIVIRUS_PORT:${rule-engine.ledger.antivirus-port:3310}}
+    antivirus-timeout-ms: ${UPLOAD_ANTIVIRUS_TIMEOUT_MS:${rule-engine.ledger.antivirus-timeout-ms:10000}}
   ledger:
     # ClamD INSTREAM，仅连接可信内网扫描服务；未配置或不可用时保留待检，禁止读取和共享。
     antivirus-host: ${LEDGER_ANTIVIRUS_HOST:}
@@ -105,6 +109,9 @@ rule-engine:
     # 满额优先释放最久未用的空闲会话，全部在用时明确拒绝新的模型/运行配置。
     session-cache-max-entries: ${ONNX_SESSION_CACHE_MAX_ENTRIES:16}
   model:
+    storage-directory: ${RULE_MODEL_STORAGE_DIRECTORY:./data/model-files}
+    file-cache-bytes: ${RULE_MODEL_FILE_CACHE_BYTES:134217728}
+    preload-on-publish: ${RULE_MODEL_PRELOAD_ON_PUBLISH:true}
     max-file-size-bytes: ${RULE_MODEL_MAX_FILE_SIZE_BYTES:268435456}
     max-test-params-bytes: ${RULE_MODEL_MAX_TEST_PARAMS_BYTES:1048576}
     execution-parallelism: ${RULE_MODEL_EXECUTION_PARALLELISM:8}

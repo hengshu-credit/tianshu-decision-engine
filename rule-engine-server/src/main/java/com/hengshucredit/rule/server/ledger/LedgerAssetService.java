@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.ledger;
 
+import com.hengshucredit.rule.server.upload.UploadSecurity;
+
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.model.PlatformCode;
 import com.hengshucredit.rule.model.PlatformException;
@@ -32,8 +34,8 @@ public class LedgerAssetService {
     private static final String COLUMNS = "item.id,item.name,item.content_type,item.size_bytes,item.source_size,item.width,item.height,item.scope,item.project_id,item.owner_user_id,item.owner_name,item.scan_status,item.scan_message,item.lock_version,item.create_time,item.update_time";
     private final LedgerRepository repository;
     private final LedgerAccess access;
-    private final LedgerAntivirus antivirus;
-    public LedgerAssetService(LedgerRepository repository, LedgerAccess access, LedgerAntivirus antivirus) { this.repository = repository; this.access = access; this.antivirus = antivirus; }
+    private final UploadSecurity antivirus;
+    public LedgerAssetService(LedgerRepository repository, LedgerAccess access, UploadSecurity antivirus) { this.repository = repository; this.access = access; this.antivirus = antivirus; }
 
     public Page<Map<String, Object>> list(String scope, Long projectId, String status, String keyword, int page, int size) {
         access.userId();
@@ -51,9 +53,8 @@ public class LedgerAssetService {
     @Transactional
     public Map<String, Object> upload(MultipartFile file) throws IOException {
         access.userId(); access.requireWrite();
-        if (file.isEmpty() || file.getSize() > MAX_UPLOAD_BYTES) throw new IllegalArgumentException("图片大小必须在 5 MB 以内");
         String name = filename(file.getOriginalFilename());
-        byte[] bytes = file.getBytes();
+        byte[] bytes = UploadSecurity.read(file, MAX_UPLOAD_BYTES);
         String type = detect(bytes, name);
         long id = repository.insert("INSERT INTO rule_ledger_asset (name,content_type,size_bytes,source_size,sha256,scope,owner_user_id,owner_name,scan_status,raw_content) VALUES (?,?,?,?,?,'PRIVATE',?,?,'PENDING',?)",
                 name, type, bytes.length, bytes.length, digest(bytes), access.userId(), access.actor(), bytes);
@@ -80,7 +81,7 @@ public class LedgerAssetService {
                     var image = normalizeImage(bytes);
                     png = image.bytes(); width = image.width(); height = image.height();
                 } catch (IOException | RuntimeException error) {
-                    result = new LedgerAntivirus.Result("QUARANTINED", "图片格式或尺寸校验失败，素材已隔离");
+                    result = new UploadSecurity.Result("QUARANTINED", "图片格式或尺寸校验失败，素材已隔离");
                 }
             }
             repository.update("UPDATE rule_ledger_asset SET scan_status=?,scan_message=?,content=?,raw_content=?,content_type=?,size_bytes=?,width=?,height=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
@@ -161,8 +162,7 @@ public class LedgerAssetService {
         return published != null && published == 0;
     }
     static String filename(String name) {
-        if (name == null || name.isBlank() || name.length() > 255 || name.chars().anyMatch(value -> value < 32 || value == 127 || value == '/' || value == '\\')) throw new IllegalArgumentException("素材名称不能为空，且不能包含路径或控制字符");
-        return name;
+        return UploadSecurity.filename(name);
     }
     static String detect(byte[] bytes, String filename) {
         String name = filename.toLowerCase(Locale.ROOT);

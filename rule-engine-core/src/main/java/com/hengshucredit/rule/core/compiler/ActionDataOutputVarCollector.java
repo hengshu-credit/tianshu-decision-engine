@@ -92,7 +92,9 @@ public final class ActionDataOutputVarCollector {
                 if (block.getJSONObject("targetOperand") != null) addTarget(out, OperandCompiler.compile(block.getJSONObject("targetOperand"), varContext));
                 break;
             case "rule-call":
-                addTarget(out, block, "target", varContext);
+                if (!block.containsKey("enableOutputMapping") || Boolean.TRUE.equals(block.getBoolean("enableOutputMapping"))) {
+                    addTarget(out, block, "target", varContext);
+                }
                 break;
             case "foreach":
                 collectFromActionData(block.getJSONArray("actions"), out, varContext);
@@ -121,6 +123,11 @@ public final class ActionDataOutputVarCollector {
     }
 
     private static void addTarget(LinkedHashSet<String> out, JSONObject block, String key, VarContext varContext) {
+        JSONObject targetOperand = block.getJSONObject("targetOperand");
+        if (targetOperand != null) {
+            addTarget(out, OperandCompiler.compile(targetOperand, varContext));
+            return;
+        }
         String target = block.getString(key);
         if (target == null || target.trim().isEmpty()) {
             return;

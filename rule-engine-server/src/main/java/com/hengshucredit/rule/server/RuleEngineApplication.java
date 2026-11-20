@@ -11,6 +11,18 @@ import org.mybatis.spring.annotation.MapperScan;
 public class RuleEngineApplication {
     public static void main(String[] args) {
         if (com.hengshucredit.rule.server.example.ExampleCommands.run(args)) return;
+        if (java.util.Arrays.asList(args).contains(com.hengshucredit.rule.server.service.ModelFileMigration.COMMAND)) {
+            var options = new java.util.ArrayList<>(java.util.Arrays.asList(args));
+            options.removeIf(v -> v.equals(com.hengshucredit.rule.server.service.ModelFileMigration.COMMAND)
+                    || v.startsWith("--server.port=") || v.startsWith("--server.address="));
+            options.add("--server.port=0");
+            options.add("--server.address=127.0.0.1");
+            try (var context = SpringApplication.run(RuleEngineApplication.class, options.toArray(String[]::new))) {
+                int changed = context.getBean(com.hengshucredit.rule.server.service.ModelFileMigration.class).migrate();
+                System.out.println("模型文件迁移完成，已迁移记录数 " + changed);
+            }
+            return;
+        }
         if (java.util.Arrays.asList(args).contains(com.hengshucredit.rule.server.consolelogin.ConsoleAdministratorRecovery.COMMAND)) {
             System.exit(com.hengshucredit.rule.server.consolelogin.ConsoleAdministratorRecovery.run());
             return;

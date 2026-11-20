@@ -46,6 +46,8 @@ scripts/quality-gates/fixtures/request.local.json
 /.codex-validation/
 /.playwright-cli/
 /output/
+/data/model-files/
+/rule-engine-server/data/model-files/
 /releases/
 /backups/
 /.deploy.lock/

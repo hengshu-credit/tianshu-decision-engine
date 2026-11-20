@@ -82,6 +82,13 @@ services:
       LOGGING_FILE_NAME: ""
       JAVA_TOOL_OPTIONS: ${SERVER_JAVA_TOOL_OPTIONS:--Xms256m -Xmx768m -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:+ExitOnOutOfMemoryError}
       LOGGING_LEVEL_ROOT: ${SERVER_LOG_LEVEL:-WARN}
+      RULE_MODEL_STORAGE_DIRECTORY: /data/model-files
+      RULE_MODEL_MAX_FILE_SIZE_BYTES: ${RULE_MODEL_MAX_FILE_SIZE_BYTES:-268435456}
+      RULE_MODEL_PRELOAD_ON_PUBLISH: ${RULE_MODEL_PRELOAD_ON_PUBLISH:-true}
+      RULE_MODEL_FILE_CACHE_BYTES: ${RULE_MODEL_FILE_CACHE_BYTES:-134217728}
+      UPLOAD_ANTIVIRUS_HOST: ${UPLOAD_ANTIVIRUS_HOST:-${LEDGER_ANTIVIRUS_HOST:-}}
+      UPLOAD_ANTIVIRUS_PORT: ${UPLOAD_ANTIVIRUS_PORT:-${LEDGER_ANTIVIRUS_PORT:-3310}}
+      UPLOAD_ANTIVIRUS_TIMEOUT_MS: ${UPLOAD_ANTIVIRUS_TIMEOUT_MS:-${LEDGER_ANTIVIRUS_TIMEOUT_MS:-10000}}
       RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR: /data/logs/execution-persistence-journal
       RULE_LIST_ACTION_JOURNAL_DIR: /data/logs/list-action-journal
       RULE_LIST_ACTION_JOURNAL_SCAN_PARENT: "true"
@@ -94,6 +101,7 @@ services:
         bind:
           create_host_path: false
       - server-logs:/data/logs
+      - "${MODEL_FILES_MOUNT:-model-files}:/data/model-files"
     command:
       - sh
       - -ec
@@ -219,6 +227,7 @@ services:
 
 volumes:
   server-logs:
+  model-files:
   runtime-sdk-logs:
 
 networks:

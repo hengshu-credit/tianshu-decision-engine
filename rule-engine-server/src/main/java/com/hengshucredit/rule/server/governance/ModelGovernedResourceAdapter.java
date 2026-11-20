@@ -1,6 +1,9 @@
 package com.hengshucredit.rule.server.governance;
 
+import com.hengshucredit.rule.server.service.ModelFileStore;
+
 import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
@@ -18,6 +21,22 @@ import java.util.Set;
 
 public class ModelGovernedResourceAdapter
         extends AggregateEntityGovernedResourceAdapter<RuleModel> {
+    @Resource private ModelFileStore modelFiles;
+
+    @Override public ResourceSnapshot normalizeDraft(ResourceSnapshot draft) {
+        if (modelFiles == null) return super.normalizeDraft(draft);
+        Map<String,Object> value = CanonicalJson.readModelSnapshot(draft.snapshotJson());
+        String content = (String) value.get("modelContent");
+        if (content == null || content.isBlank()) return super.normalizeDraft(draft);
+        Long owner = value.get("projectId") == null ? null : Long.valueOf(value.get("projectId").toString());
+        if (ModelFileStore.isReference(content)) {
+            modelFiles.model(owner, (String) value.get("modelFileName"), content, (String) value.get("modelDigest"));
+        } else {
+            modelFiles.ingestConfiguration(value, owner);
+        }
+        return super.normalizeDraft(new ResourceSnapshot(CanonicalJson.write(value), draft.effectiveStatus(),
+                draft.secretPayloadCiphertext(), draft.secretDigest()));
+    }
 
     private final RuleModelInputFieldMapper inputMapper;
     private final RuleModelOutputFieldMapper outputMapper;

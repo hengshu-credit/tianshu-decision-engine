@@ -32,7 +32,7 @@ public class GovernanceSecretCodec {
                 sensitiveKeys == null ? Set.of() : sensitiveKeys, publicValue::get);
         String ciphertext = draft.secretPayloadCiphertext();
         Map<String, Object> previousSecrets = ciphertext == null || ciphertext.isBlank()
-                ? Map.of() : CanonicalJson.readMap(cipher.decrypt(ciphertext));
+                ? Map.of() : readSecrets(cipher.decrypt(ciphertext));
         Map<String, Object> secrets = new LinkedHashMap<>(previousSecrets);
         // A removed nested configuration must not regain its former credentials.
         secrets.keySet().removeIf(path -> !hasParent(publicValue, path));
@@ -68,12 +68,16 @@ public class GovernanceSecretCodec {
                 || snapshot.secretPayloadCiphertext().isBlank()) {
             return value;
         }
-        Map<String, Object> secrets = CanonicalJson.readMap(
-                cipher.decrypt(snapshot.secretPayloadCiphertext()));
+        Map<String, Object> secrets = readSecrets(cipher.decrypt(snapshot.secretPayloadCiphertext()));
         for (Map.Entry<String, Object> entry : secrets.entrySet()) {
             restorePath(value, entry.getKey(), entry.getValue());
         }
         return value;
+    }
+
+    private static Map<String,Object> readSecrets(String json) {
+        // 历史模型治理只加密 /modelContent；其 Base64 原件可能超过常规 JSON 单字段预算。
+        return json.startsWith("{\"/modelContent\":") ? CanonicalJson.readModelSnapshot(json) : CanonicalJson.readMap(json);
     }
 
     private void extract(Object node,

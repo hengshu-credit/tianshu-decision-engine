@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.artifact;
 
+import com.hengshucredit.rule.server.service.ModelFileStore;
+
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
@@ -51,6 +53,7 @@ import java.util.TreeMap;
 
 @Service
 public class RuleDependencyClosureService {
+    @Resource private ModelFileStore modelFiles;
     @jakarta.annotation.Resource @org.springframework.context.annotation.Lazy
     private com.hengshucredit.rule.server.service.ResourceVersionService resourceVersions;
     @Resource
@@ -143,7 +146,7 @@ public class RuleDependencyClosureService {
                 || model.getInputFields() == null || model.getOutputFields() == null) {
             throw new IllegalArgumentException("模型版本必须包含实际落库的模型与输入输出字段");
         }
-        byte[] bytes = decodeModelContent(model.getModelContent());
+        byte[] bytes = ModelFileStore.bytes(modelFiles, model.getProjectId(), model.getModelFileName(), model.getModelFormat(), model.getModelContent(), model.getModelDigest());
         String digest = Sha256Digests.bytes(bytes);
         if (validDigest(model.getModelDigest()) && !digest.equals(model.getModelDigest())) {
             throw new IllegalArgumentException("模型文件与保存摘要不一致");
@@ -655,8 +658,10 @@ public class RuleDependencyClosureService {
             addFrozenModelVersion(snapshot, path, dependencies, issues);
             return;
         }
-        byte[] content = decodeModelContent(snapshot.getModelContent() == null
-                ? model.getModelContent() : snapshot.getModelContent());
+        String stored = snapshot.getModelContent() == null ? model.getModelContent() : snapshot.getModelContent();
+        byte[] content = modelFiles == null ? decodeModelContent(stored) : ModelFileStore.bytes(modelFiles,
+                model.getProjectId(), firstText(snapshot.getModelFileName(), model.getModelFileName(), null),
+                firstText(snapshot.getModelFormat(), model.getModelFormat(), null), stored, snapshot.getModelDigest());
         String digest = validDigest(snapshot.getModelDigest()) ? snapshot.getModelDigest()
                 : validDigest(model.getModelDigest()) ? model.getModelDigest() : Sha256Digests.bytes(content);
         String format = firstText(snapshot.getModelFormat(), model.getModelFormat(), "MODEL");
@@ -714,11 +719,7 @@ public class RuleDependencyClosureService {
     private void addFrozenModelVersion(RuleModelVersion version, String path,
             Map<String, ArtifactDependency> dependencies, List<RuleValidationIssue> issues) {
         try {
-            if (!Sha256Digests.text(version.getExecutionSnapshotJson()).equals(version.getExecutionSnapshotDigest())) {
-                throw new IllegalArgumentException("模型版本快照摘要不匹配");
-            }
-            Map<String, Object> snapshot = new com.hengshucredit.rule.server.service.RuleTestExpectationService()
-                    .readJsonObject(version.getExecutionSnapshotJson(), "模型版本");
+            Map<String, Object> snapshot = ModelFileStore.checkedSnapshot(modelFiles, version.getExecutionSnapshotJson(), version.getExecutionSnapshotDigest());
             if (!(snapshot.get("model") instanceof Map<?, ?> model)
                     || !String.valueOf(version.getModelId()).equals(String.valueOf(model.get("id")))
                     || !String.valueOf(version.getVersion()).equals(String.valueOf(model.get("currentVersion")))) {
@@ -727,7 +728,7 @@ public class RuleDependencyClosureService {
             if (snapshot.get("unavailableReasons") instanceof List<?> reasons && !reasons.isEmpty()) {
                 throw new IllegalArgumentException("模型版本依赖未完整冻结: " + reasons);
             }
-            var decoded = new DecisionArtifactPackageCodec().decode(Base64.getDecoder().decode(String.valueOf(snapshot.get("packageContent"))));
+            var decoded = new DecisionArtifactPackageCodec().decode(ModelFileStore.snapshotBytes(modelFiles, snapshot));
             if (!decoded.getArtifactDigest().equals(snapshot.get("artifactDigest"))
                     || !decoded.getPackageDigest().equals(snapshot.get("packageDigest"))) {
                 throw new IllegalArgumentException("模型版本制品摘要不匹配");

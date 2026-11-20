@@ -74,6 +74,7 @@ services:
 
 volumes:
   example-credentials:
+  model-files:
   example-supplier-credentials:
 
 networks:

@@ -65,7 +65,14 @@ public class PMMLModelExecutor {
      * @return 预测结果（字段名 -> 值）
      */
     public Map<String, Object> evaluate(String pmmlContentBase64, Map<String, Object> params) {
-        byte[] contentBytes = decodeContent(pmmlContentBase64);
+        return evaluateBytes(decodeContent(pmmlContentBase64), params);
+    }
+
+    public void preload(byte[] contentBytes) {
+        getOrLoadModelContext(contentDigest(contentBytes), contentBytes);
+    }
+
+    public Map<String, Object> evaluateBytes(byte[] contentBytes, Map<String, Object> params) {
         ModelContext ctx = getOrLoadModelContext(contentDigest(contentBytes), contentBytes);
         return evaluateModel(ctx, params);
     }

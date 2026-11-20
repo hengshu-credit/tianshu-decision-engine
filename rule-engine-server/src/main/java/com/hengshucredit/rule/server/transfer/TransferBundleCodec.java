@@ -20,11 +20,23 @@ public final class TransferBundleCodec {
         validate(bundle);
         DecisionArtifactPackage archive = new DecisionArtifactPackage();
         archive.putMetadata("packageKind", PACKAGE_KIND);
-        archive.putMetadata("resourceFormatVersion", "1");
+        boolean includesModels = bundle.resources().stream()
+                .anyMatch(r -> r.key().startsWith("MODEL:") && r.configuration().get("modelContent") instanceof String);
+        archive.putMetadata("resourceFormatVersion", includesModels ? "2" : "1");
         archive.putMetadata("roots", bundle.roots());
         archive.putMetadata("warnings", bundle.warnings());
         for (var resource : bundle.resources()) {
-            archive.addComponent(path(resource.key()), "application/json", CanonicalJson.writeBytes(resource));
+            var configuration = new LinkedHashMap<>(resource.configuration());
+            if (resource.key().startsWith("MODEL:") && configuration.get("modelContent") instanceof String content) {
+                String binary = binaryPath(resource.key());
+                byte[] original = java.util.Base64.getDecoder().decode(content);
+                archive.addComponent(binary, "application/octet-stream", original);
+                configuration.remove("modelContent");
+                configuration.put("_transferModelFile", binary);
+            }
+            var row = new TransferBundle.Resource(resource.key(), configuration, resource.references(),
+                    resource.requiredEnvironmentFields(), resource.versionReferences());
+            archive.addComponent(path(resource.key()), "application/json", CanonicalJson.writeBytes(row));
         }
         return zip.encode(archive);
     }
@@ -33,11 +45,14 @@ public final class TransferBundleCodec {
         var decoded = zip.decode(bytes);
         var archive = decoded.getArtifactPackage();
         if (!PACKAGE_KIND.equals(archive.getMetadata().get("packageKind"))
-                || !"1".equals(archive.getMetadata().get("resourceFormatVersion")))
-            throw new IllegalArgumentException("请选择天枢离线配置迁移包（版本 1）");
+                || !Set.of("1","2").contains(archive.getMetadata().getOrDefault("resourceFormatVersion","")))
+            throw new IllegalArgumentException("请选择天枢离线配置迁移包（版本 1 或 2）");
         List<TransferBundle.Resource> resources = new ArrayList<>();
+        Set<String> binaries = new LinkedHashSet<>();
         for (var component : archive.getComponents().values()) {
-            Map<String, Object> value = CanonicalJson.readMap(component.getContent());
+            if (component.getPath().startsWith("model-files/")) continue;
+            Map<String, Object> value = component.getPath().startsWith("resources/MODEL/")
+                    ? CanonicalJson.readLegacyModelComponent(component.getContent()) : CanonicalJson.readMap(component.getContent());
             String key = requiredText(value.get("key"));
             if (!path(key).equals(component.getPath()) || !"application/json".equals(component.getMediaType()))
                 throw new IllegalArgumentException("迁移资源清单与文件路径不匹配: " + key);
@@ -50,10 +65,22 @@ public final class TransferBundleCodec {
                         Boolean.TRUE.equals(reference.get("external")),
                         optionalText(reference.get("targetCode")), optionalText(reference.get("targetName"))));
             }
-            resources.add(new TransferBundle.Resource(key, object(value.get("configuration")), references,
+            var configuration = object(value.get("configuration"));
+            Object binary = configuration.remove("_transferModelFile");
+            if (binary != null) {
+                if (!key.startsWith("MODEL:") || !binaryPath(key).equals(binary) || configuration.containsKey("modelContent"))
+                    throw new IllegalArgumentException("迁移模型原件与资源不匹配");
+                var file = archive.getComponent(binary.toString());
+                if (file == null || !"application/octet-stream".equals(file.getMediaType())) throw new IllegalArgumentException("迁移模型原件缺失");
+                binaries.add(binary.toString());
+                configuration.put("modelContent", java.util.Base64.getEncoder().encodeToString(file.getContent()));
+            }
+            resources.add(new TransferBundle.Resource(key, configuration, references,
                     strings(value.get("requiredEnvironmentFields")), value.get("versionReferences") instanceof List<?> versions
                         ? versions.stream().map(this::object).toList() : List.of()));
         }
+        if (archive.getComponents().keySet().stream().anyMatch(p -> p.startsWith("model-files/") && !binaries.contains(p)))
+            throw new IllegalArgumentException("迁移包包含未绑定的模型原件");
         TransferBundle bundle = new TransferBundle(strings(archive.getMetadata().get("roots")), resources,
                 strings(archive.getMetadata().get("warnings")));
         bundle.resources().forEach(TransferVersionReferences::descriptors);
@@ -90,6 +117,8 @@ public final class TransferBundleCodec {
         TransferKey parsed = TransferKey.parse(key);
         return "resources/" + parsed.type().name() + "/" + parsed.id() + ".json";
     }
+
+    private String binaryPath(String key) { return "model-files/" + TransferKey.parse(key).id() + ".bin"; }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> object(Object value) {

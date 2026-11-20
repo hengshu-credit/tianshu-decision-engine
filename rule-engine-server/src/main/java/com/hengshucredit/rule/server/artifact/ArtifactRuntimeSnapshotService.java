@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.artifact;
 
+import com.hengshucredit.rule.server.service.ModelFileStore;
+
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
@@ -36,6 +38,7 @@ import java.util.Map;
  */
 @Service
 public class ArtifactRuntimeSnapshotService {
+    @Resource private ModelFileStore modelFiles;
     @Resource
     private DecisionArtifactMapper artifactMapper;
     @Resource
@@ -208,7 +211,8 @@ public class ArtifactRuntimeSnapshotService {
     }
 
     DecisionArtifactPackageCodec.DecodedPackage decodeVerified(DecisionArtifact artifact) {
-        byte[] content = artifact.getPackageContent();
+        byte[] content = modelFiles == null ? artifact.getPackageContent()
+                : modelFiles.resolveArtifact(artifact.getPackageContent(), artifact.getPackageDigest());
         String digest = Sha256Digests.bytes(content);
         // 每次验证实际字节，不能仅凭数据库里的摘要命中缓存而漏过内容被修改的情况。
         if (!same(digest, artifact.getPackageDigest())) {
@@ -285,7 +289,9 @@ public class ArtifactRuntimeSnapshotService {
         model.setProjectId(executionProjectId);
         model.setScope("PROJECT");
         model.setStatus(1);
-        model.setModelContent(modelContent(component, packageDigest));
+        model.setModelContent(modelFiles == null ? modelContent(component, packageDigest)
+                : modelFiles.fromSnapshot(executionProjectId, model.getModelFileName() == null
+                        ? "model." + model.getModelFormat().toLowerCase(java.util.Locale.ROOT) : model.getModelFileName(), component.getContent()));
         model.setInputFields(parseList(component.getMetadata().get("inputFields"), RuleModelInputField.class));
         model.setOutputFields(parseList(component.getMetadata().get("outputFields"), RuleModelOutputField.class));
         return model;

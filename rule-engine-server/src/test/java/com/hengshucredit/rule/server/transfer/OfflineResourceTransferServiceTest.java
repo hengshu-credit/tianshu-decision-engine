@@ -136,11 +136,11 @@ public class OfflineResourceTransferServiceTest {
     @Test
     public void modelContentIsKeptInTheOfflineConfigurationPackage() {
         var model = new StubAdapter("MODEL", Map.of("id", 4, "modelCode", "fraud_model",
-                "modelFormat", "ONNX", "modelContent", "BASE64_MODEL_BYTES"), List.of());
+                "modelFormat", "ONNX", "modelContent", "AQIDBA=="), List.of());
         var bundle = new TransferBundleCodec().decode(service(model).export(
                 List.of(new TransferRootRequest("MODEL", 4L)))).bundle();
         Map<String, Object> configuration = bundle.resources().get(0).configuration();
-        assertEquals("BASE64_MODEL_BYTES", configuration.get("modelContent"));
+        assertEquals("AQIDBA==", configuration.get("modelContent"));
     }
 
     @Test

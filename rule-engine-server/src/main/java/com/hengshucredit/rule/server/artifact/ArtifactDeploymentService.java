@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.artifact;
 
+import com.hengshucredit.rule.server.service.ModelFileStore;
+
 import com.hengshucredit.rule.server.service.ReservedContentCode;
 import com.hengshucredit.rule.server.governance.ResourceCodeValidation;
 
@@ -55,6 +57,7 @@ import java.util.Set;
 
 @Service
 public class ArtifactDeploymentService {
+    @Resource private ModelFileStore modelFiles;
     @Resource
     private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
     @Resource private com.hengshucredit.rule.server.security.ConsoleResourceAccess consoleResources;
@@ -135,7 +138,7 @@ public class ArtifactDeploymentService {
                 : new String(validation.getContent(), java.nio.charset.StandardCharsets.UTF_8));
         artifact.setRuntimeConstraintsJson(CanonicalJson.write(Map.of(
                 "source", "IMPORTED", "compatibility", compatibility)));
-        artifact.setPackageContent(bytes);
+        artifact.setPackageContent(modelFiles == null ? bytes : modelFiles.artifactContent(decoded.getArtifactPackage(), bytes));
         artifact.setPackageSize((long) bytes.length);
         artifact.setCreateBy(actor);
         artifact.setCreateTime(LocalDateTime.now());
@@ -570,12 +573,12 @@ public class ArtifactDeploymentService {
     }
 
     protected DecisionArtifact findArtifactByDigest(String digest) {
-        return artifactMapper.selectOne(new LambdaQueryWrapper<DecisionArtifact>()
-                .eq(DecisionArtifact::getArtifactDigest, digest).last("LIMIT 1"));
+        return ModelFileStore.hydrated(modelFiles, artifactMapper.selectOne(new LambdaQueryWrapper<DecisionArtifact>()
+                .eq(DecisionArtifact::getArtifactDigest, digest).last("LIMIT 1")));
     }
 
     protected DecisionArtifact loadArtifact(Long artifactId) {
-        return artifactMapper.selectById(artifactId);
+        return ModelFileStore.hydrated(modelFiles, artifactMapper.selectById(artifactId));
     }
 
     protected void insertArtifact(DecisionArtifact artifact) {

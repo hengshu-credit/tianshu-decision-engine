@@ -254,6 +254,6 @@ public class DatabaseInitializationSqlTest {
     }
 
     private static String read(Path path) throws Exception {
-        return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+        return new String(Files.readAllBytes(path), StandardCharsets.UTF_8).replace("\r\n", "\n");
     }
 }

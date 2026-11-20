@@ -1,5 +1,8 @@
 package com.hengshucredit.rule.server.ledger;
 
+import com.hengshucredit.rule.server.upload.UploadSecurity;
+import com.hengshucredit.rule.server.upload.UploadScanProperties;
+
 import com.hengshucredit.rule.server.sql.TestSchemaTables;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hengshucredit.rule.model.PlatformException;
@@ -35,7 +38,7 @@ public class LedgerWorkflowTest {
     private final java.util.concurrent.atomic.AtomicInteger calendarQueries = new java.util.concurrent.atomic.AtomicInteger();
     private DriverManagerDataSource dataSource;
     private AtomicReference<ConsoleProjectAccess.Scope> identity;
-    private AtomicReference<LedgerAntivirus.Result> scanResult;
+    private AtomicReference<UploadSecurity.Result> scanResult;
     private LedgerArticleService articles;
     private LedgerAssetService assets;
     private LedgerQueryService queries;
@@ -73,8 +76,8 @@ public class LedgerWorkflowTest {
         repositoryContext.refresh();
         var repository = repositoryContext.getBean(LedgerRepository.class);
         assertTrue("生产环境的 @Repository 必须通过代理参与完整工作流测试", org.springframework.aop.support.AopUtils.isCglibProxy(repository));
-        scanResult = new AtomicReference<>(new LedgerAntivirus.Result("PENDING", "等待扫描"));
-        LedgerAntivirus antivirus = new LedgerAntivirus(new LedgerProperties()) { @Override public Result scan(byte[] bytes) { return scanResult.get(); } };
+        scanResult = new AtomicReference<>(new UploadSecurity.Result("PENDING", "等待扫描"));
+        UploadSecurity antivirus = new UploadSecurity(new UploadScanProperties()) { @Override public Result scan(byte[] bytes) { return scanResult.get(); } };
         assets = transaction(new LedgerAssetService(repository, access, antivirus));
         var builder = new org.springframework.http.converter.json.Jackson2ObjectMapperBuilder();
         new com.hengshucredit.rule.server.config.JacksonConfig().localDateTimeCustomizer().customize(builder);
@@ -274,10 +277,10 @@ public class LedgerWorkflowTest {
         assertThrows(IllegalArgumentException.class,()->assets.update(id,new LedgerRequests.Asset("image.png","GLOBAL",null,number(upload.get("version")))));
         var value=content("含图片文章","![图片](/api/rule/ledger/assets/"+id+"/content)");var pending=draft(value);
         assertThrows(IllegalArgumentException.class,()->publish(pending));
-        scanResult.set(new LedgerAntivirus.Result("QUARANTINED","检测到威胁"));var quarantined=assets.retry(id,number(upload.get("version")));
+        scanResult.set(new UploadSecurity.Result("QUARANTINED","检测到威胁"));var quarantined=assets.retry(id,number(upload.get("version")));
         assertThrows(PlatformException.class,()->assets.content(id));
         identity.set(scope(11,Set.of(1L),true));assertEquals(0,assets.list(null,null,null,null,1,20).getTotal());
-        identity.set(scope(10,Set.of(1L),true));scanResult.set(new LedgerAntivirus.Result("CLEAN","检测通过"));var clean=assets.retry(id,number(quarantined.get("version")));
+        identity.set(scope(10,Set.of(1L),true));scanResult.set(new UploadSecurity.Result("CLEAN","检测通过"));var clean=assets.retry(id,number(quarantined.get("version")));
         assertEquals("CLEAN",clean.get("scanStatus"));assertEquals(0xffa12345,javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(assets.content(id))).getRGB(2,3));
         publish(pending);assertEquals("PROJECT",assets.get(id).get("scope"));
         assertThrows(IllegalArgumentException.class,()->assets.delete(List.of(id)));
@@ -319,7 +322,7 @@ public class LedgerWorkflowTest {
         assertEquals(Set.of(9L),LedgerArticleService.assetIds("<img src='&amp;#47;api/rule/ledger/assets/9/content'>"));
     }
     @Test public void ownerCanExplicitlyShareCleanPrivateMaterialUsedByMultipleDrafts() throws Exception {
-        scanResult.set(new LedgerAntivirus.Result("CLEAN","检测通过"));
+        scanResult.set(new UploadSecurity.Result("CLEAN","检测通过"));
         var asset=assets.upload(new MockMultipartFile("file","shared.png","image/png",png()));long assetId=number(asset.get("id"));
         String body="![图](/api/rule/ledger/assets/"+assetId+"/content)";
         var one=draft(content("文章一",body));var two=draft(content("文章二",body));

@@ -17,6 +17,11 @@ public final class CanonicalJson {
             .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
             .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false)
             .build();
+    // 老版本迁移包把模型原件内嵌在一个 Base64 字段中；只扩大该组件入口的读取预算。
+    private static final JsonMapper MODEL_COMPONENT_MAPPER = JsonMapper.builder(
+            com.fasterxml.jackson.core.JsonFactory.builder().streamReadConstraints(
+                    com.fasterxml.jackson.core.StreamReadConstraints.builder().maxStringLength(512 * 1024 * 1024).build()).build())
+            .enable(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build();
 
     private CanonicalJson() {
     }
@@ -43,6 +48,26 @@ public final class CanonicalJson {
         } catch (IOException e) {
             throw new IllegalArgumentException("JSON 格式无效", e);
         }
+    }
+
+    public static Map<String, Object> readLegacyModelComponent(byte[] value) {
+        try {
+            Map<String, Object> row = MODEL_COMPONENT_MAPPER.readValue(value, new TypeReference<>() { });
+            if (!(row.get("configuration") instanceof Map<?, ?> cfg)) throw new IllegalArgumentException("模型迁移配置无效");
+            Object original = cfg.remove("modelContent");
+            Map<String, Object> normalized = readMap(writeBytes(row));
+            if (original != null) {
+                if (!(original instanceof String)) throw new IllegalArgumentException("模型原件编码无效");
+                @SuppressWarnings("unchecked") Map<String, Object> restored = (Map<String, Object>) normalized.get("configuration");
+                restored.put("modelContent", original);
+            }
+            return normalized;
+        } catch (IOException e) { throw new IllegalArgumentException("模型迁移 JSON 格式无效", e); }
+    }
+
+    public static Map<String,Object> readModelSnapshot(String json) {
+        try { return MODEL_COMPONENT_MAPPER.readValue(json, new TypeReference<>() { }); }
+        catch (IOException e) { throw new IllegalArgumentException("模型版本快照 JSON 无效", e); }
     }
 
     public static Map<String, Object> readMap(String value) {

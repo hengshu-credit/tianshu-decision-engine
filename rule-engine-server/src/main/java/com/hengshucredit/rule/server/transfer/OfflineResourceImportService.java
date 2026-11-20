@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.transfer;
 
+import com.hengshucredit.rule.server.service.ModelFileStore;
+
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.dto.GovernanceDraftRequest;
@@ -43,6 +45,7 @@ import java.util.Set;
 /** 将已确认的离线包写入目标环境；过程复用治理审批及规则草稿机制。 */
 @Service
 public class OfflineResourceImportService {
+    @Resource private ModelFileStore modelFiles;
     @Resource private com.hengshucredit.rule.server.security.ConsoleProjectAccess consoleProjects;
     @Resource private com.hengshucredit.rule.server.security.ConsoleAccessGuard accessGuard;
     @Resource private com.hengshucredit.rule.server.governance.GovernedResourceAdapterRegistry adapterRegistry;
@@ -149,7 +152,7 @@ public class OfflineResourceImportService {
                 result.add(row(resource, 0L, "SKIPPED", "全局导入不创建项目，项目级资源将按全局范围写入"));
                 continue;
             }
-            Map<String, Object> configuration = copy(resource.configuration());
+            Map<String, Object> configuration = TransferBundle.copyConfiguration(resource.configuration());
             if (sourceKey.type() == TransferResourceType.PROJECT) {
                 // 项目归属仅由显式 ID / 新建选项决定，不受普通资源冲突策略影响。
                 if (!createProject) {
@@ -163,6 +166,10 @@ public class OfflineResourceImportService {
             }
             applyTargetScope(configuration, sourceKey.type(), options, effectiveTargetProjectId);
             Long resourceTargetProjectId = number(configuration.get("projectId"));
+            if (sourceKey.type() == TransferResourceType.MODEL
+                    && (configuration.containsKey("_modelContentVersionId") || ModelFileStore.isReference((String)configuration.get("modelContent")))) {
+                throw new IllegalArgumentException("迁移模型必须携带原始文件，不能指定本机存储标识或本机文件版本");
+            }
             ExistingResource existing = findExisting(sourceKey.type(), configuration, resourceTargetProjectId);
             Long existingId = existing == null ? null : existing.id();
             rewriteReferences(configuration, resource, byKey, idMap, childMap, options.normalizedFieldBindings());
@@ -188,6 +195,8 @@ public class OfflineResourceImportService {
                 idMap.put(resource.key(), existingId);
                 if (sourceKey.type() == TransferResourceType.DATA_OBJECT) childMap.put(resource.key(),
                         reusedFieldMap(resource.configuration(), existing.configuration()));
+                if (sourceKey.type() == TransferResourceType.MODEL) childMap.put(resource.key(),
+                        TransferModelFields.outputMapping(resource.configuration(), existing.configuration()));
                 result.add(row(resource, existingId, "REUSED", null));
                 continue;
             }
@@ -207,7 +216,6 @@ public class OfflineResourceImportService {
                     accessGuard.require("approval:submit", "approval:approve");
                 }
             }
-            ResourceSnapshot snapshot = ResourceSnapshot.ofJson(CanonicalJson.write(configuration));
             if (consoleProjects != null) {
                 Long permissionProject = projectId(sourceKey.type(), options, resourceTargetProjectId);
                 consoleProjects.requirePermission("transfer:import", permissionProject);
@@ -218,6 +226,13 @@ public class OfflineResourceImportService {
                     consoleProjects.requirePermission("approval:approve", permissionProject);
                 }
             }
+            if (sourceKey.type() == TransferResourceType.MODEL && modelFiles != null) {
+                modelFiles.ingestConfiguration(configuration, resourceTargetProjectId);
+            }
+            if (sourceKey.type() == TransferResourceType.MODEL) {
+                TransferModelFields.prepare(configuration, existingId == null ? null : existing.configuration());
+            }
+            ResourceSnapshot snapshot = ResourceSnapshot.ofJson(CanonicalJson.write(configuration));
             Long targetId;
             if (sourceKey.type() == TransferResourceType.RULE) {
                 if (existingId == null && ruleDefinitionMapper != null && ruleDefinitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
@@ -228,6 +243,11 @@ public class OfflineResourceImportService {
             } else {
                 Map<Long, Long> appliedFields = new HashMap<>();
                 targetId = approveResource(sourceKey.type(), existingId, options, resourceTargetProjectId, snapshot, actor, appliedFields);
+                if (sourceKey.type() == TransferResourceType.MODEL) {
+                    var applied = adapterRegistry.require("MODEL").loadEffective(targetId);
+                    childMap.put(resource.key(), TransferModelFields.outputMapping(resource.configuration(),
+                            CanonicalJson.readMap(applied.snapshotJson())));
+                }
                 if (sourceKey.type() == TransferResourceType.DATA_OBJECT) {
                     if (importedFieldIds.isEmpty()) childMap.put(resource.key(), appliedFields);
                     else {
@@ -367,7 +387,7 @@ public class OfflineResourceImportService {
                     Object sourceChild = TransferJsonPath.read(byKey.get(reference.targetKey()).configuration(), reference.childPath());
                     mapped = childMap.getOrDefault(reference.targetKey(), Map.of()).get(number(sourceChild));
                 }
-                if (mapped == null) throw new IllegalArgumentException("数据对象子字段无法映射: " + reference.targetKey());
+                if (mapped == null) throw new IllegalArgumentException("源资源子字段无法映射: " + reference.targetKey());
                 target = mapped;
             }
             TransferJsonPath.replace(configuration, reference.path(), target);
@@ -401,15 +421,16 @@ public class OfflineResourceImportService {
     }
 
     private void validateExternalField(TransferKey target, Long targetId, Long fieldId) {
-        if (target.type() != TransferResourceType.DATA_OBJECT || fieldId == null) {
-            throw new IllegalArgumentException("外部字段关联必须指向数据对象字段: " + target.value());
+        boolean model = target.type() == TransferResourceType.MODEL;
+        if ((!model && target.type() != TransferResourceType.DATA_OBJECT) || fieldId == null) {
+            throw new IllegalArgumentException("外部字段关联必须指向数据对象字段或模型输出字段: " + target.value());
         }
         Map<String, Object> configuration = CanonicalJson.readMap(
-                adapterRegistry.require("DATA_OBJECT").loadEffective(targetId).snapshotJson());
-        Object fields = configuration.get("fields");
+                adapterRegistry.require(target.type().name()).loadEffective(targetId).snapshotJson());
+        Object fields = configuration.get(model ? "outputFields" : "fields");
         if (!(fields instanceof List<?> list) || list.stream().noneMatch(value ->
                 value instanceof Map<?, ?> map && String.valueOf(map.get("id")).equals(String.valueOf(fieldId)))) {
-            throw new IllegalArgumentException("目标数据对象不包含所选字段: " + fieldId);
+            throw new IllegalArgumentException("目标资源不包含所选字段: " + fieldId);
         }
     }
 

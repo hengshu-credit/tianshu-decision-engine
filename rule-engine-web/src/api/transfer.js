@@ -1,6 +1,9 @@
 import request from './request'
 import { metadataResponse } from '@/utils/metadataResponse'
 
+// 含模型原件的迁移请求还需要等待安全扫描、审批及事务提交。
+const transferFileTimeoutMs = 30 * 60 * 1000
+
 export function listTransferResources(params) {
   return request({ ...metadataResponse, url: '/rule/transfer/resources', method: 'get', params })
 }
@@ -10,6 +13,7 @@ export function exportResourceTransfer(roots, options = null) {
     url: options ? '/rule/transfer/export/options' : '/rule/transfer/export',
     method: 'post',
     data: options ? { roots, ...options } : roots,
+    timeout: transferFileTimeoutMs,
     responseType: 'blob'
   })
 }
@@ -34,6 +38,7 @@ export function previewResourceTransfer(file, options = null) {
   return request({
     ...metadataResponse,
     url: options ? '/rule/transfer/preview/options' : '/rule/transfer/preview',
+    timeout: transferFileTimeoutMs,
     method: 'post',
     data: form,
     headers: { 'Content-Type': 'multipart/form-data' }
@@ -47,6 +52,7 @@ export function importResourceTransfer(file, options) {
   return request({
     ...metadataResponse,
     url: '/rule/transfer/import',
+    timeout: transferFileTimeoutMs,
     method: 'post',
     data: form,
     headers: { 'Content-Type': 'multipart/form-data' }

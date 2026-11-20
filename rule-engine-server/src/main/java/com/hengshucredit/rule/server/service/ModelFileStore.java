@@ -1,0 +1,322 @@
+package com.hengshucredit.rule.server.service;
+
+import com.hengshucredit.rule.server.artifact.Sha256Digests;
+import com.hengshucredit.rule.server.artifact.DecisionArtifactPackage;
+import com.hengshucredit.rule.model.entity.DecisionArtifact;
+import com.hengshucredit.rule.server.upload.UploadSecurity;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamConstants;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Pattern;
+
+/** 不可变模型原件及冻结制品。数据库只记录相对标识，传输包携带真实字节。 */
+@Component
+public final class ModelFileStore {
+    private static final String PREFIX = "ts-file-v1:";
+    private static final Pattern KEY = Pattern.compile("(models/[0-9]+|packages)/[0-9a-f]{2}/[\\p{L}\\p{N}_.-]+--[0-9a-f]{64}\\.(onnx|pmml|zip)");
+    private final Path root;
+    private final UploadSecurity security;
+    private final long fileLimit;
+    private final long cacheLimit;
+    private final Map<String, byte[]> cache = new LinkedHashMap<>(16, 0.75f, true);
+    private long cachedBytes;
+
+    public ModelFileStore(@Value("${rule-engine.model.storage-directory:./data/model-files}") String directory,
+                          @Value("${rule-engine.model.max-file-size-bytes:268435456}") long fileLimit,
+                          @Value("${rule-engine.model.file-cache-bytes:134217728}") long cacheLimit,
+                          UploadSecurity security) {
+        this.root = Path.of(directory).toAbsolutePath().normalize();
+        this.fileLimit = fileLimit;
+        this.cacheLimit = cacheLimit;
+        this.security = security;
+    }
+
+    public static boolean isReference(String value) { return value != null && value.startsWith(PREFIX); }
+
+    public static byte[] bytes(ModelFileStore store, Long owner, String filename, String format, String content, String digest) {
+        if (store == null) {
+            if (isReference(content)) throw new IllegalStateException("未配置模型文件仓库");
+            return legacyBytes(content);
+        }
+        String name = filename == null || filename.isBlank() ? "model." + ("PMML".equalsIgnoreCase(format) ? "pmml" : "onnx") : filename;
+        if (isReference(content) && format != null && !content.toLowerCase(Locale.ROOT).endsWith("." + format.toLowerCase(Locale.ROOT))) {
+            throw new IllegalArgumentException("模型文件与版本格式不一致");
+        }
+        return store.model(owner, name, content, digest);
+    }
+
+    public static String contentDigest(String content) {
+        if (!isReference(content)) return Sha256Digests.bytes(legacyBytes(content));
+        if (!KEY.matcher(content.substring(PREFIX.length())).matches()) throw new IllegalArgumentException("模型文件标识无效");
+        return content.substring(content.lastIndexOf("--") + 2, content.lastIndexOf('.'));
+    }
+
+    private static byte[] legacyBytes(String content) {
+        if (content == null) throw new IllegalArgumentException("模型内容为空");
+        try { return Base64.getDecoder().decode(content); }
+        catch (IllegalArgumentException invalidBase64) {
+            if (content.stripLeading().startsWith("<")) return content.getBytes(StandardCharsets.UTF_8);
+            throw invalidBase64;
+        }
+    }
+
+    public static byte[] snapshotBytes(ModelFileStore store, Map<String, Object> snapshot) {
+        if (snapshot.get("packageFile") instanceof String file) {
+            if (store == null) throw new IllegalStateException("未配置版本制品仓库");
+            return store.packageBytes(file, String.valueOf(snapshot.get("packageDigest")));
+        }
+        return Base64.getDecoder().decode(String.valueOf(snapshot.get("packageContent")));
+    }
+
+    /** 历史快照外移后仍按原序列化内容验证原配置摘要，保持已发布制品的归因。 */
+    public static Map<String,Object> checkedSnapshot(ModelFileStore store, String json, String expected) {
+        if (json == null || expected == null) throw new IllegalArgumentException("缺少模型版本快照");
+        // 旧快照的 packageContent 可能超过普通 JSON 字符串读取上限。
+        Map<String,Object> snapshot = com.hengshucredit.rule.server.artifact.CanonicalJson.readModelSnapshot(json);
+        if (Sha256Digests.text(json).equals(expected)) return snapshot;
+        if (store != null && expected.equals(snapshot.get("legacyInlineDigest")) && snapshot.containsKey("packageFile")) {
+            var original = new LinkedHashMap<>(snapshot);
+            original.remove("legacyInlineDigest");
+            original.remove("packageFile");
+            original.put("packageContent", Base64.getEncoder().encodeToString(snapshotBytes(store, snapshot)));
+            if (expected.equals(Sha256Digests.text(com.hengshucredit.rule.server.artifact.CanonicalJson.write(original)))) return snapshot;
+        }
+        throw new IllegalArgumentException("模型版本执行快照摘要校验失败");
+    }
+
+    private static String scope(Long projectId) { return "models/" + (projectId == null ? 0L : projectId); }
+
+    public String accept(Long projectId, String filename, byte[] bytes) {
+        return saveOriginal(projectId, filename, bytes, false);
+    }
+
+    /** 冻结版本或数据库历史记录可复用已扫描的同摘要文件；外部新上传始终重新扫描。 */
+    public String fromSnapshot(Long projectId, String filename, byte[] bytes) {
+        return saveOriginal(projectId, filename, bytes, true);
+    }
+
+    private String saveOriginal(Long projectId, String filename, byte[] bytes, boolean trustedSnapshot) {
+        UploadSecurity.filename(filename);
+        if (bytes.length == 0 || bytes.length > fileLimit) throw new IllegalArgumentException("模型大小超过限制或为空");
+        String lower = filename.toLowerCase(Locale.ROOT);
+        if (!lower.endsWith(".onnx") && !lower.endsWith(".pmml")) throw new IllegalArgumentException("仅支持 ONNX 或 PMML 原始模型文件");
+        String digest = Sha256Digests.bytes(bytes);
+        String reference = key(scope(projectId), filename, digest);
+        Path target = path(reference);
+        if (trustedSnapshot && Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+            verifiedRead(reference, digest);
+            return reference;
+        }
+        screen(filename, bytes);
+        install(reference, bytes);
+        return reference;
+    }
+
+    private void screen(String filename, byte[] bytes) {
+        if (bytes.length == 0 || bytes.length > fileLimit) throw new IllegalArgumentException("模型文件大小无效");
+        var result = security.scan(bytes);
+        if (!"CLEAN".equals(result.status())) {
+            throw new IllegalArgumentException("模型安全检测 " + result.status() + "：" + result.message() + "。文件未入库，可重新上传");
+        }
+        if (filename.toLowerCase(Locale.ROOT).endsWith(".pmml")) requireStandalonePmml(bytes);
+        else com.hengshucredit.rule.server.upload.StandaloneOnnx.require(bytes);
+    }
+
+    /** 外来迁移包只能携带原件，本机存储定位符不能从迁移包导入。 */
+    public void ingestConfiguration(Map<String, Object> cfg, Long owner) {
+        cfg.remove("_modelContentVersionId");
+        if (!(cfg.get("modelContent") instanceof String data) || isReference(data)) {
+            throw new IllegalArgumentException("模型迁移包缺少可验证的原始文件");
+        }
+        if (data.length() > 4L * ((fileLimit + 2) / 3)) throw new IllegalArgumentException("模型迁移原件超过上传大小上限");
+        byte[] bytes = legacyBytes(data);
+        checkDigest(bytes, (String) cfg.get("modelDigest"));
+        String ref = accept(owner, (String) cfg.get("modelFileName"), bytes);
+        cfg.put("modelContent", ref);
+        cfg.put("modelDigest", Sha256Digests.bytes(bytes));
+        cfg.put("modelFileSize", (long) bytes.length);
+    }
+
+    public void screenEmbeddedModels(DecisionArtifactPackage pack) {
+        for (var c : pack.getComponents().values()) {
+            if ("MODEL".equals(c.getMetadata().get("resourceType"))) {
+                Object declared = c.getMetadata().get("modelFormat");
+                Object nested = c.getMetadata().get("model") instanceof Map<?,?> m ? m.get("modelFormat") : null;
+                String format = String.valueOf(nested == null ? declared : nested);
+                if (declared != null && !format.equalsIgnoreCase(declared.toString())) throw new IllegalArgumentException("制品模型格式声明冲突");
+                if (!format.equalsIgnoreCase("PMML") && !format.equalsIgnoreCase("ONNX")) {
+                    throw new IllegalArgumentException("制品包含未知格式的模型");
+                }
+                screen("embedded." + format, c.getContent());
+            }
+        }
+    }
+
+    public byte[] artifactContent(DecisionArtifactPackage pack, byte[] bytes) {
+        boolean models = pack.getComponents().values().stream().anyMatch(c -> "MODEL".equals(c.getMetadata().get("resourceType")));
+        return models ? savePackage(bytes).getBytes(StandardCharsets.UTF_8) : bytes;
+    }
+
+    public byte[] model(Long projectId, String fileName, String content, String expectedDigest) {
+        if (content == null || content.isBlank()) throw new IllegalArgumentException("模型文件内容为空");
+        if (!isReference(content)) {
+            byte[] legacy = legacyBytes(content);
+            checkDigest(legacy, expectedDigest);
+            fromSnapshot(projectId, fileName, legacy);
+            return legacy;
+        }
+        if (!content.startsWith(PREFIX + scope(projectId) + "/")) throw new IllegalArgumentException("模型文件不属于此作用域");
+        return verifiedRead(content, expectedDigest);
+    }
+
+    public String relocate(Long owner, String filename, String content, String digest) {
+        if (isReference(content)) {
+            model(owner, filename, content, digest);
+            return content;
+        }
+        byte[] original = legacyBytes(content);
+        checkDigest(original, digest);
+        return fromSnapshot(owner, filename, original);
+    }
+
+    public String savePackage(byte[] bytes) {
+        String reference = key("packages", "snapshot.zip", Sha256Digests.bytes(bytes));
+        install(reference, bytes);
+        return reference;
+    }
+
+    public byte[] packageBytes(String value, String digest) {
+        if (!isReference(value)) return Base64.getDecoder().decode(value);
+        if (!value.startsWith(PREFIX + "packages/")) throw new IllegalArgumentException("模型制品引用类型无效");
+        return verifiedRead(value, digest);
+    }
+
+    public byte[] resolveArtifact(byte[] stored, String digest) {
+        if (stored == null || stored.length > 512 || stored.length < PREFIX.length() || stored[0] != 't') return stored;
+        String ref = new String(stored, StandardCharsets.UTF_8);
+        return isReference(ref) ? packageBytes(ref, digest) : stored;
+    }
+
+    public static DecisionArtifact hydrated(ModelFileStore store, DecisionArtifact artifact) {
+        if (store != null && artifact != null) artifact.setPackageContent(store.resolveArtifact(artifact.getPackageContent(), artifact.getPackageDigest()));
+        return artifact;
+    }
+
+    private static String key(String directory, String filename, String digest) {
+        int dot = filename.lastIndexOf('.');
+        String stem = filename.substring(0, dot).replaceAll("[^\\p{L}\\p{N}_.-]", "_");
+        stem = stem.codePoints().limit(42).collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString();
+        if (stem.isBlank() || stem.matches("(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\\..*)?$")) stem = "_" + stem;
+        return PREFIX + directory + "/" + digest.substring(0, 2) + "/" + stem + "--" + digest + filename.substring(dot).toLowerCase(Locale.ROOT);
+    }
+
+    private Path path(String reference) {
+        String key = reference.substring(PREFIX.length());
+        if (!KEY.matcher(key).matches()) throw new IllegalArgumentException("模型文件标识无效");
+        Path target = root.resolve(key).normalize();
+        for (Path p = target; !p.equals(root); p = p.getParent()) {
+            if (Files.isSymbolicLink(p)) throw new IllegalStateException("模型存储目录包含符号链接");
+        }
+        return target;
+    }
+
+    private void install(String reference, byte[] bytes) {
+        Path dest = path(reference);
+        if (Files.isRegularFile(dest, LinkOption.NOFOLLOW_LINKS)) {
+            verifiedRead(reference, null);
+            return;
+        }
+        try {
+            Files.createDirectories(dest.getParent());
+            Path temp = Files.createTempFile(dest.getParent(), ".upload-", ".tmp");
+            try {
+                try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.WRITE)) {
+                    ByteBuffer buffer = ByteBuffer.wrap(bytes);
+                    while (buffer.hasRemaining()) channel.write(buffer);
+                    channel.force(true);
+                }
+                try {
+                    Files.move(temp, dest, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException unsupported) {
+                    throw new IOException("模型存储卷必须支持同目录原子重命名", unsupported);
+                } catch (IOException raced) {
+                    // Windows may return AccessDeniedException when another writer already installed the same immutable file.
+                    if (!Files.isRegularFile(dest, LinkOption.NOFOLLOW_LINKS)) throw raced;
+                    verifiedRead(reference, null);
+                }
+            } finally {
+                Files.deleteIfExists(temp);
+            }
+        } catch (IOException e) { throw new IllegalStateException("写入模型存储失败", e); }
+    }
+
+    private byte[] verifiedRead(String ref, String expected) {
+        Path p = path(ref);
+        String name = p.getFileName().toString();
+        String digest = name.substring(name.lastIndexOf("--") + 2, name.lastIndexOf('.'));
+        if (expected != null && !expected.isBlank() && !digest.equalsIgnoreCase(expected)) throw new IllegalArgumentException("模型引用与保存摘要不一致");
+        synchronized (cache) {
+            byte[] found = cache.get(ref);
+            if (found != null) return found.clone();
+        }
+        try {
+            long limit = ref.startsWith(PREFIX + "models/") ? fileLimit : 512L * 1024 * 1024;
+            if (Files.size(p) > limit) throw new IllegalArgumentException("文件超出读取上限");
+            byte[] bytes = Files.readAllBytes(p);
+            checkDigest(bytes, digest);
+            if (bytes.length <= cacheLimit) synchronized (cache) {
+                if (cache.put(ref, bytes.clone()) == null) cachedBytes += bytes.length;
+                while (cachedBytes > cacheLimit) {
+                    var iterator = cache.entrySet().iterator();
+                    cachedBytes -= iterator.next().getValue().length;
+                    iterator.remove();
+                }
+            }
+            return bytes;
+        } catch (IOException e) { throw new IllegalStateException("模型文件缺失或无法读取：" + name, e); }
+    }
+
+    private static void checkDigest(byte[] bytes, String digest) {
+        if (digest != null && !digest.isBlank() && !digest.equalsIgnoreCase(Sha256Digests.bytes(bytes))) {
+            throw new IllegalArgumentException("模型文件内容摘要校验失败");
+        }
+    }
+
+    private static void requireStandalonePmml(byte[] bytes) {
+        XMLInputFactory factory = XMLInputFactory.newFactory();
+        factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+        factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+        try {
+            var reader = factory.createXMLStreamReader(new ByteArrayInputStream(bytes));
+            try {
+                boolean rootSeen = false;
+                while (reader.hasNext()) {
+                    int event = reader.next();
+                    if (event == XMLStreamConstants.DTD) throw new IllegalArgumentException("PMML 禁止文档类型声明");
+                    if (event == XMLStreamConstants.START_ELEMENT && !rootSeen) {
+                        if (!"PMML".equals(reader.getLocalName())) throw new IllegalArgumentException("模型根元素必须为 PMML");
+                        rootSeen = true;
+                    }
+                }
+                if (!rootSeen) throw new IllegalArgumentException("PMML 文档为空");
+            } finally { reader.close(); }
+        } catch (javax.xml.stream.XMLStreamException e) { throw new IllegalArgumentException("PMML 文档无效", e); }
+    }
+}

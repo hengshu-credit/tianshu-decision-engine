@@ -11,12 +11,14 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class GenericOnnxModelUploadTest {
+    @org.junit.Rule public org.junit.rules.TemporaryFolder temp = new org.junit.rules.TemporaryFolder();
     @Test
     public void uploadAutomaticallyBuildsExactFieldsAndExecutesFrozenModel() throws Exception {
         var manager = new OnnxRuntimeSessionManager();
         var timeout = new ModelExecutionTimeoutExecutor();
         try (var stream = getClass().getResourceAsStream("/onnx-smoke/generic-add.onnx")) {
             var service = new RuleModelService();
+            ReflectionTestUtils.setField(service, "modelFiles", ModelFileStoreTest.store(temp.getRoot().toPath(), "CLEAN"));
             var executor = new OnnxModelExecutionService(manager);
             var validator = new ModelArtifactValidator();
             ReflectionTestUtils.setField(validator, "onnxRuntimeSessionManager", manager);
