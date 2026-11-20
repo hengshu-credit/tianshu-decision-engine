@@ -1,0 +1,15 @@
+Port 22084
+HostKey /run/credit-example/host.key
+HostKeyAlgorithms +ssh-rsa
+PermitRootLogin no
+AllowUsers pboc_sftp
+PasswordAuthentication yes
+PubkeyAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+UsePAM no
+DisableForwarding yes
+PermitTTY no
+ChrootDirectory /srv/credit-example
+Subsystem sftp internal-sftp
+ForceCommand internal-sftp -R -d /reports

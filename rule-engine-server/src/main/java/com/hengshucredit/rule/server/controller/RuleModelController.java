@@ -490,4 +490,13 @@ public class RuleModelController {
                 governanceApprovalService.createDraft(
                         request, operatorResolver.resolve()));
     }
+    @jakarta.annotation.Resource
+    private org.springframework.jdbc.core.JdbcTemplate testCaseJdbc;
+
+    @GetMapping("/{id}/test-cases")
+    @com.hengshucredit.rule.server.security.RequirePermission("model:view")
+    public ApiResponse<java.util.List<Map<String,Object>>> testCases(@PathVariable Long id) {
+        if (modelService.getDetail(id) == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "测试资源不存在");
+        return ApiResponse.ok(testCaseJdbc.queryForList("SELECT case_code AS code, case_name AS name, params_json AS paramsJson, expected_json AS expectedJson FROM rule_model_test_case WHERE model_id=? ORDER BY id", id));
+    }
 }

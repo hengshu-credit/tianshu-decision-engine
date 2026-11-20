@@ -146,7 +146,7 @@ docker compose --project-name tianshu-full --env-file .env.client --env-file .en
   -f docker/docker-compose.full.yml down
 ```
 
-从仓库或发布包根目录运行 `python docker/rule-engine-mysql/load-example.py` 加载衡枢真信和模拟供应商。入口创建仅用于样例的数据库与 SFTP 只读账号，在目标库中校验并生成发布制品；重复执行复用已有配置。独立 MySQL Compose、地址和凭据说明见[样例导入与调用](rule-engine-mysql/README.md)。
+从仓库或发布包根目录运行 `docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml --profile example-data run --rm --build example-data-import` 加载衡枢真信和模拟供应商。入口创建仅用于样例的数据库与 SFTP 只读账号，在目标库中校验并生成发布制品；重复执行复用已有配置。独立 MySQL Compose、地址和凭据说明见[样例导入与调用](rule-engine-mysql/README.md)。
 
 
 ## 只启动依赖组件（可选）

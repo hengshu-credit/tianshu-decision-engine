@@ -275,4 +275,13 @@ public class ExternalDatasourceController {
             return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.EXTERNAL_API_ERROR, e.getMessage());
         }
     }
+    @jakarta.annotation.Resource
+    private org.springframework.jdbc.core.JdbcTemplate testCaseJdbc;
+
+    @GetMapping("/api-config/{id}/test-cases")
+    @com.hengshucredit.rule.server.security.RequirePermission("datasource:view")
+    public ApiResponse<java.util.List<Map<String,Object>>> testCases(@PathVariable Long id) {
+        if (apiConfigService.getById(id) == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "测试资源不存在");
+        return ApiResponse.ok(testCaseJdbc.queryForList("SELECT case_code AS code, case_name AS name, params_json AS paramsJson, expected_json AS expectedJson FROM rule_api_test_case WHERE api_id=? ORDER BY id", id));
+    }
 }

@@ -618,6 +618,7 @@
       :close-on-click-modal="false"
       @closed="closeTestDialog"
     >
+      <resource-test-cases v-if="testVisible && model.id" :key="'cases-' + testVersion" :endpoint="'/rule/model/'+model.id+'/test-cases'" :params="testJsonStr" :outcome="testResult" @apply="value => { testMode = 'json'; testJsonStr = value; syncJsonToParams(); testResult = null }" />
       <div class="version-compare-toolbar model-test-version-toolbar" data-testid="model-test-version-toolbar">
         <span>测试版本</span>
         <el-select :model-value="testVersion" :disabled="testSaving" data-testid="model-test-version" @change="openTestDialog">
@@ -916,6 +917,7 @@
 </template>
 
 <script>
+import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
@@ -1066,7 +1068,7 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: { DismissibleGuidance, VersionSnapshotPanel,
+  components: { ResourceTestCases, DismissibleGuidance, VersionSnapshotPanel,
     ResourceVersionManager,
     ResourcePicker,
     OperandPicker,

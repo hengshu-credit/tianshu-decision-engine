@@ -38,11 +38,25 @@ public class ExampleDataImportIntegrationTest {
                 db.load();
                 assertEquals(2, db.count("rule_project"));
                 assertEquals(20, db.count("rule_published"));
+                assertEquals(2, (int) db.jdbc.queryForObject("SELECT COUNT(*) FROM rule_published WHERE rule_code IN ('NBQZ','CREDIT_ADMISSION') AND version=3 AND status=1", Integer.class));
+                assertEquals(1, (int) db.jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM rule_published p JOIN rule_definition d ON p.definition_id=d.id
+                        JOIN rule_variable v ON v.id=CAST(JSON_UNQUOTE(JSON_EXTRACT(p.model_json,'$.rules[0].conditionRoot.children[0].leftOperand.refId')) AS UNSIGNED)
+                        WHERE p.rule_code='NBQZ' AND v.var_code='current_overdue_days' AND v.var_source='DB' AND v.project_id=d.project_id
+                        """, Integer.class));
                 assertEquals(20, db.count("decision_artifact"));
                 assertEquals(8, db.count("rule_external_api_config"));
                 assertEquals(8, db.count("rule_billing_config"));
                 assertEquals(7, db.count("rule_model_input_field"));
                 assertEquals(1, db.count("rule_model_output_field"));
+                assertEquals(115, db.count("rule_api_doc_scenario"));
+                assertEquals(46, db.count("rule_api_test_case"));
+                assertEquals(95, db.count("rule_variable_test_case"));
+                assertEquals(2, db.count("rule_model_test_case"));
+                assertEquals(20, (int) db.jdbc.queryForObject("SELECT COUNT(DISTINCT definition_id) FROM rule_api_doc_scenario WHERE status=1", Integer.class));
+                assertEquals(24, (int) db.jdbc.queryForObject("SELECT COUNT(DISTINCT variable_id) FROM rule_variable_test_case", Integer.class));
+                assertEquals(8, (int) db.jdbc.queryForObject("SELECT COUNT(*) FROM (SELECT api_id FROM rule_api_test_case WHERE case_code IN ('PASS','REJECT','EDGE','NULL','NO-HIT') GROUP BY api_id HAVING COUNT(*)=5) covered", Integer.class));
+                assertEquals(0, (int) db.jdbc.queryForObject("SELECT COUNT(*) FROM rule_api_doc_scenario s LEFT JOIN rule_published p ON p.definition_id=s.definition_id AND p.revision_id=s.revision_id AND p.artifact_digest=s.artifact_digest WHERE p.id IS NULL", Integer.class));
                 assertEquals(1, db.count("rule_list_record"));
                 assertTrue(db.count("governance_dependency_snapshot") > 0);
                 for (String table : List.of("rule_billing_record", "rule_runtime_call_log", "rule_execution_log",
@@ -127,7 +141,7 @@ public class ExampleDataImportIntegrationTest {
         private void initial() { runSql("sql/initial-data.sql"); }
         private int count(String table) { return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class); }
         private List<Map<String,Object>> snapshot() {
-            return jdbc.queryForList("CHECKSUM TABLE rule_project,rule_project_auth,rule_variable,rule_variable_option,rule_data_object,rule_data_object_field,rule_model,rule_model_version,rule_definition,rule_definition_version,rule_version_binding,rule_published,decision_artifact,decision_artifact_component,governed_resource,governed_resource_version,governance_approval_request,governance_dependency_snapshot,rule_list_library,rule_list_record,rule_db_datasource,rule_sftp_datasource,rule_external_datasource,rule_external_api_config,rule_billing_config");
+            return jdbc.queryForList("CHECKSUM TABLE rule_project,rule_project_auth,rule_variable,rule_variable_option,rule_data_object,rule_data_object_field,rule_model,rule_model_version,rule_definition,rule_definition_version,rule_version_binding,rule_published,decision_artifact,decision_artifact_component,governed_resource,governed_resource_version,governance_approval_request,governance_dependency_snapshot,rule_list_library,rule_list_record,rule_db_datasource,rule_sftp_datasource,rule_external_datasource,rule_external_api_config,rule_billing_config,rule_variable_test_case,rule_api_test_case,rule_model_test_case,rule_api_doc_scenario");
         }
         private void cleanup() throws Exception {
             Files.deleteIfExists(credentials);

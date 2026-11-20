@@ -206,7 +206,7 @@ docker compose --project-name tianshu-server --env-file config/.env.server -f do
 
 日志包含目标库、schema SHA256、计划数、执行对象/动作、耗时和已成功的 DDL 数。重复启动时 `planned=0`、`applied=0` 表示受管业务表结构已经符合要求。遇到重复键、孤儿外键或权限不足，会给出失败步骤、SQLState 和 MySQL 错误码。通过发布包的 `deploy.py` 更新时，本次健康检查结束后还会将结构日志保存到该次备份目录的 `schema-upgrade.log`，即使启动失败也会尝试归档。升级大表时为 DDL 预留维护窗口和健康检查时间。
 
-服务端默认使用 classpath 的 `schema.sql` 初始化结构和系统常量。需要演示数据时，从根目录运行 `python docker/rule-engine-mysql/load-example.py`。入口加载两个样例项目的 SQL 并按目标环境编译发布、生成和校验凭据。独立 MySQL 模式、账号权限与调用示例见[样例导入说明](../docker/rule-engine-mysql/README.md)。
+服务端默认使用 classpath 的 `schema.sql` 初始化结构和系统常量。需要演示数据时，从根目录运行 `docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml --profile example-data run --rm --build example-data-import`。入口加载两个样例项目的 SQL 并按目标环境编译发布、生成和校验凭据。独立 MySQL 模式、账号权限与调用示例见[样例导入说明](../docker/rule-engine-mysql/README.md)。
 
 ### 后端
 
@@ -480,5 +480,3 @@ SDK 行为：
 执行日志页与看板会说明所选项目、时间范围内尚待补齐、未记录追踪、无法解析及已截断的日志数量。统计值只反映当前可用的规则集追踪，不能把这些缺口解释为零命中；补齐或新增执行后重新查询即可更新。规则集的计数是执行次数，嵌套调用可以在一条根日志中产生多次规则集执行。P95/P99 按精确耗时频次计算，查询不再读取全部原始追踪到 Java 内存。
 
 执行日志及其统计素材遵循当前业务证据永久保留策略，辅助日志清理器不会删除它们。备份恢复应同时覆盖原日志、逻辑身份和两张统计表；统计表可由原始追踪重建，但必须同步重置相应日志的统计格式版本并等待后台补齐，不能仅清空统计表。长期累积数据的存储容量、宽时间范围与并发查询仍需在部署环境验收；单次百万样本不代表多年数据和生产并发已达标。
-
-

@@ -1902,6 +1902,7 @@
         <span>{{ testTarget.varLabel || testTarget.varCode }}</span>
         <code>{{ testTarget.scriptName || testTarget.varCode }}</code>
       </div>
+      <resource-test-cases v-if="variableTestVisible && testTarget" :endpoint="'/rule/variable/'+testTarget.id+'/test-cases'" :params="variableTestParamsText" :outcome="variableTestResult" @context="variableTestRoot = $event" @apply="value => { variableTestParamsText = value; variableTestResult = null }" />
       <dismissible-guidance :guide-id="'variable.test.' + (testTarget?.varSource || 'input')" label="变量测试入参说明">
         {{ testDialogHint }}
       </dismissible-guidance>
@@ -2374,6 +2375,7 @@
 
 <script>
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
+import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -2662,6 +2664,7 @@ export default {
       testTarget: null,
       variableTestParamsText: '{}',
       variableTestResult: null,
+      variableTestRoot: null,
       sourceDetailVisible: false,
       sourceDetailTarget: null,
       // Data objects
@@ -2818,7 +2821,7 @@ export default {
       canEditFields: hasPermission('field:edit'),
     }
   },
-  components: { DismissibleGuidance,
+  components: { ResourceTestCases, DismissibleGuidance,
     SourceSummaryCard, ProjectResourceSelect, GovernancePublishAction,
     GovernanceResourceStatus,
     ApiSourceBinding,
@@ -5193,6 +5196,7 @@ export default {
       const hasSchema = schema && (schema.inputs.length || Object.keys(schema.sampleParams).length)
       if (!hasSchema) await this.prepareSampleTree(row)
       if (requestId !== this.sourceOptionsRequestId) return
+      this.variableTestRoot = null
       this.testTarget = row
       this.variableTestParamsText = hasSchema ? this.formatJson(schema.sampleParams) : this.buildTestParamTemplate(row)
       this.variableTestResult = null
@@ -5471,7 +5475,9 @@ export default {
       this.variableTesting = true
       this.variableTestResult = null
       try {
-        const res = await testVariable(this.testTarget.id, params)
+        const res = this.variableTestRoot
+          ? await testVariable(this.testTarget.id, params, this.variableTestRoot)
+          : await testVariable(this.testTarget.id, params)
         this.variableTestResult = normalizeTestResult(res)
       } catch (e) {
         this.variableTestResult = {

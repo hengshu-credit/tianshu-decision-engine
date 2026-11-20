@@ -10,6 +10,7 @@ import org.mybatis.spring.annotation.MapperScan;
 @MapperScan("com.hengshucredit.rule.server.mapper")
 public class RuleEngineApplication {
     public static void main(String[] args) {
+        if (com.hengshucredit.rule.server.example.ExampleCommands.run(args)) return;
         if (java.util.Arrays.asList(args).contains(com.hengshucredit.rule.server.consolelogin.ConsoleAdministratorRecovery.COMMAND)) {
             System.exit(com.hengshucredit.rule.server.consolelogin.ConsoleAdministratorRecovery.run());
             return;

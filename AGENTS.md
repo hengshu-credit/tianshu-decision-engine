@@ -136,7 +136,7 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 - `schema.sql` 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量；服务端启动时默认自动执行，脚本使用当前连接的数据库，不写死数据库名
 - Docker Compose 默认只启动 MySQL、Redis 和应用服务，不导入业务数据；启用 `example-data` profile 后等待 schema 完成，再由 `docker/rule-engine-mysql/data-tianshu-example.sql` 按当前库真实 ID 补齐样例及引用，不能依赖自增顺序。
 - 可选初始配置通过 `RULE_ENGINE_INITIAL_DATA_ENABLED=true` 启用 `initial-data.sql`，仅插入缺失的全局变量/对象/字段，不覆盖已有配置；默认关闭。
-- 通过 `python docker/rule-engine-mysql/load-example.py` 加载衡枢真信与模拟供应商。导入器按目标库真实 ID 绑定资源，生成部署专属凭据，在单事务内重建模型冻结快照和规则制品。运行日志、账单明细及历史进件不随样例导入。
+- 通过 `docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml --profile example-data run --rm --build example-data-import` 加载衡枢真信与模拟供应商。导入器按目标库真实 ID 绑定资源，生成部署专属凭据，在单事务内重建模型冻结快照和规则制品。运行日志、账单明细及历史进件不随样例导入。
 - 业务 SQL 保存在 `docker/rule-engine-mysql/data-tianshu-example.sql`，只读账号和受限 SFTP 由可选 example-data profile 配套提供。重复执行复用凭据；导入器与初始数据共用数据库命名锁。详见 `docker/rule-engine-mysql/README.md`。
 - 功能边界以实际代码、测试和本文件下方的「仍需真实环境验证的边界」为准；本轮审查与实施状态见 `docs/audits/2026-10-22-engine-review.md`、对应优化计划和 `docs/audits/2026-10-23-optimization-completion.md`，不从历史功能清单推断能力缺失。
 - Compose 不提供共享默认密码；全新数据卷根据 `MYSQL_USERNAME` / `MYSQL_PASSWORD` 创建应用账号，已有数据卷需由数据库管理员预先创建或更新最小权限账号
@@ -456,5 +456,3 @@ These are the patterns I see most often. If you catch yourself doing any of thes
 **The Runaway Refactor.** You start fixing one thing. It touches another thing. That touches another. Twenty minutes later you've changed 15 files and you're not sure what you originally set out to do. If a fix is cascading, stop. Tell the user what's happening. Get buy-in before continuing.
 ---
 These guidelines work when they produce fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-
-

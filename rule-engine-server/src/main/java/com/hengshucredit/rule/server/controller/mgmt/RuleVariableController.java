@@ -157,11 +157,28 @@ public class RuleVariableController {
         return ApiResponse.ok(variableService.getById(id));
     }
 
+    @jakarta.annotation.Resource
+    private com.hengshucredit.rule.server.service.RuleDefinitionService historyRuleService;
+
+    @jakarta.annotation.Resource
+    private com.hengshucredit.rule.server.security.ConsoleProjectAccess caseProjectAccess;
+
     @PostMapping("/{variableId:\\d+}/test")
-    public ApiResponse<Map<String, Object>> testVariable(@PathVariable Long variableId,
+    public ApiResponse<Map<String, Object>> testVariable(@PathVariable Long variableId, @RequestParam(required = false) Long rootDefinitionId,
                                                @RequestBody(required = false) Map<String, Object> params) {
         try {
-            return ApiResponse.ok(variableSourceResolver.testVariable(variableId, params));
+            if (rootDefinitionId == null) return ApiResponse.ok(variableSourceResolver.testVariable(variableId, params));
+            var variable = variableService.getById(variableId);
+            var rule = historyRuleService.getById(rootDefinitionId);
+            if (variable == null || rule == null || variable.getProjectId() == null || variable.getProjectId() <= 0
+                    || !variable.getProjectId().equals(rule.getProjectId()))
+                throw new IllegalArgumentException("历史规则与变量必须属于同一个可访问项目");
+            caseProjectAccess.requirePermission("rule:view", rule.getProjectId());
+            var context = new com.hengshucredit.rule.core.engine.RequestContext();
+            context.setRuleContext(Map.of("id", rootDefinitionId, "projectId", rule.getProjectId()), java.util.List.of());
+            try (var ignored = com.hengshucredit.rule.core.engine.RuntimeContextBridge.install(context)) {
+                return ApiResponse.ok(variableSourceResolver.testVariable(variableId, params));
+            }
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ApiResponse.fail(e);
         }
@@ -244,5 +261,14 @@ public class RuleVariableController {
             schemaSyncService.syncAndGetStatus();
         } catch (Exception ignored) {
         }
+    }
+    @jakarta.annotation.Resource
+    private org.springframework.jdbc.core.JdbcTemplate testCaseJdbc;
+
+    @GetMapping("/{id}/test-cases")
+    @com.hengshucredit.rule.server.security.RequirePermission("field:view")
+    public ApiResponse<java.util.List<Map<String,Object>>> testCases(@PathVariable Long id) {
+        if (variableService.getById(id) == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "测试资源不存在");
+        return ApiResponse.ok(testCaseJdbc.queryForList("SELECT context_definition_id AS contextDefinitionId, case_code AS code, case_name AS name, params_json AS paramsJson, expected_json AS expectedJson FROM rule_variable_test_case WHERE variable_id=? ORDER BY id", id));
     }
 }

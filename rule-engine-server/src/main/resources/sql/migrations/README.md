@@ -90,3 +90,5 @@ docker compose --project-name tianshu-server --env-file config/.env.server \
 以上使用现有容器内的应用账号，需有对应 DDL 权限，且其数据库/账号应与 server 的实际连接一致；已有卷的实际账号以数据库为准。外部 MySQL 由运维使用受保护的客户端连接配置执行同一 SQL，勿输出密码或把 `.env.server` 当 Shell 脚本执行。后续适用脚本逐条执行，确认返回码为 0 再继续。
 
 回退 JAR 不会撤销已执行的数据库迁移。先确认旧版兼容性；不兼容时按已验收备份恢复到不同且不存在的库，再安排应用回退。
+
+- `2026-11-20-resource-test-cases.sql` 新增变量、外数和模型测试用例表，重复执行保留已有用例。

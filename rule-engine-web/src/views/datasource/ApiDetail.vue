@@ -1145,6 +1145,7 @@
                 <div class="field-help">取消仅停止后续步骤，已经发出的供应商请求及已产生的费用不会撤销。</div>
               </div>
             </section>
+            <resource-test-cases v-if="form.id" :endpoint="'/rule/datasource/api-config/'+form.id+'/test-cases'" :params="invokeParamsText" :outcome="invokeSnapshotChanged ? null : invokeResultText" @apply="value => { invokeParamsText = value; invokeResultText = ''; selectedSampleId = '' }" />
             <el-form-item v-if="form.executionConfig" label="选择测试样例">
               <el-select v-model="selectedSampleId" clearable filterable placeholder="选择已保存样例" @change="selectExecutionSample">
                 <el-option v-for="sample in executionSamples" :key="sample.id" :value="sample.id" :label="sample.name" />
@@ -1213,6 +1214,7 @@
 </template>
 
 <script>
+import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
@@ -1400,7 +1402,7 @@ export default {
   },
   name: 'ApiDetail',
   mixins: [configurationDraftMixin(vm => ({ form: vm.form, apiAuthConfig: vm.apiAuthConfig, scriptVariableRows: vm.scriptVariableRows, cacheKeyRows: vm.cacheKeyRows, successConditionRoot: vm.successConditionRoot, exceptionConditionRoot: vm.exceptionConditionRoot, retryConditionRoot: vm.retryConditionRoot, tokenFailureMode: vm.tokenFailureMode, tokenFailureConditionRoot: vm.tokenFailureConditionRoot, billingConfig: vm.billingConfig, payloadCapture: vm.payloadCapture })), workspaceTabTitleMixin(vm => vm.form.apiName)],
-  components: { DismissibleGuidance, RemoteFilterSelect,
+  components: { ResourceTestCases, DismissibleGuidance, RemoteFilterSelect,
     ProtocolPathPicker,
     ApiRequestSampleEditor,
     ConfigLayerGuide,

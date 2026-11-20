@@ -67,6 +67,7 @@ services:
     depends_on:
       example-supplier: {condition: service_started}
     environment:
+      EXAMPLE_ENGINE_URL: ${EXAMPLE_ENGINE_URL:-http://host.docker.internal:8080}
       EXAMPLE_DB_HOST: ${EXAMPLE_DB_HOST:-127.0.0.1}
       EXAMPLE_DB_PORT: ${EXAMPLE_DB_PORT:-${MYSQL_HOST_PORT:-3306}}
       EXAMPLE_SUPPLIER_HOST: ${EXAMPLE_SUPPLIER_HOST:-127.0.0.1}

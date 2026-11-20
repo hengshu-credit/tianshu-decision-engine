@@ -54,8 +54,8 @@ export function deleteVariable(id) {
   })
 }
 
-export function testVariable(id, params) {
-  return request({ url: `/rule/variable/${id}/test`, method: 'post', data: params || {}, timeout: 0 })
+export function testVariable(id, params, rootDefinitionId) {
+  return request({ url: `/rule/variable/${id}/test`, method: 'post', data: params || {}, ...(rootDefinitionId ? { params: { rootDefinitionId } } : {}), timeout: 0 })
 }
 
 export function getVariableSourceOptions(params) {

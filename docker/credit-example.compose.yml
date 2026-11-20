@@ -1,9 +1,15 @@
+x-example-jar: &example-jar
+  type: bind
+  source: ${EXAMPLE_SERVER_JAR:-${RUNTIME_DIR:-./runtime}/server.jar}
+  target: /app/server.jar
+  read_only: true
+  bind: {create_host_path: false}
+
 services:
   example-provision:
     profiles: [example-data]
-    image: tianshu-credit-example:local
-    build: ./rule-engine-mysql/example
-    command: [python, credentials.py]
+    image: ${JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}
+    entrypoint: [java, -Xmx128m, -jar, /app/server.jar, --credit-example-provision]
     restart: "no"
     environment:
       MYSQL_HOST: mysql
@@ -11,12 +17,13 @@ services:
       MYSQL_ADMIN_USER: root
       MYSQL_ADMIN_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}"
     volumes:
+      - *example-jar
       - example-credentials:/state
       - example-supplier-credentials:/supplier-state
     networks: [rule-engine]
   example-supplier:
     profiles: [example-data]
-    image: tianshu-credit-example:local
+    image: tianshu-credit-example:java
     build: ./rule-engine-mysql/example
     restart: unless-stopped
     environment:
@@ -24,6 +31,7 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     volumes:
+      - *example-jar
       - example-supplier-credentials:/state:ro
     networks: [rule-engine]
   example-data-import:
@@ -43,6 +51,7 @@ services:
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
       RULE_AUTH_MASTER_KEY: "${RULE_AUTH_MASTER_KEY:-}"
+      EXAMPLE_ENGINE_URL: "${EXAMPLE_ENGINE_URL:-http://server:8080}"
       EXAMPLE_DB_HOST: ${EXAMPLE_DB_HOST:-mysql}
       EXAMPLE_DB_PORT: ${EXAMPLE_DB_PORT:-3306}
       EXAMPLE_SUPPLIER_HOST: ${EXAMPLE_SUPPLIER_HOST:-example-supplier}

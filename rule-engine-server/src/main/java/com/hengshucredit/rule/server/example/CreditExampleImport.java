@@ -74,7 +74,8 @@ public final class CreditExampleImport {
             String auth = db.queryForObject("SELECT secret_ciphertext FROM rule_project_auth a JOIN rule_project p ON p.id=a.project_id WHERE p.project_code='HENGSHUCREDIT' AND a.auth_code='CREDIT_HTTP'", String.class);
             if (!key("credit_api").equals(cipher.decrypt(auth))) throw new IllegalStateException("演示凭据卷与目标库不匹配");
             verifyPublication();
-            System.out.println("两个演示项目已加载，本次新增 0 条");
+            CreditOverdueUpgrade.apply(context, db);
+            installCases(lines);
             return;
         }
         credentials();
@@ -82,6 +83,7 @@ public final class CreditExampleImport {
         int lineNumber = 0;
         for (String line : lines) {
             lineNumber++;
+            if ("-- @test-cases".equals(line)) break;
             if (line.isBlank()) continue;
             try {
                 switch (line) {
@@ -105,7 +107,21 @@ public final class CreditExampleImport {
             }
         }
         verifyPublication();
+        installCases(lines);
         System.out.println("衡枢真信与模拟供应商已导入");
+    }
+
+    private void installCases(List<String> lines) {
+        int marker = lines.indexOf("-- @test-cases");
+        if (marker < 0) return; // Older release fixture.
+        int added = 0;
+        for (String line : lines.subList(marker + 1, lines.size())) {
+            if (line.isBlank() || line.startsWith("--")) continue;
+            if (line.startsWith("SET ")) db.execute(line);
+            else if (line.startsWith("INSERT INTO rule_api_doc_scenario ") || line.startsWith("INSERT INTO rule_variable_test_case ") || line.startsWith("INSERT INTO rule_api_test_case ") || line.startsWith("INSERT INTO rule_model_test_case ")) added += db.update(line);
+            else throw new IllegalStateException("不支持的用例导入语句");
+        }
+        System.out.println("样例测试用例新增 " + added + " 条");
     }
 
     private void verifyPublication() {
