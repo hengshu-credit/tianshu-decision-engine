@@ -2,6 +2,7 @@
 .content-ref { display: inline-flex; vertical-align: middle; align-items: stretch; gap: 0; min-width: 0; max-width: 100%; font-size: 12px; line-height: 20px; white-space: nowrap; user-select: text; }
 .content-ref__segment { display: inline-block; vertical-align: middle; box-sizing: border-box; margin: 0; border: 0; border-radius: 0; padding: 0 5px; min-width: 0; max-width: 100%; line-height: inherit; font-size: inherit; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
 .content-ref__source, .content-ref__type { flex: 0 0 32px; width: 32px; padding: 0; text-align: center; font-size: 11px; font-weight: 600; }
+.content-ref > .content-ref__type { flex: 0 1 auto; width: auto; min-width: 32px; max-width: 12em; padding: 0 3px; }
 :is(.content-ref, .monaco-editor .view-lines) {
 .content-ref__source { color: var(--tianshu-content-source-text, var(--tianshu-primary-text)); background: var(--tianshu-content-source-bg, var(--tianshu-info-border)); }
 .content-ref__type { color: var(--tianshu-content-type-text, var(--tianshu-info-text)); background: var(--tianshu-content-type-bg, var(--tianshu-info-bg)); }

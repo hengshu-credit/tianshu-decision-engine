@@ -68,7 +68,7 @@ export function matchPathContent(value, options = []) {
   const suffix = within(full, anchor) ? full.slice(anchor.length) : ''
   const path = root + suffix
   const parts = tokens(suffix)
-  const base = { label: source?.varLabelText || source?.varLabel || value.label || root, code: root, suffix, version: versionLabel(value, source) }
+  const base = { label: source?.varLabelText || source?.varLabel || value.label || root, code: root, suffix, valueType: source?.varType, version: versionLabel(value, source) }
   if (!parts) return base
   const sourceKey = `${value.refType}:${value.refId}:${value.versionId || ''}:${value.versionSource || ''}:${anchor}`
   // 固定版本的展示快照不依赖当前目录；目录加载后仍以同版本目录为准。
@@ -86,7 +86,7 @@ export function matchPathContent(value, options = []) {
     const peers = matches.filter(item => item.size === match.size)
     if (new Set(peers.map(({ item, code }) => `${typeOf(item)}:${idOf(item)}:${code}`)).size !== 1) continue
     return { label: match.item.varLabelText || match.item.varLabel || match.item.refLabel?.label || match.code,
-      code: match.code, suffix: match.suffix, matchedPath: path.slice(0, path.length - match.suffix.length), version: versionLabel(value, match.item), sourceKey }
+      code: match.code, suffix: match.suffix, valueType: match.item.varType, matchedPath: path.slice(0, path.length - match.suffix.length), version: versionLabel(value, match.item), sourceKey }
   }
   return base
 }

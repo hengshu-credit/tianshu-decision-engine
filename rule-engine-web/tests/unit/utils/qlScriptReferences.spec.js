@@ -43,6 +43,10 @@ describe('QL 脚本行内引擎引用', () => {
     expect(refs.map(item => item.label)).toEqual(['constructor', 'toString'])
     expect(refs.every(item => item.option.builtin === false)).toBe(true)
   })
+  test('引擎辅助函数保留确定或动态的返回类型，同名成员不借用内置签名', () => {
+    const refs = collectQlScriptReferences('sourceStatus(); sizeOfValue(); setRuntimeValue(); obj.sourceStatus();')
+    expect(refs.map(ref => ref.option.varType)).toEqual(['BOOLEAN', 'LONG', 'ANY', ''])
+  })
   test('固定版本调用按 ID、版本来源和版本 ID 精确反解，不能串当前资源或其他版本', () => {
     const script = 'resourceVersionValue("VARIABLE", "9007199254740993", "BUSINESS_VERSION:948", "")'
     const pinned = [{ refType: 'VARIABLE', refId: '9007199254740993', versionSource: 'BUSINESS_VERSION', versionId: '948', version: 7, displayVersion: 3, code: 'Old_AGE', label: '历史年龄', valueType: 'INTEGER' }]

@@ -483,8 +483,8 @@
           <thead>
             <tr>
               <th>规则编号</th>
-              <th v-for="c in ruleCols" :key="c"><content-reference mode="trace" :value="{ varCode: c, varLabel: varMap[c] }" /></th>
-              <th v-for="a in actionCols" :key="a"><content-reference mode="trace" :value="{ varCode: a, varLabel: varMap[a] }" /></th>
+              <th v-for="c in ruleCols" :key="c"><content-reference mode="trace" :value="traceVariablesByCode.get(c) || { varCode: c, varLabel: varMap[c] }" /></th>
+              <th v-for="a in actionCols" :key="a"><content-reference mode="trace" :value="traceVariablesByCode.get(a) || { varCode: a, varLabel: varMap[a] }" /></th>
               <th>当前匹配</th>
             </tr>
           </thead>
@@ -599,8 +599,8 @@
           <thead>
             <tr>
               <th>规则编号</th>
-              <th v-for="c in ruleCols" :key="c"><content-reference mode="trace" :value="{ varCode: c, varLabel: varMap[c] }" /></th>
-              <th v-for="a in actionCols" :key="a"><content-reference mode="trace" :value="{ varCode: a, varLabel: varMap[a] }" /></th>
+              <th v-for="c in ruleCols" :key="c"><content-reference mode="trace" :value="traceVariablesByCode.get(c) || { varCode: c, varLabel: varMap[c] }" /></th>
+              <th v-for="a in actionCols" :key="a"><content-reference mode="trace" :value="traceVariablesByCode.get(a) || { varCode: a, varLabel: varMap[a] }" /></th>
               <th>当前匹配</th>
             </tr>
           </thead>
@@ -753,7 +753,7 @@
           <div class="t-hd">输入变量</div>
           <div class="var-list">
             <span v-for="v in usedVariables" :key="v.code" class="var-tag">
-              <content-reference mode="trace" :value="{ ...v, varCode: v.code, varLabel: v.label }" />
+              <content-reference mode="trace" :value="v" />
               <span class="var-v" :class="valCls(v.value)">{{
                 fmtVal(v.value)
               }}</span>
@@ -887,6 +887,8 @@ import RuleSetConditionTraceNode from './RuleSetConditionTraceNode.vue'
 import ExternalCallTrace from './ExternalCallTrace.vue'
 import FlowTraceGraph from './FlowTraceGraph.vue'
 import { traceContentValue, traceResourceVersions } from '@/utils/contentReference'
+import { recordedValueType } from '@/utils/contentDisplay'
+import { declaredContentType } from '@/constants/varTypes'
 import { compileOperand, operandDisplay } from '@/utils/operand'
 import { resolveTraceReferences } from '@/utils/traceReference'
 import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
@@ -2179,6 +2181,9 @@ export default {
       this._walk(this.rootNodes, vars, seen)
       return vars
     },
+    traceVariablesByCode() {
+      return new Map(this.usedVariables.map(variable => [variable.code, variable]))
+    },
     finalResult: function () {
       if (!this.rootNodes || this.rootNodes.length === 0) return undefined
       var po = this.parsedOutput
@@ -2550,11 +2555,7 @@ export default {
         if (!n || typeof n !== 'object') continue
         if (n.type === 'VARIABLE' && n.token && !seen[n.token]) {
           seen[n.token] = true
-          vars.push({
-            code: n.token,
-            label: this.varMap[n.token] || n.token,
-            value: n.value,
-          })
+          vars.push(this._traceContent(n))
         }
         if (n.children) this._walk(n.children, vars, seen)
       }
@@ -2599,8 +2600,8 @@ export default {
       }
       if (!['==', '!=', '>', '>=', '<', '<='].includes(node.token) ||
           !node.children.every(child => ['VARIABLE', 'VALUE', 'PRIMARY'].includes(child?.type))) return null
-      return { type: 'leaf', operator: node.token, leftOperand: traceContentValue(node.children[0], this.varMap),
-        rightOperand: traceContentValue(node.children[1], this.varMap) }
+      return { type: 'leaf', operator: node.token, leftOperand: this._traceContent(node.children[0]),
+        rightOperand: this._traceContent(node.children[1]) }
     },
     _legacyTableConditionRoot(rule, model) {
       return { type: 'group', op: 'AND', children: (rule.conditions || []).map((condition, index) => ({
@@ -2619,7 +2620,7 @@ export default {
     },
     _tableTraceActions(rule, model, traced) {
       if (!rule) return this._extractAssigns(traced).map(action => ({
-        targetOperand: { varCode: action.varName, varLabel: this.varMap[action.varName] },
+        targetOperand: action.targetOperand,
         valueText: action.value === undefined ? this._formatExprReadable(action.rhs) : this._displayVal(action.value),
       }))
       return (rule.actions || []).flatMap((action, index) => {
@@ -2739,16 +2740,10 @@ export default {
     },
     _extractAssigns: function (block) {
       var acts = []
-      var walk = function (n) {
+      const walk = (n) => {
         if (!n) return
         if (n.type === 'OPERATOR' && n.token === '=') {
-          var ch = n.children || []
-          acts.push({
-            varName: ch[0] ? ch[0].token : '',
-            rhs: ch[1],
-            value:
-              n.value !== undefined ? n.value : ch[1] ? ch[1].value : undefined,
-          })
+          acts.push(this._traceAssignment(n))
           return
         }
         if (n.children) {
@@ -2901,11 +2896,15 @@ export default {
       }
       var result = !skipped && traceNode && typeof traceNode.value === 'boolean'
         ? traceNode.value : null
+      const contentOperand = this._traceOperandLabel(leaf.leftOperand) || { ...leaf, refType: leaf._refType || 'VARIABLE', refId: leaf._varId }
+      const threshold = leaf.rightOperand || (leaf.valueKind === 'VAR'
+        ? { refType: leaf._rightRefType || leaf.rightRefType || 'VARIABLE', refId: leaf._rightVarId ?? leaf.rightVarId, code: leaf.value, label: leaf.rightVarLabel }
+        : { kind: 'LITERAL', value: leaf.value, valueType: leaf.varType })
       return {
         kind: 'condition',
         hasThreshold,
-        contentOperand: this._traceOperandLabel(leaf.leftOperand) || { ...leaf, refType: leaf._refType || 'VARIABLE', refId: leaf._varId },
-        thresholdOperand: hasThreshold ? leaf.rightOperand || (leaf.valueKind === 'VAR' ? { refType: leaf._rightRefType || leaf.rightRefType || 'VARIABLE', refId: leaf._rightVarId ?? leaf.rightVarId, code: leaf.value, label: leaf.rightVarLabel } : { kind: 'LITERAL', value: leaf.value, valueType: leaf.varType }) : null,
+        contentOperand: { ...contentOperand, valueType: declaredContentType(contentOperand) || declaredContentType(operands[0]) || recordedValueType(actual) },
+        thresholdOperand: hasThreshold ? { ...threshold, valueType: declaredContentType(threshold) || declaredContentType(operands[1]) || recordedValueType(this._traceOperandValue(operands[1])) } : null,
         varCode: varCode || '?',
         varName: this._ruleSetVarName(leaf),
         actualText: actual === undefined ? (skipped ? '未执行' : '未记录') : this.fmtVal(actual),
@@ -3520,12 +3519,7 @@ export default {
           for (const call of rhsFunc ? [rhs] : this._findFuncCalls(rhs)) {
             funcCalls.push(this._traceFunctionCall(call))
           }
-          assigns.push({
-            varName: ch[0] ? ch[0].token : '',
-            rhs: ch[1],
-            value:
-              s.value !== undefined ? s.value : ch[1] ? ch[1].value : undefined,
-          })
+          assigns.push(this._traceAssignment(s))
         }
       }
       if (assigns.length === 0 && funcCalls.length === 0) {
@@ -3536,6 +3530,7 @@ export default {
         return {
           label: this._displayVal(assigns[0].value),
           resultVar: varName,
+          resultOperand: assigns[0].targetOperand,
           resultVarLabel: this.varMap[varName] || varName,
           taskName: '',
           children: null,
@@ -3736,12 +3731,13 @@ export default {
               bs.type === 'OPERATOR' &&
               bs.token === '='
             ) {
-              var tgt = bs.children && bs.children[0] && bs.children[0].token
+              const assignment = this._traceAssignment(bs)
               directActions.push({
-                targetVar: tgt,
-                targetLabel: this.varMap[tgt] || tgt,
-                value: bs.value,
-                valueDisplay: this._fv(bs.value),
+                targetVar: assignment.varName,
+                targetLabel: assignment.targetOperand.label,
+                targetOperand: assignment.targetOperand,
+                value: assignment.value,
+                valueDisplay: this._fv(assignment.value),
               })
             } else {
               seenNonAssign = true
@@ -3997,8 +3993,8 @@ export default {
             compareValue: cv,
             compareDisplay:
               typeof cv === 'string' ? '"' + cv + '"' : this._displayVal(cv),
-            leftOperand: traceContentValue(left, this.varMap),
-            rightOperand: traceContentValue(right, this.varMap),
+            leftOperand: this._traceContent(left),
+            rightOperand: this._traceContent(right),
             actualValue: this._traceNodeValue(left),
             result: c.value === true,
           })
@@ -4240,6 +4236,16 @@ export default {
           return this._fv(first.children[0].value)
       }
       return ''
+    },
+    _traceContent(node) {
+      return traceContentValue({ ...node, value: this._traceNodeValue(node) }, this.varMap, this.effectiveFunctionNameMap)
+    },
+    _traceAssignment(node) {
+      const [target, rhs] = node.children || []
+      const value = node.value !== undefined ? node.value : rhs?.value
+      const valueType = declaredContentType(target) || declaredContentType(rhs)
+      return { varName: target?.token || '', rhs, value,
+        targetOperand: traceContentValue({ ...target, value, valueType }, this.varMap) }
     },
     _traceFunctionCall(node) {
       return {

@@ -164,7 +164,10 @@ export default {
     },
   },
   methods: {
-    traceContent: traceContentValue,
+    traceContent(node, labels) {
+      const value = node.type === 'VARIABLE' ? this.valueFor(node) : node.value
+      return traceContentValue({ ...node, value }, labels)
+    },
     inputValue: function (key) {
       if (!key || !this.inputParams) return undefined
       if (Object.prototype.hasOwnProperty.call(this.inputParams, key))

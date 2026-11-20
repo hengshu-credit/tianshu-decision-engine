@@ -56,6 +56,7 @@ for (const modelType of ['FLOW', 'SCRIPT', 'TREE']) test(`${modelType} 执行日
   await expect(labels.locator('.content-ref__type')).toHaveText(legacy ? types : [...types, ...types])
   await expect(labels.locator('.content-ref__version')).toHaveText(legacy ? ['规则 v7', 'v3'] : ['规则 v7', 'v3', '规则 v4', 'v3'])
   if (!legacy) await expect(page.locator('.rule-trace-head .content-ref__version')).toHaveText(['v7', 'v4'])
+  if (modelType === 'TREE') await expect(page.locator('.dtt-leaf-var .content-ref__type')).toHaveText(['T/F', 'T/F'])
   harness.assertClean()
 })
 
@@ -434,6 +435,26 @@ test('内容选择器短名称和编码按内容紧凑展示，不拉伸成大�
   harness.assertClean()
 })
 
+test('选择器与决策表回显同一自定义类型', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const apiData = createDesignerApiData()
+  apiData.get('/api/rule/variable/project/1').push({ id: 98, varCode: 'riskScore', varLabel: '风控评分', varType: 'RiskScore', varSource: 'INPUT' })
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+  await page.goto(`${origin}/#/designer/table/101`)
+  await page.getByRole('button', { name: '添加行', exact: true }).click()
+  const input = page.getByPlaceholder('选择左操作数...').first()
+  await input.click()
+  const panel = page.locator('.fp-panel:visible')
+  await panel.getByRole('textbox', { name: '搜索内容名称或编码' }).fill('riskScore')
+  const row = panel.getByRole('row').filter({ has: page.getByRole('gridcell', { name: 'riskScore', exact: true }) })
+  await expect(row.locator('.content-ref__type')).toHaveText('RiskScore')
+  await row.dblclick()
+  const badge = input.locator('xpath=ancestor::div[contains(@class,"vp-reference")]').locator('.content-ref__type')
+  await expect(badge).toHaveText('RiskScore')
+  expect(await badge.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  harness.assertClean()
+})
+
 for (const width of [1440, 560]) test(`${width}px 常驻内容选择器保留二级分类、表格、插入和收起状态`, async ({ page }, testInfo) => {
   await page.setViewportSize({ width, height: 900 })
   const harness = await openReferenceScript(page)
@@ -484,6 +505,7 @@ test('冻结 Monaco 脚本反解内置方法和固定版本引用，不借当前
   await page.goto('http://tianshu.local/#/designer/script/109')
   const lines = page.locator('.view-lines')
   await expect(lines.locator('.content-ref__source').filter({ hasText: /\S/ })).toHaveText(['方法', '变量'])
+  await expect(lines.locator('.content-ref__type').filter({ hasText: /\S/ })).toHaveText(['动态', '123'])
   // Monaco 在不同字体度量下会把注入的留白拆成独立 span；只核对实际显示的名称。
   await expect(lines.locator('.content-ref__name').filter({ hasText: /\S/ })).toHaveText(['固定版本取值', '历史年龄'])
   await expect(lines.locator('.content-ref__code').filter({ hasText: /\S/ })).toHaveText(['resourceVersionValue', 'age_old'])
@@ -591,6 +613,7 @@ test('账单指定计费对象使用相同色块', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: /计费配置/ })
   await checkBlocks(dialog.locator('.content-ref').first())
   await expect(dialog.locator('.content-ref__source')).toHaveText('规则')
+  await expect(dialog.locator('.content-ref__type')).toHaveText('R')
   assertClean()
 })
 

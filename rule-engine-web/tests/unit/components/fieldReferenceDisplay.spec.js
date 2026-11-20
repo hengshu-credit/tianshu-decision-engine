@@ -21,11 +21,11 @@ describe('FieldReferenceDisplay', () => {
     expect(wrapper.find('.content-ref__name').text()).toBe('年龄')
   })
 
-  test('未知类型使用问号标识且缺少名称时回退到字段编码', () => {
+  test('自定义类型保留原名且缺少名称时回退到字段编码', () => {
     const wrapper = mount(FieldReferenceDisplay, {
       props: {
         field: {
-          fieldType: 'CUSTOM',
+          fieldType: 'RiskScore',
           fieldCode: 'custom_field',
         },
         compact: true,
@@ -33,7 +33,7 @@ describe('FieldReferenceDisplay', () => {
     })
 
     expect(wrapper.find('.content-ref--wrap').exists()).toBe(false)
-    expect(wrapper.find('.content-ref__type').text()).toBe('?')
+    expect(wrapper.find('.content-ref__type').text()).toBe('RiskScore')
     expect(wrapper.find('.content-ref__name').text()).toBe(
       'custom_field'
     )

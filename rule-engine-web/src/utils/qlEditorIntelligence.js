@@ -1,5 +1,6 @@
 import { fieldTypeIcon } from '@/utils/fieldPicker'
-import { contentSourceIcon, contentDataType } from '@/utils/contentDisplay'
+import { contentSourceIcon, contentTypeTitle } from '@/utils/contentDisplay'
+import { declaredContentType } from '@/constants/varTypes'
 import { resourceVersionIdentity } from '@/utils/resourceVersion'
 
 function versionKey(reference) {
@@ -49,15 +50,16 @@ export function buildQlCompletionItems(refs = [], functions = [], linePrefix = '
     })
     .map((ref) => {
       const label = memberRoot ? ref.refCode.slice(memberRoot.length) : ref.refCode
+      const type = declaredContentType(ref)
       return {
         label,
         insertText: label,
-        detail: `${ref.varLabel || ref.refCode} · ${ref.varType || 'OBJECT'}`,
-        documentation: `${ref.refCode}\n类型：${ref.varType || 'OBJECT'}`,
-        valueType: ref.varType || 'OBJECT',
+        detail: `${ref.varLabel || ref.refCode} · ${type || '未声明'}`,
+        documentation: `${ref.refCode}\n类型：${type || '未声明'}`,
+        valueType: type,
         refCode: ref.refCode,
-        referenceType: fieldTypeIcon(ref.varType || 'OBJECT'),
-        referenceDataType: contentDataType({ valueType: ref.varType || 'OBJECT' }).replace(' · ', ' / '),
+        referenceType: fieldTypeIcon(type),
+        referenceDataType: contentTypeTitle(type).replace(' · ', ' / '),
         referenceContentType: contentSourceIcon({ kind: 'REFERENCE', refType: ref._refType || ref.refType || 'VARIABLE' }),
         referenceVersionKey: versionKey(ref),
         referenceName: ref.varLabel || ref.refCode,
@@ -84,18 +86,19 @@ export function buildQlCompletionItems(refs = [], functions = [], linePrefix = '
     )
     .map((func) => {
       const params = parseParams(func.paramsJson)
+      const type = declaredContentType(func)
       return {
         label: func.funcCode,
         insertText: `${func.funcCode}(${params
           .map((param, index) => `\${${index + 1}:${param.name || `arg${index + 1}`}}`)
           .join(', ')})`,
-        detail: `${func.funcName || func.funcCode} · ${func.returnType || 'OBJECT'}`,
+        detail: `${func.funcName || func.funcCode} · ${type || '未声明'}`,
         documentation: params
           .map((param) => `${param.name || '-'}: ${param.type || 'OBJECT'}`)
           .join('\n'),
         kind: 'FUNCTION',
-        referenceType: fieldTypeIcon(func.returnType || 'OBJECT'),
-        referenceDataType: contentDataType({ valueType: func.returnType || 'OBJECT' }).replace(' · ', ' / '),
+        referenceType: fieldTypeIcon(type),
+        referenceDataType: contentTypeTitle(type).replace(' · ', ' / '),
         referenceContentType: '方法',
         referenceVersionKey: versionKey({ _function: true, function: func }),
         referenceName: func.funcName || func.funcCode,
@@ -143,7 +146,7 @@ export function buildQlHover(line, column, refs = []) {
   return {
     refCode: ref.refCode,
     label: ref.varLabel || ref.refCode,
-    valueType: ref.varType || 'OBJECT',
+    valueType: declaredContentType(ref),
     refType: ref._refType || ref.refType || '',
   }
 }
@@ -163,7 +166,7 @@ export function buildQlSignatureHelp(linePrefix, functions = []) {
     functionCode: func.funcCode,
     label: `${func.funcCode}(${formattedParams
       .map((param) => param.label)
-      .join(', ')}): ${func.returnType || 'OBJECT'}`,
+      .join(', ')}): ${declaredContentType(func) || '未声明'}`,
     activeParameter: Math.min(
       Math.max(0, match[2].split(',').length - 1),
       Math.max(0, formattedParams.length - 1)

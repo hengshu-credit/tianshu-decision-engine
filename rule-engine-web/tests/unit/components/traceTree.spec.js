@@ -516,7 +516,7 @@ describe('TraceTree', () => {
     // 历史日志只含表达式追踪，仍可识别编译器生成的三个阶段。
     const wrapper = mountTraceTree({ modelType: 'TABLE', traceInfo: JSON.stringify([...predicates, guard, dispatch]) })
     expect(wrapper.vm.decisionTableRows.map(row => row.status)).toEqual(['miss', 'hit'])
-    expect(wrapper.vm.decisionTableRows[1].actions).toMatchObject([{ targetOperand: { varCode: 'decision' }, valueText: 'PASS' }])
+    expect(wrapper.vm.decisionTableRows[1].actions).toMatchObject([{ targetOperand: { code: 'decision', valueType: 'STRING' }, valueText: 'PASS' }])
     expect(wrapper.vm.decisionTableRows[1].conditionTree).toMatchObject({ varCode: 'age', actualText: '30', thresholdText: '18' })
     expect(wrapper.text()).not.toContain('_unique')
     wrapper.unmount()

@@ -436,7 +436,7 @@ export default {
       }
       const referenceDetails = item => {
         const version = this.referenceVersions[item.referenceVersionKey]?.version
-        return [item.referenceContentType || '引用', item.referenceDataType || item.referenceType || '?', item.referenceName || item.label,
+        return [item.referenceContentType || '引用', item.referenceDataType || item.referenceType || '未声明', item.referenceName || item.label,
           item.refCode || item.label, version != null ? `v${version}` : item.referenceVersion || '—'].join(' · ')
       }
       const toSuggestion = (item, range) => ({
@@ -519,13 +519,13 @@ export default {
             )
             const versionLabel = version != null ? `v${version}` : ''
             const typeLabel = referenceTypeDisplay({
-              option: matchedReference || { _refType: custom.refType },
+              option: { ...matchedReference, valueType: custom.valueType || matchedReference?.valueType },
             })
             return {
               contents: [
                 { value: `**${[contentSourceIcon({ kind: 'REFERENCE', refType: custom.refType || 'VARIABLE' }), typeLabel,
                   custom.label || custom.refCode, custom.refCode, versionLabel || '—'].join(' · ')}**` },
-                { value: `数据类型：\`${custom.valueType || matchedReference?.varType || 'OBJECT'}\`` },
+                { value: `数据类型：\`${custom.valueType || matchedReference?.varType || '未声明'}\`` },
               ],
             }
           },

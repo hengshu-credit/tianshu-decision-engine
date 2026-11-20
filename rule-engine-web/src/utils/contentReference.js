@@ -1,20 +1,19 @@
-import { createReferenceOperand, inferOperandType } from './operand'
-import { contentSourceIcon, contentDataTypeIcon, contentDataType, contentSummary, currentReferenceOption } from './contentDisplay'
+import { createReferenceOperand } from './operand'
+import { contentSourceIcon, contentSummary, contentTypeCode, contentTypeTitle, currentReferenceOption, recordedValueType } from './contentDisplay'
+import { declaredContentType } from '@/constants/varTypes'
 import { operandKindMeta } from './operand'
 import { compactVersion } from './resourceVersion'
 import { matchPathContent } from './pathContentMatch'
-import { pickerTypeMatches } from './fieldPicker'
+import { fieldTypeIcon } from './fieldPicker'
+import { normalizeVarType } from '@/constants/conditionOperators'
 import { formatExpressionFormula } from './expressionDisplay'
 
 /** 展示适配仅补元信息，绝不修改引用身份、历史版本或脚本。 */
 export function contentReferenceValue(value = {}, options = []) {
-  if (value == null || typeof value !== 'object') return { kind: 'LITERAL', value, valueType: typeof value === 'number' ? 'NUMBER' : typeof value === 'boolean' ? 'BOOLEAN' : 'STRING' }
-  if (value.kind) {
-    if ((value.kind === 'FUNCTION' || value.refType === 'FUNCTION') && value.returnType) return { ...value, valueType: value.returnType }
-    return value
-  }
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return { kind: 'LITERAL', value, valueType: value === null ? 'NULL' : recordedValueType(value) }
+  if (value.kind) return value
   const rawType = value._refType || value.refType || value._ref?.refType
-    || (value.modelCode ? 'MODEL' : value.objectCode ? 'DATA_OBJECT_ROOT' : value.apiCode ? 'EXTERNAL_API' : value.ruleCode ? 'RULE' : value.funcCode || value.functionCode ? 'FUNCTION' : value.listCode ? 'LIST_LIBRARY' : 'VARIABLE')
+    || (value.modelCode ? 'MODEL' : value.objectCode ? 'DATA_OBJECT_ROOT' : value.apiCode ? 'EXTERNAL_API' : value.ruleCode ? 'RULE' : value._function || value.funcCode || value.functionCode ? 'FUNCTION' : value.listCode ? 'LIST_LIBRARY' : 'VARIABLE')
   const refType = ({ API: 'EXTERNAL_API', DB: 'DATABASE', LIST: 'LIST_LIBRARY', DATASOURCE: 'EXTERNAL_DATASOURCE' })[rawType] || rawType
   const id = value._varId ?? value.refId ?? value.varId ?? value.id ?? value.function?.id ?? value.function?.functionId
   const source = value.versionMode === 'FIXED' ? value : {
@@ -23,16 +22,17 @@ export function contentReferenceValue(value = {}, options = []) {
   return { ...createReferenceOperand({ ...source, _varId: id, _refType: refType,
     varCode: source.varCode || source.refCode || source.fieldCode || source.fieldPath || source.modelCode || source.objectCode || source.apiCode || source.ruleCode || source.funcCode || source.functionCode || source.listCode || source.code || source.fieldName || '',
     varLabel: source.varLabelText || source.varLabel || source.refLabel?.label || source.fieldLabel || source.fieldName || source.modelName || source.objectLabel || source.objectName || source.apiName || source.ruleName || source.funcName || source.functionLabel || source.listName || source.name || source.label || '',
-    varType: (refType === 'FUNCTION' && (source.returnType || source.function?.returnType)) || source.varType || source.valueType || source.fieldType || source.returnType || '',
+    varType: declaredContentType({ ...source, refType }),
   }), builtin: source.builtin, resolvedVersion: source.resolvedVersion,
     version: source.displayVersion ?? source.version ?? source._ref?.modelVersion ?? source._ref?.objectVersion ?? source.varObj?.version ?? source.resource?.version ?? source.function?.version,
   }
 }
 
 export function contentTypeFamily(type) {
-  if (pickerTypeMatches(type, 'NUMBER')) return 'number'
-  if (['LIST', 'ARRAY', 'MAP', 'OBJECT', 'MODEL'].includes(type)) return 'collection'
-  if (['BOOLEAN', 'BOOL'].includes(type)) return 'boolean'
+  const family = normalizeVarType(type)
+  if (family === 'NUMBER') return 'number'
+  if (['LIST', 'MAP', 'OBJECT'].includes(family)) return 'collection'
+  if (family === 'BOOLEAN') return 'boolean'
   return 'text'
 }
 
@@ -70,15 +70,17 @@ export function contentReferenceParts(value, catalog = [], sensitive = false, mo
   const options = mode === 'trace' ? [] : catalog
   const node = contentReferenceValue(value, options)
   const meta = operandKindMeta(node)
+  const match = matchPathContent(node, options)
+  const type = contentTypeCode(node, options, match)
   const parts = [
     { key: 'source', text: contentSourceIcon(node) || '引用', title: meta.label || '内容引用' },
-    { key: 'type', text: contentDataTypeIcon(node, options) || '?', title: contentDataType(node, options) || '未提供数据类型', family: contentTypeFamily(node.valueType || inferOperandType(node)) },
+    { key: 'type', text: type ? fieldTypeIcon(type) : mode === 'trace' ? '未记录' : '未声明',
+      title: contentTypeTitle(type) || (mode === 'trace' ? '本次执行未记录数据类型' : '未声明数据类型'), family: contentTypeFamily(type) },
   ]
   if (node.kind === 'LITERAL') {
     const literal = node.value == null ? 'null' : typeof node.value === 'object' ? JSON.stringify(node.value) : String(node.value)
     parts.push({ key: 'value', text: sensitive ? '••••••••' : literal === '' ? '""' : literal })
   } else if (['REFERENCE', 'PATH', 'FUNCTION'].includes(node.kind)) {
-    const match = matchPathContent(node, options)
     const option = node.versionMode !== 'FIXED' && currentReferenceOption(node.refId, node.refType, node.relativePath, options)
     const code = match?.code || option?.varCode || node.functionCode || node.code || node.value || ''
     const name = match?.label || option?.varLabelText || option?.varLabel || node.label || code
@@ -102,19 +104,13 @@ export function contentReferenceParts(value, catalog = [], sensitive = false, mo
 
 export const contentPartClass = part => `content-ref__segment content-ref__${part.key}${part.family ? ' content-ref__type--' + part.family : ''}`
 
-function traceValueType(value) {
-  if (value == null) return ''
-  if (Array.isArray(value)) return 'LIST'
-  return { number: 'NUMBER', boolean: 'BOOLEAN', object: 'OBJECT', string: 'STRING' }[typeof value] || ''
-}
-
 /** 追踪仅使用日志已有身份和版本证据。 */
 export function traceContentValue(node, labels = {}, functionNames = {}) {
   if (node?.kind) return node
   const isCall = ['FUNCTION', 'METHOD'].includes(node?.type)
   const label = (isCall ? functionNames : labels)[node?.token]
   const metadata = label && typeof label === 'object' ? label : {}
-  const type = (isCall && node.returnType) || node?.valueType || node?.varType || metadata.varType || traceValueType(node?.value)
+  const type = (isCall && node.returnType) || declaredContentType(node) || declaredContentType(metadata) || recordedValueType(node?.value)
   if (['VALUE', 'PRIMARY'].includes(node?.type)) return { kind: 'LITERAL', value: node.value === undefined ? node.token : node.value, valueType: type }
   return { ...metadata, ...node, kind: 'REFERENCE', refType: node?.refType || metadata.refType || (isCall ? 'FUNCTION' : 'VARIABLE'),
     refId: node?.refId ?? metadata.refId ?? metadata.id, code: node?.token || node?.code, label: node?.label || metadata.varLabel || (typeof label === 'string' ? label : '') || node?.token, valueType: type }

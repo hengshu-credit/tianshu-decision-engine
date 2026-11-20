@@ -1,4 +1,5 @@
 import { pickerReferenceCategory } from './pickerCategories'
+import { declaredContentType } from '@/constants/varTypes'
 
 export const FIELD_ROW_HEIGHT = 36
 export const FIELD_PAGE_SIZES = [25, 50, 100, 200, 500]
@@ -18,8 +19,20 @@ export function pickerFunctionTypeMatches(actual, expected) {
   return ['', 'OBJECT', 'ANY'].includes(String(actual || '').toUpperCase()) || pickerTypeMatches(actual, expected)
 }
 
+const typeIcons = {
+  STRING: 'Abc', TEXT: 'Abc', CHAR: 'a', ENUM: 'E',
+  NUMBER: 'N', PROBABILITY: 'N', BYTE: '123', SHORT: '123', INTEGER: '123', INT: '123', LONG: '123',
+  FLOAT: '1.2', DOUBLE: '1.0', DECIMAL: '1.2', BIGDECIMAL: '1.2', BOOLEAN: 'T/F', BOOL: 'T/F',
+  DATE: 'D', LOCALDATE: 'D', DATETIME: 'DT', LOCALDATETIME: 'DT', TIMESTAMP: 'DT',
+  LIST: '[]', ARRAY: '[]', COLLECTION: '[]', SET: '[]', VECTOR: '[]', OBJECT: '{}', MAP: '{k}',
+  MODEL: 'M', FUNCTION: 'ƒ', RULE: 'R', OPERATOR: '∑', API: 'API', DATABASE: 'DB', SFTP: 'FTP',
+  PROJECT: '项目', DATASOURCE: '外数', ANY: '动态', NULL: 'null', VOID: 'void',
+}
+
 export function fieldTypeIcon(type) {
-  return ({ STRING: 'Abc', CHAR: 'a', NUMBER: 'N', INTEGER: '123', INT: '123', LONG: '123', FLOAT: '1.2', DOUBLE: '1.0', DECIMAL: '1.2', BIGDECIMAL: '1.2', PROBABILITY: 'N', BOOLEAN: 'T/F', DATE: 'D', DATETIME: 'DT', LIST: '[]', ARRAY: '[]', OBJECT: '{}', MAP: '{k}', MODEL: 'M', FUNCTION: 'ƒ', RULE: 'R', OPERATOR: '∑', API: 'API', DATABASE: 'DB', SFTP: 'FTP', ENUM: 'E' })[String(type).toUpperCase()] || '?'
+  const name = String(type ?? '').trim()
+  const key = name.toUpperCase()
+  return Object.hasOwn(typeIcons, key) ? typeIcons[key] : name && name !== '?' ? name : '未声明'
 }
 
 export function fieldIdentity(item) {
@@ -55,7 +68,7 @@ export function buildFieldTree(items) {
     const key = fieldIdentity(item)
     if (nodes.has(key)) continue
     const group = source(item)
-    const node = { key, item, name: item.varLabelText || item.varLabel || item.varCode || '', code: item.varCode || '', type: String(item.varType || 'STRING').toUpperCase(), category: item._function ? 'function' : pickerReferenceCategory(item), parent: null, children: [], selectable: !item.disabled }
+    const node = { key, item, name: item.varLabelText || item.varLabel || item.varCode || '', code: item.varCode || '', type: declaredContentType(item), category: item._function ? 'function' : pickerReferenceCategory(item), parent: null, children: [], selectable: !item.disabled }
     nodes.set(key, node)
     if (!group) { roots.push(node); continue }
     if (!groups.has(group.key)) {
@@ -96,7 +109,7 @@ export function buildFieldTree(items) {
         while (path.includes('.') || path.includes('[')) {
           path = path.slice(0, Math.max(path.lastIndexOf('.'), path.lastIndexOf('[')))
           const candidate = byCode.get(path)
-          if (candidate && ['OBJECT', 'LIST', 'ARRAY', 'MAP'].includes(candidate.type)) { owner = candidate; break }
+          if (candidate && ['OBJECT', 'LIST', 'ARRAY', 'MAP'].includes(candidate.type.toUpperCase())) { owner = candidate; break }
         }
       }
       // A malformed/cyclic source schema must not make the picker recurse forever.

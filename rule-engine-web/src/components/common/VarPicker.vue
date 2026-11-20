@@ -142,7 +142,7 @@ import { contentReferenceParts } from '@/utils/contentReference'
 import FieldVersionSelect from './FieldVersionSelect.vue'
 import { versionFields, resourceVersionIdentity } from '@/utils/resourceVersion'
 import { getFieldVersionFields } from '@/api/fieldPickerVersion'
-import { fieldIdentity, pickerTypeMatches, pickerFunctionTypeMatches } from '@/utils/fieldPicker'
+import { fieldIdentity, fieldTypeIcon, pickerTypeMatches, pickerFunctionTypeMatches } from '@/utils/fieldPicker'
 import { arrayLiteralDraft } from '@/utils/literalType'
 import { pickerReferenceDisplay } from '@/utils/pickerReferenceDisplay'
 import { operationOptions } from '@/utils/contentOperation'
@@ -1741,7 +1741,7 @@ export default {
         MAP: 'm',
         MODEL: 'M',
       }
-      return map[varType] || '?'
+      return map[varType] || fieldTypeIcon(varType)
     },
   },
   emits: ['input', 'update:value', 'select', 'manual-edit', 'expression', 'editor-back', 'page-size', 'update:pageSize', 'clear', 'visible-change'],

@@ -54,7 +54,7 @@ test.each([
   ['FUNCTION', { value: {} }, '{}'],
   ['METHOD', { returnType: 'MAP', value: {} }, '{k}'],
   ['FUNCTION', { returnType: 'INTEGER', value: null }, '123'],
-  ['METHOD', { value: null }, '?'],
+  ['METHOD', { value: null }, '未记录'],
 ])('%s 追踪按调用自己的输出展示 %j 为 %s', (type, fields, icon) => {
   const operand = traceContentValue({ type, token: 'call', ...fields }, { call: { varType: 'DATE' } })
   const parts = contentReferenceParts(operand, [], false, 'trace')
@@ -70,6 +70,26 @@ test('方法定义和表达式节点均按声明的返回类型显示', () => {
   }
 })
 
+test.each([
+  [{ refType: 'PROJECT' }, '项目', 'text'],
+  [{ refType: 'DB' }, 'DB', 'text'],
+  [{ refType: 'EXTERNAL_API', relativePath: 'response.score' }, '未声明', 'text'],
+  [{ refType: 'DATA_OBJECT_ROOT' }, '{}', 'collection'],
+  [{ varObj: { fieldType: 'VECTOR' } }, '[]', 'collection'],
+  [{ dataType: ' TIMESTAMP ' }, 'DT', 'text'],
+  [{ varType: 'bOoL' }, 'T/F', 'boolean'],
+  [{ varType: 'BYTE' }, '123', 'number'],
+  [{ kind: 'FUNCTION', valueType: 'ANY' }, '动态', 'text'],
+  [{ kind: 'LITERAL', value: 0 }, 'N', 'number'],
+  [{ kind: 'LITERAL', value: '001' }, 'Abc', 'text'],
+  [{ kind: 'LITERAL', value: false }, 'T/F', 'boolean'],
+  [{ kind: 'LITERAL', value: null }, 'null', 'text'],
+  [{ kind: 'LITERAL', value: [] }, '[]', 'collection'],
+  [{ kind: 'PATH', value: 'order.score' }, '未声明', 'text'],
+])('引擎内容 %j 展示类型 %s', (value, text, family) => {
+  expect(contentReferenceParts(value).find(part => part.key === 'type')).toMatchObject({ text, family })
+})
+
 test('无版本引用按 ID、类型和字段路径读取当前目录，忽略同 ID 的固定版本', () => {
   const field = { refType: 'EXTERNAL_API', refId: 7, relativePath: 'response.score', varCode: 'score' }
   const current = { ...field, varLabel: '当前评分', version: 4, varType: 'INTEGER' }
@@ -81,6 +101,15 @@ test('无版本引用按 ID、类型和字段路径读取当前目录，忽略�
     expect(parts.find(part => part.key === 'name').text).toBe('当前评分')
     expect(parts.find(part => part.key === 'type').text).toBe('123')
   }
+})
+
+test('子路径精确匹配时使用末级字段类型，更深的动态取值不沿用父类型', () => {
+  const value = { kind: 'PATH', refType: 'DATA_OBJECT_ROOT', refId: 1, anchorPath: 'order', code: 'order.amount' }
+  const options = [{ _refType: 'DATA_OBJECT_ROOT', _varId: 1, varCode: 'order', varType: 'OBJECT' },
+    { _refType: 'DATA_OBJECT', _varId: 2, objectId: 1, varCode: 'order.amount', varType: 'DECIMAL' }]
+  const badge = value => contentReferenceParts(value, options).find(part => part.key === 'type')
+  expect(badge(value)).toMatchObject({ text: '1.2', family: 'number' })
+  expect(badge({ ...value, code: 'order.details.total' }).text).toBe('未声明')
 })
 
 test('通用组件和图形适配使用同一来源、类型、名称、编码、版本分段', () => {

@@ -1,6 +1,6 @@
 <template>
   <span class="match-content">
-      <content-reference v-if="operand" :value="literal ? { ...operand, value: actualText } : operand" mode="trace" />
+      <content-reference v-if="operand" :value="displayOperand" mode="trace" />
       <span v-else>来源未记录</span>
       <span v-if="!literal" class="match-content-equals" aria-hidden="true">=</span>
       <code v-if="!literal" class="list-match-value" :title="`实际值：${actualText}`" :aria-label="`实际值：${actualText}`">{{ actualText }}</code>
@@ -9,6 +9,8 @@
 
 <script>
 import ContentReference from './ContentReference.vue'
+import { declaredContentType } from '@/constants/varTypes'
+import { recordedValueType } from '@/utils/contentDisplay'
 
 export default {
   name: 'ListMatchContent',
@@ -19,6 +21,11 @@ export default {
   },
   computed: {
     literal() { return this.operand?.kind === 'LITERAL' },
+    displayOperand() {
+      const valueType = declaredContentType(this.operand) || recordedValueType(this.actualValue)
+      if (!this.literal) return { ...this.operand, valueType }
+      return { ...this.operand, value: this.actualText, valueType: valueType || (this.actualValue === null ? 'NULL' : '未记录') }
+    },
     actualText() {
       if (this.actualValue === null) return '空值（null）'
       if (this.actualValue === undefined) return '实际值未记录'

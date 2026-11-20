@@ -2,6 +2,7 @@ import { createPathOperand, resolvePathOperand } from '@/utils/operand'
 import { resourceVersionIdentity } from '@/utils/resourceVersion'
 import { fieldTypeIcon } from '@/utils/fieldPicker'
 import { contentReferenceParts, contentPartClass, contentTypeFamily } from './contentReference'
+import { declaredContentType } from '@/constants/varTypes'
 
 // 保留源码偏移；字符串仅在静态下标或 _result 输出 key 位置参与引用匹配。
 function tokenize(script) {
@@ -80,6 +81,15 @@ function identity(option) {
 const engineMethods = {
   resourceVersionValue: '固定版本取值', invokeFunctionVersionById: '固定版本方法调用', resourceVersionStatus: '固定版本状态',
 }
+// 编译器生成的辅助调用可能不在项目方法目录内。Object 返回值取决于本次调用。
+const engineReturnTypes = {
+  resourceVersionValue: 'ANY', invokeFunctionVersionById: 'ANY', resourceVersionStatus: 'BOOLEAN',
+  setRuntimeValue: 'ANY', externalApiValue: 'ANY', writeRuleList: 'ANY', invokeFunctionById: 'ANY',
+  recordRuleSetItem: 'ANY', recordRuleSetSummary: 'ANY', sourceStatus: 'BOOLEAN', sourceStatusValue: 'ANY',
+  currentRule: 'MAP', currentRuleName: 'STRING', currentMatchedConditions: 'LIST', sizeOfValue: 'LONG',
+  hasMapValue: 'BOOLEAN', regexMatchValue: 'BOOLEAN', containsElementValue: 'BOOLEAN',
+  elementStartsWithValue: 'BOOLEAN', elementEndsWithValue: 'BOOLEAN',
+}
 const syntaxCalls = new Set(['if', 'for', 'while', 'switch', 'catch', 'synchronized', 'return', 'throw', 'new', 'try', 'else', 'do'])
 function staticCallArguments(tokens, index) {
   const open = tokens.findIndex((token, i) => i > index && token.text === '(')
@@ -129,7 +139,7 @@ function pinnedCallReference(code, tokens, index, pinned) {
 // 目录仅在资源或稳定绑定变化时重建，键入时复用索引。
 export function createQlReferenceCatalog(options = [], functions = [], bindings = []) {
   const functionOptions = functions.map(fn => ({
-    varCode: fn.funcCode, varLabelText: fn.funcName, varType: fn.returnType || 'FUNCTION',
+    varCode: fn.funcCode, varLabelText: fn.funcName, varType: declaredContentType(fn),
     _varId: fn.id, _refType: 'FUNCTION', varObj: fn,
   }))
   const allOptions = [...options, ...functionOptions]
@@ -190,8 +200,9 @@ export function collectQlScriptReferences(script, options = [], functions = [], 
       const matches = tokens[index - 1]?.text === '.' ? [] : (functionsByCode.get(path.code) || []).filter(item =>
         !bindingsForCode || bindingsForCode.length === 1 && bindingsForCode[0].refType === 'FUNCTION' && String(bindingsForCode[0].varId) === String(item._varId))
       const known = matches.length === 1 ? matches[0] : null
-      const builtin = Object.hasOwn(engineMethods, path.code)
-      const option = known || { _refType: 'FUNCTION', varCode: path.code, varLabelText: builtin ? engineMethods[path.code] : path.code, varType: builtin ? 'ANY' : '', builtin }
+      const builtin = tokens[index - 1]?.text !== '.' && !bindingsForCode && Object.hasOwn(engineReturnTypes, path.code)
+      const option = known || { _refType: 'FUNCTION', varCode: path.code, varLabelText: builtin && engineMethods[path.code] || path.code,
+        varType: builtin ? engineReturnTypes[path.code] : '', builtin }
       decoratedCallEnd = path.segments.at(-1).end
       result.push({ start: token.start, end: path.segments.at(-1).end, code: script.slice(token.start, path.segments.at(-1).end), option,
         label: option.varLabelText || path.code, version: option.varObj?.currentVersion ?? option.varObj?.version,
@@ -245,14 +256,12 @@ function injectedContent(part) {
 
 export function referenceTypeDisplay(reference) {
   const option = reference?.option || reference
-  const valueType = option?.varType || option?.valueType || 'OBJECT'
-  return fieldTypeIcon(valueType)
+  return fieldTypeIcon(declaredContentType(option))
 }
 
 export function referenceTypeFamily(reference) {
   const option = reference?.option || reference
-  const type = String(option?.varType || option?.valueType || 'OBJECT').toUpperCase()
-  return contentTypeFamily(type)
+  return contentTypeFamily(declaredContentType(option))
 }
 
 function escapeMarkdown(value) {

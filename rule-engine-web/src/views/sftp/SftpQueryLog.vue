@@ -10,7 +10,7 @@
       <el-table-column v-for="column in visibleLogColumns" :key="column.key" :prop="column.key" :label="column.label" :min-width="column.minWidth">
         <template #default="{ row }">
           <template v-if="column.key === 'actionType'">{{ actionLabel(row.actionType) }}</template>
-          <content-reference v-else-if="column.key === 'targetName'" :value="{ refType: row.actionType === 'SFTP_VARIABLE_READ' ? 'VARIABLE' : 'SFTP', refId: row.actionType === 'SFTP_VARIABLE_READ' ? undefined : row.targetRefId, code: row.targetCode, label: row.targetName, version: row.targetVersion }" />
+          <content-reference v-else-if="column.key === 'targetName'" mode="trace" :value="{ refType: row.actionType === 'SFTP_VARIABLE_READ' ? 'VARIABLE' : 'SFTP', refId: row.actionType === 'SFTP_VARIABLE_READ' ? undefined : row.targetRefId, code: row.targetCode, label: row.targetName, valueType: row.valueType, version: row.targetVersion }" />
           <code v-else-if="column.key === 'remotePath'">{{ remotePath(row) }}</code>
           <template v-else-if="column.key === 'cache'">{{ cacheSummary(row) }}</template>
           <template v-else-if="column.key === 'retryCount'">{{ responseValue(row, 'retryCount') ?? '—' }}</template>

@@ -1,5 +1,5 @@
 import { inferOperandType, operandKindMeta, operandDisplay } from './operand'
-import { varTypeLabel } from '@/constants/varTypes'
+import { declaredContentType, varTypeLabel } from '@/constants/varTypes'
 import { fieldTypeIcon } from './fieldPicker'
 import { pickerReferenceDisplay } from './pickerReferenceDisplay'
 import { compactVersion } from './resourceVersion'
@@ -19,10 +19,14 @@ export function contentSummary(value, options = []) {
 }
 
 /** 来源类型与数据类型分开显示，保留 LONG/INTEGER 等具体类型。 */
+export function contentTypeTitle(type) {
+  if (!type) return ''
+  const key = type.toUpperCase()
+  const label = varTypeLabel(key)
+  return label === key ? type : `${label} · ${key}`
+}
 export function contentDataType(value, options = []) {
-  const type = contentTypeCode(value, options)
-  const label = varTypeLabel(type)
-  return type ? `${label} · ${type}` : ''
+  return contentTypeTitle(contentTypeCode(value, options))
 }
 export function contentDataTypeIcon(value, options = []) {
   const type = contentTypeCode(value, options)
@@ -31,19 +35,32 @@ export function contentDataTypeIcon(value, options = []) {
 export function currentReferenceOption(refId, refType, relativePath, options) {
   if (refId == null || !refType) return undefined
   return options.find(item => item.versionMode !== 'FIXED'
-    && String(item._varId ?? item.refId ?? item.id) === String(refId)
-    && (item._refType || item.refType) === refType
+    && String(item._varId ?? item.refId ?? item.function?.functionId ?? item.function?.id ?? item.id) === String(refId)
+    && (item._refType || item.refType || (item._function && 'FUNCTION')) === refType
     && (!['EXTERNAL_API', 'API_CONTEXT'].includes(refType) || (item.relativePath || item._ref?.relativePath || '') === (relativePath || '')))
 }
 
-function contentTypeCode(value, options) {
+export function recordedValueType(value) {
+  if (value == null) return ''
+  if (Array.isArray(value)) return 'LIST'
+  return { number: 'NUMBER', boolean: 'BOOLEAN', object: 'OBJECT', string: 'STRING' }[typeof value] || ''
+}
+
+const resourceTypes = { MODEL: 'MODEL', RULE: 'RULE', PROJECT: 'PROJECT', DATA_OBJECT_ROOT: 'OBJECT',
+  EXTERNAL_API: 'API', EXTERNAL_DATASOURCE: 'DATASOURCE', DATABASE: 'DATABASE', SFTP: 'SFTP', LIST_LIBRARY: 'LIST' }
+
+export function contentTypeCode(value, options = [], pathMatch) {
   if (!value) return ''
-  let type = value.valueType || value.varType
+  let type = declaredContentType(value)
   if (value.kind === 'OPERATION') type = inferOperandType(value)
-  if (value.kind === 'REFERENCE' && value.refId != null && value.refType && value.versionMode !== 'FIXED') {
-    const item = currentReferenceOption(value.refId, value.refType, value.relativePath, options)
-    type = item?.varType || type
+  if (value.kind === 'REFERENCE' || value.kind === 'FUNCTION') {
+    const item = value.versionMode !== 'FIXED' && currentReferenceOption(value.refId ?? value.functionId,
+      value.kind === 'FUNCTION' ? 'FUNCTION' : value.refType, value.relativePath, options)
+    type = declaredContentType(item) || type
   }
-  type = String(type || inferOperandType(value) || '').toUpperCase()
-  return type
+  if (value.kind === 'PATH') type = (pathMatch && !pathMatch.suffix && pathMatch.valueType) || value.pathValueType || type
+  if (!type && value.kind === 'LITERAL') type = value.value === null ? 'NULL' : recordedValueType(value.value)
+  if (!type && value.kind === 'REFERENCE' && !value.relativePath && Object.hasOwn(resourceTypes, value.refType)) type = resourceTypes[value.refType]
+  const code = String(type || (!value.valueType && inferOperandType(value)) || '').trim()
+  return code === '?' ? '' : code
 }

@@ -29,6 +29,9 @@ export const VAR_TYPE_FILTER_OPTIONS = [
 ]
 
 const LABELS = {
+  BYTE: '字节整数', SHORT: '短整数', TEXT: '文本', CHAR: '字符', SET: '集合', COLLECTION: '集合', VECTOR: '向量',
+  TIMESTAMP: '时间戳', LOCALDATE: '日期', LOCALDATETIME: '日期时间', NULL: '空值', VOID: '无返回值',
+  PROJECT: '项目', DATASOURCE: '外数源', OPERATOR: '运算符',
   INTEGER: '整数', INT: '整数', LONG: '长整数', FLOAT: '浮点数', DECIMAL: '高精度数值', BIGDECIMAL: '高精度数值', PROBABILITY: '概率',
   BOOL: '布尔', DATETIME: '日期时间', ARRAY: '数组',
   FUNCTION: '方法', RULE: '规则', API: '接口', DATABASE: '数据库', SFTP: 'SFTP 文件', ANY: '动态类型',
@@ -61,6 +64,24 @@ const TAG_COLORS = {
  */
 export function varTypeLabel(t) {
   return LABELS[t] || t
+}
+
+/** 读取字段或函数的声明类型，兼容目录选项包装的原始定义。 */
+export function declaredContentType(value) {
+  if (!value) return ''
+  const refType = value._refType || value.refType || value._ref?.refType
+  const isFunction = value.kind === 'FUNCTION' || refType === 'FUNCTION' || value._function || value.funcCode
+  const candidates = [
+    value.returnType, value.function?.returnType, value.function?.valueType, value.varObj?.returnType,
+    value.valueType, value.varType, value.fieldType, value.dataType,
+    value._ref?.varType, value.varObj?.varType, value.varObj?.fieldType, value.varObj?.dataType,
+  ]
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue
+    const type = candidate.trim()
+    if (type && type !== '?' && !(isFunction && type.toUpperCase() === 'FUNCTION')) return type
+  }
+  return ''
 }
 
 /**
