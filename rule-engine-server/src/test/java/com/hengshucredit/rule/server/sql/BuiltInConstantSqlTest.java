@@ -129,30 +129,22 @@ public class BuiltInConstantSqlTest {
     }
 
     @Test
-    public void tianshuExamplePreservesExistingDataExceptExactLegacySeedReferences() throws Exception {
+    public void creditExampleOnlyLinksNewResourcesAndHasNoDestructiveOperations() throws Exception {
         String sql = readResource("docker/rule-engine-mysql/data-tianshu-example.sql");
         Assert.assertTrue(sql.startsWith("SET NAMES utf8mb4;"));
         Assert.assertTrue(sql.contains("SET character_set_connection = utf8mb4;"));
         Assert.assertTrue(sql.contains("SET collation_connection = utf8mb4_unicode_ci;"));
-        Assert.assertFalse(Pattern.compile("(?im)^\\s*(DELETE|REPLACE|TRUNCATE|CREATE|ALTER|DROP)\\b")
-                .matcher(sql).find());
-        Assert.assertFalse(sql.toUpperCase().contains("ON DUPLICATE KEY UPDATE"));
-        var updates = Pattern.compile("(?im)^UPDATE (\\w+)").matcher(sql);
-        int count = 0;
-        while (updates.find()) {
-            count++;
-            Assert.assertEquals("rule_variable", updates.group(1));
-            String update = sql.substring(updates.start(), sql.indexOf(';', updates.start()));
-            Assert.assertTrue(update.contains("source_config = CAST("));
-            Assert.assertTrue(update.contains("`create_time` <=>"));
-            Assert.assertTrue(update.contains("`update_time` <=>"));
-            Assert.assertTrue(update.contains("`var_label` <=>"));
-            Assert.assertTrue(update.contains("WHERE id = @example_variable_"));
+        Assert.assertFalse(Pattern.compile("(?im)^\\s*(DELETE|REPLACE|TRUNCATE|CREATE|ALTER|DROP)\\b").matcher(sql).find());
+        for (String line : sql.lines().filter(l -> l.startsWith("UPDATE ")).toList()) {
+            if (line.startsWith("UPDATE rule_variable SET source_config=")) {
+                Assert.assertTrue("Existing variable sources must survive import", line.matches(".*WHERE id=(@variable_[0-9]+) AND \\1_new=1;"));
+            } else {
+                Assert.assertTrue("Only the new project's trace scope or version binding may be linked",
+                        line.startsWith("UPDATE rule_project SET trace_scope_code=") || line.startsWith("UPDATE rule_version_binding SET snapshot_id="));
+            }
         }
-        Assert.assertEquals("Only the three original dependency-specific seeds may be repaired", 3, count);
-        Assert.assertTrue(sql.contains("START TRANSACTION;"));
-        Assert.assertTrue(sql.contains("COMMIT;"));
-        Assert.assertTrue(sql.contains("GET_LOCK(@example_init_lock, 120)"));
+        Assert.assertTrue(sql.contains("USE_THE_EXAMPLE_DATA_LOADER"));
+        Assert.assertFalse("Source-environment credentials must never be exported", sql.contains("v1:auto"));
     }
 
     private String readResource(String name) throws Exception {

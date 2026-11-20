@@ -14,6 +14,17 @@ public class RuleEngineApplication {
             System.exit(com.hengshucredit.rule.server.consolelogin.ConsoleAdministratorRecovery.run());
             return;
         }
+        if (java.util.Arrays.asList(args).contains(com.hengshucredit.rule.server.example.CreditExampleImport.COMMAND)) {
+            try (var context = SpringApplication.run(RuleEngineApplication.class, "--server.port=0", "--server.address=127.0.0.1")) {
+                new com.hengshucredit.rule.server.example.CreditExampleImport(context,
+                        java.nio.file.Path.of(System.getenv().getOrDefault("EXAMPLE_CREDENTIALS", "/state/installation.json")))
+                        .load(java.nio.file.Path.of(System.getenv().getOrDefault("EXAMPLE_SQL", "/init/data-tianshu-example.sql")));
+            } catch (Exception error) {
+                System.err.println("授信样例导入失败：" + error.getMessage());
+                System.exit(1);
+            }
+            return;
+        }
         SpringApplication.run(RuleEngineApplication.class, args);
     }
 }

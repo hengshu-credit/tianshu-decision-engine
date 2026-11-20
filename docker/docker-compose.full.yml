@@ -64,7 +64,7 @@ services:
       - --max-allowed-packet=512M
       - --character-set-server=utf8mb4
       - --mysql-native-password=ON
-      - --bind-address=${MYSQL_BIND_ADDRESS:-0.0.0.0}
+      - --bind-address=0.0.0.0
     ports:
       - "${MYSQL_BIND_ADDRESS:-0.0.0.0}:${MYSQL_HOST_PORT:-3306}:3306"
     volumes:
@@ -84,40 +84,22 @@ services:
         max-file: "${DOCKER_LOG_MAX_FILES:-3}"
     networks: [rule-engine]
 
-  example-data-import:
-    image: ${MYSQL_IMAGE:-mysql:8.4.6}
-    profiles: [example-data]
-    cpus: "0.05"
-    mem_limit: 256m
-    deploy:
-      resources:
-        limits:
-          cpus: "0.05"
-          memory: 256M
-    restart: "no"
-    environment:
-      MYSQL_USERNAME: "${MYSQL_USERNAME:?Set MYSQL_USERNAME}"
-      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
+  example-provision:
+    extends: {file: credit-example.compose.yml, service: example-provision}
     depends_on:
-      mysql:
-        condition: service_healthy
-      server:
-        condition: service_started
-    volumes:
-      - type: bind
-        source: ./rule-engine-mysql/data-tianshu-example.sql
-        target: /init/data-tianshu-example.sql
-        read_only: true
-        bind:
-          create_host_path: false
-    command:
-      - sh
-      - -ec
-      - |
-        until MYSQL_PWD="$${MYSQL_PASSWORD}" mysql --protocol=tcp -hmysql -P3306 -u"$${MYSQL_USERNAME}" -Nse "SELECT 1 FROM information_schema.tables WHERE table_schema='$${MYSQL_DATABASE}' AND table_name='offline_transfer_log' LIMIT 1" | grep -q 1; do sleep 2; done
-        MYSQL_PWD="$${MYSQL_PASSWORD}" mysql --protocol=tcp -hmysql -P3306 -u"$${MYSQL_USERNAME}" "$${MYSQL_DATABASE}" < /init/data-tianshu-example.sql
-    networks: [rule-engine]
+      mysql: {condition: service_healthy}
+
+  example-supplier:
+    extends: {file: credit-example.compose.yml, service: example-supplier}
+    depends_on:
+      example-provision: {condition: service_completed_successfully}
+
+  example-data-import:
+    extends: {file: credit-example.compose.yml, service: example-data-import}
+    depends_on:
+      example-supplier: {condition: service_started}
+      redis: {condition: service_healthy}
+      server: {condition: service_started}
 
   redis:
     image: ${REDIS_IMAGE:-redis:8.2.1}
@@ -377,6 +359,8 @@ services:
     networks: [rule-engine]
 
 volumes:
+  example-credentials:
+  example-supplier-credentials:
   server-logs:
   runtime-sdk-logs:
   kafka-data:

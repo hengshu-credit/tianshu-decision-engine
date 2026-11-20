@@ -108,13 +108,15 @@ public class DatabaseInitializationSqlTest {
                         Assert.assertEquals("service_healthy", ((Map<?, ?>) dependencies.get(service)).get("condition"));
                     }
                     Assert.assertTrue(compose.contains("example-data-import:"));
-                    Assert.assertTrue(compose.contains("profiles: [example-data]"));
-                    Assert.assertTrue(compose.contains("/init/data-tianshu-example.sql"));
+                    Assert.assertTrue(read(root.resolve("docker/credit-example.compose.yml")).contains("profiles: [example-data]"));
+                    Assert.assertTrue(compose.contains("file: credit-example.compose.yml"));
+                Assert.assertTrue(read(root.resolve("docker/credit-example.compose.yml")).contains("/init/data-tianshu-example.sql"));
                 }
             } else {
                 Assert.assertTrue(compose.contains("example-data-import:"));
-                Assert.assertTrue(compose.contains("profiles: [example-data]"));
-                Assert.assertTrue(compose.contains("/init/data-tianshu-example.sql"));
+                Assert.assertTrue(read(root.resolve("docker/credit-example.compose.yml")).contains("profiles: [example-data]"));
+                Assert.assertTrue(compose.contains("file: credit-example.compose.yml"));
+                Assert.assertTrue(read(root.resolve("docker/credit-example.compose.yml")).contains("/init/data-tianshu-example.sql"));
             }
         }
     }
@@ -124,15 +126,19 @@ public class DatabaseInitializationSqlTest {
         String sql = read(repositoryRoot().resolve("docker/rule-engine-mysql/data-tianshu-example.sql"));
         Set<String> tables = collectTables(EXAMPLE_INSERT, sql);
         Set<String> forbidden = new HashSet<>(Arrays.asList(
-                "rule_execution_log", "rule_runtime_call_log", "rule_list_record_log", "rule_function"));
+                "rule_execution_log", "rule_runtime_call_log", "rule_list_record_log", "rule_billing_record",
+                "rule_billing_summary", "rule_application_history", "rule_execution_checkpoint", "console_user",
+                "rule_auth_access_log", "governance_approval_event", "rule_designer_save_operation"));
         Assert.assertTrue("sample must include field validation rules",
                 tables.contains("rule_field_validation"));
         Assert.assertTrue("sample must include models", tables.contains("rule_model"));
         Assert.assertTrue("sample must include lists", tables.contains("rule_list_library"));
         Assert.assertTrue("sample must include external API configuration",
                 tables.contains("rule_external_datasource") && tables.contains("rule_external_api_config"));
-        Assert.assertTrue("sample must include split experiment configuration",
-                tables.contains("rule_experiment") && tables.contains("rule_experiment_group"));
+        Assert.assertTrue("sample must include the published model, rules and exact field bindings",
+                tables.containsAll(Arrays.asList("rule_model_version", "rule_definition_version", "rule_published",
+                        "rule_sftp_datasource", "rule_model_input_field", "rule_model_output_field", "rule_project_auth")));
+        Assert.assertFalse("Unrelated experiments must not be imported", tables.contains("rule_experiment"));
         Assert.assertTrue("sample must include billing configuration",
                 tables.contains("rule_billing_config"));
         Assert.assertTrue("sample must not include runtime logs or unrelated metadata",

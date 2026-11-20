@@ -206,9 +206,7 @@ docker compose --project-name tianshu-server --env-file config/.env.server -f do
 
 日志包含目标库、schema SHA256、计划数、执行对象/动作、耗时和已成功的 DDL 数。重复启动时 `planned=0`、`applied=0` 表示受管业务表结构已经符合要求。遇到重复键、孤儿外键或权限不足，会给出失败步骤、SQLState 和 MySQL 错误码。通过发布包的 `deploy.py` 更新时，本次健康检查结束后还会将结构日志保存到该次备份目录的 `schema-upgrade.log`，即使启动失败也会尝试归档。升级大表时为 DDL 预留维护窗口和健康检查时间。
 
-`schema.sql` 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量，不创建用户、不修改 root 账号、也不执行全局授权；服务端默认按上述启动流程使用 classpath 中的 `schema.sql`。示例数据脚本 `data-tianshu-example.sql` 放在 `docker/rule-engine-mysql/`，只在需要演示数据时手工导入，不随服务端启动自动导入。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入示例数据；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
-
-需要手工准备演示环境时，固定顺序为：启动服务自动执行 `schema.sql`，再按需执行 `docker/rule-engine-mysql/data-tianshu-example.sql`。示例数据脚本会写入演示数据，因此不得直接用于需要保留现有业务数据的数据库。
+服务端默认使用 classpath 的 `schema.sql` 初始化结构和系统常量。需要演示数据时，从根目录运行 `python docker/rule-engine-mysql/load-example.py`。入口加载两个样例项目的 SQL 并按目标环境编译发布、生成和校验凭据。独立 MySQL 模式、账号权限与调用示例见[样例导入说明](../docker/rule-engine-mysql/README.md)。
 
 ### 后端
 

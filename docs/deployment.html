@@ -342,7 +342,7 @@ REDIS_PORT=6379 如果服务端也运行在同一个 Compose 网络内，使用 
 MYSQL_PORT=3306
 REDIS_HOST=redis
 REDIS_PORT=6379 此时只启动后端即可： cd rule-engine-server
-mvn spring-boot:run MYSQL_HOST 、 MYSQL_PORT 由 application.yml 读取；Redis 已通过 REDIS_HOST 、 REDIS_PORT 读取。不要在 .env.server 中写入 Spring 风格的 ${NAME:default} 表达式，因为 Docker Compose 会把它解析为非法模板； .env.server 中应使用已经展开的实际值。 schema.sql 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量，不创建用户、不修改 root 账号、也不执行全局授权；服务端启动时默认由 Spring 执行 classpath 中的 schema.sql 。示例数据脚本 data-tianshu-example.sql 放在 docker/rule-engine-mysql/ ，只在需要演示数据时手工导入，不随服务端启动自动导入。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入示例数据；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。 需要手工准备演示环境时，固定顺序为：启动服务自动执行 schema.sql ，再按需执行 docker/rule-engine-mysql/data-tianshu-example.sql 。示例数据脚本会写入演示数据，因此不得直接用于需要保留现有业务数据的数据库。 后端 Windows 本地开发可在仓库根目录执行以下命令，同时启动前后端： .\start-dev.cmd 需先配置根目录 .env.server ，并保持 MySQL、Redis 运行，确保 Java、Maven、Node.js 可从 PATH 调用。命令会编译后端依赖、在缺少前端依赖时执行 npm ci ，后台启动服务并等待健康检查及前端 API 代理检查通过；已就绪的服务会直接复用。端口沿用 .env.server 的 SERVER_PORT 和 VITE_PORT ，日志及本次启动的进程 ID 保存在 .codex-run-logs/ 。命令只启动前后端，不会重启 MySQL、Redis；检测到 WSL 与项目 Docker 服务的本机端口冲突时，仅为本次后端进程调整连接地址。 Windows 本机如果 JDK 默认 Unix Domain Socket 临时目录导致 Redis/Lettuce 健康检查出现 Unable to establish loopback connection ，先为本次进程指定工作区目录，再启动后端： $env:JAVA_TOOL_OPTIONS=&#x27;-Djdk.net.unixdomain.tmpdir=E:/workspace/tianshu-run-logs&#x27;
+mvn spring-boot:run MYSQL_HOST 、 MYSQL_PORT 由 application.yml 读取；Redis 已通过 REDIS_HOST 、 REDIS_PORT 读取。不要在 .env.server 中写入 Spring 风格的 ${NAME:default} 表达式，因为 Docker Compose 会把它解析为非法模板； .env.server 中应使用已经展开的实际值。 schema.sql 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量，不创建用户、不修改 root 账号、也不执行全局授权；服务端启动时默认由 Spring 执行 classpath 中的 schema.sql 。运行 python docker/rule-engine-mysql/load-example.py 加载衡枢真信与模拟供应商。 后端 Windows 本地开发可在仓库根目录执行以下命令，同时启动前后端： .\start-dev.cmd 需先配置根目录 .env.server ，并保持 MySQL、Redis 运行，确保 Java、Maven、Node.js 可从 PATH 调用。命令会编译后端依赖、在缺少前端依赖时执行 npm ci ，后台启动服务并等待健康检查及前端 API 代理检查通过；已就绪的服务会直接复用。端口沿用 .env.server 的 SERVER_PORT 和 VITE_PORT ，日志及本次启动的进程 ID 保存在 .codex-run-logs/ 。命令只启动前后端，不会重启 MySQL、Redis；检测到 WSL 与项目 Docker 服务的本机端口冲突时，仅为本次后端进程调整连接地址。 Windows 本机如果 JDK 默认 Unix Domain Socket 临时目录导致 Redis/Lettuce 健康检查出现 Unable to establish loopback connection ，先为本次进程指定工作区目录，再启动后端： $env:JAVA_TOOL_OPTIONS=&#x27;-Djdk.net.unixdomain.tmpdir=E:/workspace/tianshu-run-logs&#x27;
 cd rule-engine-server
 mvn spring-boot:run 这是本机 JDK 临时目录兼容性配置，不应替代生产 Redis、网络和 readiness 检查。 mvn clean install -DskipTests
 cd rule-engine-server
@@ -387,8 +387,7 @@ REDIS_PORT=6379
 mvn spring-boot:run
 </code></pre>
 <p><code>MYSQL_HOST</code>、<code>MYSQL_PORT</code> 由 <code>application.yml</code> 读取；Redis 已通过 <code>REDIS_HOST</code>、<code>REDIS_PORT</code> 读取。不要在 <code>.env.server</code> 中写入 Spring 风格的 <code>${NAME:default}</code> 表达式，因为 Docker Compose 会把它解析为非法模板；<code>.env.server</code> 中应使用已经展开的实际值。</p>
-<p><code>schema.sql</code> 包含数据库表结构、逻辑执行日志视图和按变量唯一索引幂等补齐的系统常量，不创建用户、不修改 root 账号、也不执行全局授权；服务端启动时默认由 Spring 执行 classpath 中的 <code>schema.sql</code>。示例数据脚本 <code>data-tianshu-example.sql</code> 放在 <code>docker/rule-engine-mysql/</code>，只在需要演示数据时手工导入，不随服务端启动自动导入。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入示例数据；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。</p>
-<p>需要手工准备演示环境时，固定顺序为：启动服务自动执行 <code>schema.sql</code>，再按需执行 <code>docker/rule-engine-mysql/data-tianshu-example.sql</code>。示例数据脚本会写入演示数据，因此不得直接用于需要保留现有业务数据的数据库。</p>
+<p>服务端使用 <code>schema.sql</code> 初始化结构与系统常量。需要衡枢真信和模拟供应商时，运行 <code>python docker/rule-engine-mysql/load-example.py</code>，在目标环境生成只读凭据、校验并构建发布制品。</p>
 <h3>后端</h3>
 <p>Windows 本地开发可在仓库根目录执行以下命令，同时启动前后端：</p>
 <pre><code class="language-powershell">.\start-dev.cmd

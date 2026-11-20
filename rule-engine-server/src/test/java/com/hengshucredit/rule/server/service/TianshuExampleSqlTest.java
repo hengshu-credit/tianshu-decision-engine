@@ -1,61 +1,38 @@
 package com.hengshucredit.rule.server.service;
 
 import org.junit.Test;
-
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import java.util.List;
+import static org.junit.Assert.*;
 
 public class TianshuExampleSqlTest {
-
-    @Test
-    public void blacklistVariableUsesTypedReferencesAndCurrentListConfiguration() throws Exception {
-        Path cwd = Paths.get("").toAbsolutePath().normalize();
-        Path root = Files.isDirectory(cwd.resolve("rule-engine-server")) ? cwd : cwd.getParent();
-        String fixture = Files.readString(root.resolve("docker/rule-engine-mysql/data-tianshu-example.sql"),
-                StandardCharsets.UTF_8);
-        int start = fixture.indexOf("-- rule_variable: black_hit");
-        int end = fixture.indexOf("SET @example_variable_194", start);
-        assertTrue(start >= 0 && end > start);
-        String sourceConfig = fixture.substring(start, end);
-        assertTrue(sourceConfig.contains("\"queryOperands\":[{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\""));
-        assertTrue(sourceConfig.contains("\"combinationMode\":\"ANY_FIELD_ANY_LIST\""));
-        assertTrue(sourceConfig.contains("CAST(@example_list_library_1 AS UNSIGNED)"));
-        assertTrue(sourceConfig.contains("CAST(@example_variable_7 AS UNSIGNED)"));
-        assertFalse(sourceConfig.contains("\"listId\""));
-        assertFalse(sourceConfig.contains("\"queryField\""));
+    private static String sql() throws Exception {
+        Path root = Files.isDirectory(Path.of("docker")) ? Path.of("") : Path.of("..");
+        return Files.readString(root.resolve("docker/rule-engine-mysql/data-tianshu-example.sql"));
     }
 
     @Test
-    public void blackUserCountDbVariableUsesJdbcPlaceholder() throws Exception {
-        Path cwd = Paths.get("").toAbsolutePath().normalize();
-        Path root = Files.isDirectory(cwd.resolve("rule-engine-server")) ? cwd : cwd.getParent();
-        String fixture = Files.readString(root.resolve("docker/rule-engine-mysql/data-tianshu-example.sql"),
-                StandardCharsets.UTF_8);
-        String sourceConfig = extractBlackUserCountSourceConfig(fixture);
-
-        assertTrue(sourceConfig.contains("item_content = ?"));
-        assertFalse(sourceConfig.contains("item_content = %s"));
-        assertTrue(sourceConfig.contains("\"params\": [{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":7"));
-        assertFalse(sourceConfig.contains("$.mobile_no"));
-        assertTrue("The old export ID must be replaced with the current database variable ID",
-                sourceConfig.contains("CAST(@example_variable_7 AS UNSIGNED)"));
-        assertTrue("The SQL list identity must also follow the imported library",
-                sourceConfig.contains("CAST(@example_list_library_1 AS CHAR)"));
+    public void exportsPublishedDesignsAndRebuildsTheSignedModelInTheTarget() throws Exception {
+        String sql = sql();
+        assertEquals(20, sql.lines().filter("-- @build-artifact"::equals).count());
+        assertEquals(1, sql.lines().filter("-- @freeze-model"::equals).count());
+        for (String rule : List.of("CREDIT_ADMISSION", "JCZR", "NBQZ", "WBQZ", "SFDT", "SFSR", "SFMX",
+                "ZXZR", "EDSX", "EDQS", "LLDJ", "DT_SCORE", "MOCK_PBOC")) assertTrue(sql.contains("-- " + rule + " V"));
+        assertTrue(sql.contains("'scoreByBadRatePdo'"));
+        assertTrue(sql.contains("@model_version_11"));
+        assertFalse(sql.contains("'MAIN_A_INPUTS'"));
+        assertFalse(sql.contains("v1:auto"));
+        assertFalse(sql.contains("-----BEGIN PRIVATE KEY-----"));
     }
 
-    private String extractBlackUserCountSourceConfig(String fixture) {
-        String marker = "-- rule_variable: black_user_count";
-        int start = fixture.indexOf(marker);
-        assertTrue("未找到 black_user_count DB 变量配置", start >= 0);
-        int configStart = start + marker.length();
-        int configEnd = fixture.indexOf("SET @example_variable_196", configStart);
-        assertTrue("未找到 black_user_count source_config 结束位置", configEnd > configStart);
-        return fixture.substring(configStart, configEnd);
+    @Test
+    public void sourceQueriesAndListOperandsKeepTheirTargetIds() throws Exception {
+        String sql = sql();
+        var configs = sql.lines().filter(s -> s.startsWith("UPDATE rule_variable SET source_config=")).toList();
+        assertTrue(configs.stream().anyMatch(s -> s.contains("applicant_id = ?") && s.contains("@db_datasource_1")
+                && s.contains("@variable_20") && s.contains("@variable_21")));
+        assertTrue(configs.stream().anyMatch(s -> s.contains("queryOperands") && s.contains("@list_library_3")));
+        assertTrue(configs.stream().anyMatch(s -> s.contains("remotePath") && s.contains("@sftp_datasource_1") && s.contains("@variable_241")));
     }
-
 }

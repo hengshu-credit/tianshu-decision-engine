@@ -1,0 +1,65 @@
+services:
+  example-provision:
+    profiles: [example-data]
+    image: tianshu-credit-example:local
+    build: ./rule-engine-mysql/example
+    command: [python, credentials.py]
+    restart: "no"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_ADMIN_USER: root
+      MYSQL_ADMIN_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}"
+    volumes:
+      - example-credentials:/state
+      - example-supplier-credentials:/supplier-state
+    networks: [rule-engine]
+  example-supplier:
+    profiles: [example-data]
+    image: tianshu-credit-example:local
+    build: ./rule-engine-mysql/example
+    restart: unless-stopped
+    environment:
+      EXAMPLE_ENGINE_URL: "${EXAMPLE_ENGINE_URL:-http://server:8080}"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - example-supplier-credentials:/state:ro
+    networks: [rule-engine]
+  example-data-import:
+    profiles: [example-data]
+    image: ${JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}
+    restart: "no"
+    entrypoint: [java, -XX:ActiveProcessorCount=2, -Xmx1024m, -jar, /app/server.jar, --load-credit-example]
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
+      MYSQL_USERNAME: "${MYSQL_USERNAME:?Set MYSQL_USERNAME}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
+      REDIS_HOST: ${EXAMPLE_REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      RULE_AUTH_MASTER_KEY: "${RULE_AUTH_MASTER_KEY:-}"
+      EXAMPLE_DB_HOST: ${EXAMPLE_DB_HOST:-mysql}
+      EXAMPLE_DB_PORT: ${EXAMPLE_DB_PORT:-3306}
+      EXAMPLE_SUPPLIER_HOST: ${EXAMPLE_SUPPLIER_HOST:-example-supplier}
+      EXAMPLE_HTTP_PORT: ${EXAMPLE_HTTP_PORT:-28084}
+      EXAMPLE_SFTP_PORT: ${EXAMPLE_SFTP_PORT:-22084}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - example-credentials:/state:ro
+      - type: bind
+        source: ${EXAMPLE_SERVER_JAR:-${RUNTIME_DIR:-./runtime}/server.jar}
+        target: /app/server.jar
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ./rule-engine-mysql/data-tianshu-example.sql
+        target: /init/data-tianshu-example.sql
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [rule-engine]
