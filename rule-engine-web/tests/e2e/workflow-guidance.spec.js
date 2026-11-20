@@ -90,6 +90,63 @@ test('数据库每条提示独立关闭、随主题变色，窄屏自动换行',
   harness.assertClean()
 })
 
+test('当前配置步骤整卡高亮，键盘跳转和独立关闭互不干扰', async ({ page }, testInfo) => {
+  const harness = await prepare(page, createDetailApiData())
+  await page.setViewportSize({ width: 1920, height: 960 })
+  await page.goto(`${origin}/#/datasource/api/22?projectId=1`)
+  const group = page.getByRole('region', { name: '外数 API 配置进度' })
+  const current = group.getByRole('listitem', { name: '响应数据' })
+  const pending = group.getByRole('listitem', { name: '请求预览' })
+  const action = current.locator('button[aria-current="step"]')
+  async function checkHighlight() {
+    await expect(action).toBeVisible()
+    await expect(action).toHaveCSS('border-top-width', '0px')
+    await expect(action).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+    const appearance = card => card.evaluate(el => {
+      const css = getComputedStyle(el)
+      return { border: css.borderTopColor, fill: css.backgroundColor }
+    })
+    const selected = await appearance(current)
+    const other = await appearance(pending)
+    expect(selected.border).not.toBe(other.border)
+    expect(selected.fill).not.toBe(other.fill)
+    return selected
+  }
+  const light = await checkHighlight()
+  await group.screenshot({ path: testInfo.outputPath('configuration-steps-light.png') })
+  await page.getByRole('button', { name: '本地用户的账户菜单' }).click()
+  await page.getByRole('menuitem', { name: '主题设置' }).click()
+  const drawer = page.getByRole('dialog', { name: '主题设置' })
+  await drawer.getByRole('button', { name: '桃粉红', exact: true }).click()
+  await drawer.locator('[data-theme-scheme="DARK"]').click()
+  await drawer.getByRole('button', { name: '保存设置', exact: true }).click()
+  await expect(drawer).toBeHidden()
+  const dark = await checkHighlight()
+  expect(dark.border).not.toBe(light.border)
+  expect(dark.fill).not.toBe(light.fill)
+  await group.screenshot({ path: testInfo.outputPath('configuration-steps-dark.png') })
+
+  await group.getByRole('listitem', { name: '请求数据' }).click({ position: { x: 5, y: 5 } })
+  const selectedTab = page.locator('.config-tabs > .el-tabs__header [aria-selected="true"]')
+  await expect(selectedTab).toHaveText('请求字段')
+  const close = current.getByRole('button', { name: '关闭响应数据' })
+  await close.focus()
+  await page.keyboard.press('Shift+Tab')
+  await expect(action).toBeFocused()
+  await expect(current).toHaveCSS('outline-style', 'solid')
+  await page.keyboard.press('Tab')
+  await expect(close).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(pending.locator('[data-step="preview"]')).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(selectedTab).toHaveText('接口测试')
+  await close.click()
+  await expect(current).toHaveCount(0)
+  await expect(selectedTab).toHaveText('接口测试')
+  await expect(group.getByRole('listitem')).toHaveCount(4)
+  harness.assertClean()
+})
+
 test('同一管理页完成事件类型和事件的新增、修改、删除，取消关闭保留类型输入', async ({ page }, testInfo) => {
   let types = [], events = []
   const data = new Map([

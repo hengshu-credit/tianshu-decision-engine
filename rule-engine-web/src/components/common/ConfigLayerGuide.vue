@@ -70,19 +70,51 @@ export default {
 .config-layer-guide__title { color: var(--tianshu-text-primary); font-size: 14px; font-weight: 600; line-height: 1.5; }
 .config-layer-guide__description { margin: 4px 0 0; color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.6; }
 .config-layer-guide__progress { flex: none; padding: 4px 10px; border-radius: 16px; background: var(--tianshu-info-bg); color: var(--tianshu-info-text); font-size: 12px; font-weight: 600; line-height: 1.5; }
-.config-layer-guide__item { box-sizing: border-box; display: flex; width: 100%; height: 100%; gap: 10px; align-items: flex-start; padding: 4px; border: 1px solid transparent; border-radius: 4px; color: var(--tianshu-text-primary); background: transparent; font: inherit; text-align: left; }
-.config-layer-guide__item.is-active { border-color: var(--tianshu-info-border); background: var(--tianshu-info-bg); }
-.config-layer-guide__item.is-interactive { cursor: pointer; transition: background-color 160ms, border-color 160ms; }
-.config-layer-guide__item.is-interactive:hover { border-color: var(--tianshu-info-text); background: var(--tianshu-bg-hover); }
-.config-layer-guide__item:focus-visible { outline: 2px solid var(--tianshu-info-text); outline-offset: 2px; }
+.config-layer-guide :deep(.dismissible-guidance) {
+  position: relative;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--tianshu-info-bg) 30%, var(--tianshu-bg-surface));
+}
+.config-layer-guide :deep(.dismissible-guidance:has(.is-interactive:hover)) {
+  border-color: var(--tianshu-primary-text);
+}
+.config-layer-guide :deep(.dismissible-guidance:has([aria-current="step"])) {
+  border-color: var(--el-color-primary);
+  background: var(--tianshu-info-bg);
+}
+.config-layer-guide :deep(.dismissible-guidance:has(.config-layer-guide__item:focus-visible)) {
+  outline: 2px solid var(--tianshu-primary-text);
+  outline-offset: 2px;
+}
+.config-layer-guide__item {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 0;
+  border: 0;
+  color: var(--tianshu-text-primary);
+  background: transparent;
+  font: inherit;
+  text-align: start;
+}
+.config-layer-guide__item.is-interactive { cursor: pointer; }
+.config-layer-guide__item.is-interactive::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.config-layer-guide__item:focus-visible { outline: none; }
+.config-layer-guide :deep(.guidance-close) { position: relative; }
 .config-layer-guide__number { display: inline-flex; flex: 0 0 26px; height: 26px; align-items: center; justify-content: center; color: var(--tianshu-text-secondary); background: var(--tianshu-bg-muted); border: 1px solid var(--tianshu-border); border-radius: 50%; font-size: 12px; }
-.is-active .config-layer-guide__number { color: var(--tianshu-info-text); background: var(--tianshu-info-bg); border-color: var(--tianshu-info-border); }
+.is-active .config-layer-guide__number { color: var(--tianshu-primary-text); background: var(--tianshu-bg-surface); border-color: var(--el-color-primary); }
 .is-ready .config-layer-guide__number { color: var(--tianshu-brand-foreground); background: var(--el-color-primary); border-color: var(--el-color-primary); }
 .config-layer-guide__copy { display: grid; min-width: 0; gap: 5px; }
 .config-layer-guide__copy strong { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; font-weight: 600; line-height: 1.5; }
 .config-layer-guide__state { color: var(--tianshu-text-tertiary); font-size: 11px; font-weight: 400; }
 .is-ready .config-layer-guide__state { color: var(--tianshu-primary-text); }
-.is-active .config-layer-guide__state { color: var(--tianshu-info-text); }
+.is-active .config-layer-guide__state { color: var(--tianshu-primary-text); font-weight: 600; }
 .config-layer-guide__copy small { color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 @container (max-width: 480px) { .config-layer-guide__heading { flex-wrap: wrap; gap: 8px; } }
 </style>
