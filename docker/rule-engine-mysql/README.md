@@ -14,6 +14,20 @@ docker compose --project-name rule-engine --env-file .env.server -f docker/docke
 
 Compose 启动 Java 模拟供应商和 OpenSSH 只读 SFTP，再运行一次性 Java 导入器。默认使用 `docker/runtime/server.jar`。源码运行可先执行 `mvn -pl rule-engine-server -am package -DskipTests`，将 `EXAMPLE_SERVER_JAR` 指向构建产物的绝对路径。SQL 文件为 `data-tianshu-example.sql`。导入器在同一事务和数据库命名锁内执行 SQL、绑定真实 ID，使用引擎编译器校验 20 份规则制品，并用目标库主密钥重新签名主 A 卡 V9。直接向 mysql 客户端重定向 SQL 会提示使用导入入口。
 
+## 主 A 卡原件与扫描服务
+
+MAIN_A V9 的原始 PMML 为 232,796 字节。SQL 内只携带一份无损压缩的原件，MySQL 解压，导入器核对文件长度和 SHA-256，使用引擎上传扫描与 PMML 检查，随后写入共享 MySQL 文件库。主表与 V9 使用同一原件引用，版本快照引用冻结包。7 个直接取数输入来自多头、收入、欺诈、信用 4 个接口；完整授信项目配置 8 个外数接口。重复导入会校验 V9。旧版内联或文件卷中的样例原件、冻结包按原摘要迁移，版本、用例、引用 ID 和外数绑定保留。
+
+**已有 ClamD 时**，在 `.env.server` 设置 `UPLOAD_ANTIVIRUS_HOST`、`UPLOAD_ANTIVIRUS_PORT`，使用前述命令。**需要本地扫描器时**，可启用随包附带的可选 Compose 文件。完整栈将 `UPLOAD_ANTIVIRUS_HOST=example-clamd` 和 `UPLOAD_ANTIVIRUS_PORT=3310` 配给 server，然后执行：
+
+```bash
+docker compose --env-file .env.client --env-file .env.server -f docker/docker-compose.full.yml -f docker/credit-example-antivirus.compose.yml --profile example-data run --rm --build example-data-import
+```
+
+独立 MySQL 按上文使用原项目名和 `docker-compose.mysql.yml`，同样追加 `-f docker/credit-example-antivirus.compose.yml`。宿主机直接启动的 server 连接 `127.0.0.1:${EXAMPLE_CLAM_HOST_PORT:-33310}`。默认 MySQL 文件库由同一数据库的所有节点共用。全新安装无需在节点间同步模型目录。已有文件卷的安装须在能读取原件和冻结包的节点执行迁移，为迁移进程的 `RULE_MODEL_STORAGE_DIRECTORY` 提供旧卷（Compose 可用 `MODEL_FILES_MOUNT`）。迁移前保留数据库和旧卷的匹配备份；迁移并验证冷读后，MySQL 备份包含共享模型内容。
+
+首次启动扫描器需要加载病毒库，导入器会等待健康检查通过；扫描未通过时导入失败并回滚。只在演示期间需要临时扫描器时，结束后可用相同 Compose 文件执行 `stop example-clamd`，签名卷保留。引擎后续接收新模型或台账附件时仍需有可用的扫描服务。
+
 ## 数据与账号
 
 - **HENGSHUCREDIT** 包含授信流 V3、七个准入规则集、多头评分卡、额度和期数交叉表、利率树、主 A 卡、名单、历史进件取数、八个外数及其计费配置。**HENGSHU_SUPPLIER** 提供八张独立的供应商决策表。

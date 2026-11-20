@@ -1,0 +1,26 @@
+services:
+  example-clamd:
+    image: ${CLAMAV_IMAGE:-clamav/clamav:1.4}
+    profiles: [example-data]
+    volumes:
+      - example-clam-signatures:/var/lib/clamav
+    ports:
+      - "127.0.0.1:${EXAMPLE_CLAM_HOST_PORT:-33310}:3310"
+    networks: [rule-engine]
+    healthcheck:
+      test: [CMD, clamdcheck.sh]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 5m
+
+  example-data-import:
+    environment:
+      UPLOAD_ANTIVIRUS_HOST: example-clamd
+      UPLOAD_ANTIVIRUS_PORT: "3310"
+    depends_on:
+      example-clamd:
+        condition: service_healthy
+
+volumes:
+  example-clam-signatures:

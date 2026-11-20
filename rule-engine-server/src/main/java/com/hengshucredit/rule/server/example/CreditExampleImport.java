@@ -16,6 +16,9 @@ import com.hengshucredit.rule.server.artifact.Sha256Digests;
 import com.hengshucredit.rule.server.auth.CredentialCipher;
 import com.hengshucredit.rule.server.governance.GovernanceResourceBootstrapService;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
+import com.hengshucredit.rule.server.mapper.RuleModelVersionMapper;
+import com.hengshucredit.rule.server.service.ModelFileMigration;
+import com.hengshucredit.rule.server.service.ModelFileStore;
 import com.hengshucredit.rule.server.service.ModelVersionTestService;
 import com.hengshucredit.rule.server.service.RuleModelService;
 import org.springframework.context.ApplicationContext;
@@ -35,6 +38,9 @@ import java.util.UUID;
 /** Explicit local CLI. The import uses the same compilers, credential store and package signing as publication. */
 public final class CreditExampleImport {
     public static final String COMMAND = "--load-credit-example";
+    private static final String MAIN_A_FILE = "main_a_probability.pmml";
+    private static final int MAIN_A_SIZE = 232796;
+    private static final String MAIN_A_SHA256 = "3b314bb47df0cd17342e12b6e0a1219988d4dace0e1ab1991fa34aeea700bddb";
     private final ApplicationContext context;
     private final JdbcTemplate db;
     private final CredentialCipher cipher;
@@ -74,6 +80,7 @@ public final class CreditExampleImport {
             String auth = db.queryForObject("SELECT secret_ciphertext FROM rule_project_auth a JOIN rule_project p ON p.id=a.project_id WHERE p.project_code='HENGSHUCREDIT' AND a.auth_code='CREDIT_HTTP'", String.class);
             if (!key("credit_api").equals(cipher.decrypt(auth))) throw new IllegalStateException("演示凭据卷与目标库不匹配");
             verifyPublication();
+            upgradeMainA();
             CreditOverdueUpgrade.apply(context, db);
             installCases(lines);
             return;
@@ -89,6 +96,7 @@ public final class CreditExampleImport {
                 switch (line) {
                     case "-- @encrypt-json" -> encryptTemplate();
                     case "-- @approved-resource" -> approvedResource();
+                    case "-- @store-main-a" -> storeMainA();
                     case "-- @freeze-model" -> freezeModel();
                     case "-- @dependencies" -> finishDependencies();
                     case "-- @build-artifact" -> buildArtifact();
@@ -198,17 +206,47 @@ public final class CreditExampleImport {
         context.getBean(DashboardDefaultsInitializer.class).initialize();
     }
 
+    private void storeMainA() {
+        byte[] original = db.queryForObject("SELECT @main_a_original", byte[].class);
+        if (original == null || original.length != MAIN_A_SIZE || !MAIN_A_SHA256.equals(Sha256Digests.bytes(original)))
+            throw new IllegalArgumentException("主 A 卡 V9 原件长度或 SHA-256 不匹配");
+        Long project = db.queryForObject("SELECT @project_1", Long.class);
+        String file = context.getBean(ModelFileStore.class).accept(project, MAIN_A_FILE, original);
+        db.update("SET @main_a_file=?, @main_a_original=NULL", file);
+    }
+
+    private record MainAVersion(long projectId, long modelId, long versionId) {}
+
+    private void upgradeMainA() {
+        var versions = db.query("""
+                SELECT m.project_id,m.id,v.id FROM rule_model_version v JOIN rule_model m ON m.id=v.model_id
+                JOIN rule_project p ON p.id=m.project_id
+                WHERE p.project_code='HENGSHUCREDIT' AND m.model_code='MAIN_A' AND v.version=9
+                AND v.model_file_name=? AND v.model_digest=? AND v.model_file_size=? AND v.model_format='PMML' FOR UPDATE
+                """, (rs, n) -> new MainAVersion(rs.getLong(1),rs.getLong(2),rs.getLong(3)),
+                MAIN_A_FILE, MAIN_A_SHA256, MAIN_A_SIZE);
+        if (versions.size() != 1) throw new IllegalStateException("未找到与发行包匹配的主 A 卡 V9 原件，请核对模型版本与摘要");
+        var target = versions.get(0);
+        context.getBean(ModelFileMigration.class).migrateVersion(target.modelId(), target.versionId(), "TIANSHU_CREDIT_EXAMPLE");
+        context.getBean(SqlSessionTemplate.class).clearCache();
+        // Validate the version's own reference before the frozen package can materialize an embedded original.
+        var version = context.getBean(RuleModelVersionMapper.class).selectById(target.versionId());
+        ModelFileStore.bytes(context.getBean(ModelFileStore.class), target.projectId(), MAIN_A_FILE, "PMML",
+                version.getModelContent(), MAIN_A_SHA256);
+        context.getBean(ModelVersionTestService.class).executableModel(version);
+    }
+
     private void freezeModel() {
         long id = db.queryForObject("SELECT @sample_model", Long.class);
         var models = context.getBean(RuleModelService.class);
         var model = context.getBean(RuleModelMapper.class).selectById(id);
-        var files = context.getBean(com.hengshucredit.rule.server.service.ModelFileStore.class);
-        byte[] original = com.hengshucredit.rule.server.service.ModelFileStore.bytes(files, model.getProjectId(),
-                model.getModelFileName(), model.getModelFormat(), model.getModelContent(), model.getModelDigest());
-        String file = files.accept(model.getProjectId(), model.getModelFileName(), original);
-        db.update("UPDATE rule_model SET model_content=? WHERE id=?", file, id);
-        db.update("UPDATE rule_model_version SET model_content=? WHERE id=@sample_model_version AND model_id=?", file, id);
-        model.setModelContent(file);
+        var files = context.getBean(ModelFileStore.class);
+        String file = files.relocate(model.getProjectId(), model.getModelFileName(), model.getModelContent(), model.getModelDigest());
+        if (!file.equals(model.getModelContent())) { // Older example SQL supplied an inline original.
+            db.update("UPDATE rule_model SET model_content=? WHERE id=?", file, id);
+            db.update("UPDATE rule_model_version SET model_content=? WHERE id=@sample_model_version AND model_id=?", file, id);
+            model.setModelContent(file);
+        }
         var fields = models.getDetail(id);
         model.setInputFields(fields.getInputFields());
         model.setOutputFields(fields.getOutputFields());

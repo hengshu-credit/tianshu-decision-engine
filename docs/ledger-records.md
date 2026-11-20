@@ -39,6 +39,7 @@ ClamD TCP 协议本身不提供认证或加密，扫描端口应仅向应用服�
 ## 部署与数据保留
 
 - 服务启动沿用现有 `sql/schema.sql` 初始化入口，创建台账所需的文章、版本、事件、素材和引用表。新增表均使用幂等 `CREATE TABLE IF NOT EXISTS`。
+- [模型文件和台账素材的多节点共享、压缩实测与部署选择](model-ledger-storage.md)。
 - 素材为二进制 BLOB，随管理库备份；继续使用项目要求的 `mysqldump --hex-blob --result-file`，不能以文本解码方式转存。
 - Markdown 编辑器与渲染依赖随前端构建打包，辅助资源位于 `vendor/vditor/dist`，不依赖外部 CDN。HTML 渲染进行净化，图片只接受本站素材 ID 地址。
 - 没有后台自动删除已发布版本或引用素材的任务。删除草稿只删除当前私有草稿，已发布正文和历史版本保留。

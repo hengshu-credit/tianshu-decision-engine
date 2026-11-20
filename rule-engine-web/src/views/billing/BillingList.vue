@@ -844,7 +844,7 @@
                 v-model:value="configForm.targetRefId"
                 :fetch-options="loadTargetOptions"
                 :content-type="({ ENGINE: 'RULE', API: 'EXTERNAL_API', DB: 'DATABASE' })[configForm.billingTarget]"
-                :show-value-type="false"
+                :show-value-type="configForm.billingTarget !== 'API'"
                 :selected-option="selectedTargetOption"
                 option-value-key="id"
                 option-label-key="displayName"

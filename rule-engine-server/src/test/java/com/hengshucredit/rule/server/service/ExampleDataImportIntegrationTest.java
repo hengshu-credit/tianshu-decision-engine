@@ -17,7 +17,7 @@ import java.nio.file.Path;
 import java.util.*;
 import static org.junit.Assert.*;
 
-/** Opt-in: local MySQL + Redis. Creates and cleans only randomly named test databases. */
+/** Opt-in: local MySQL, Redis, model directory and ClamD. Creates and cleans only randomly named test databases. */
 public class ExampleDataImportIntegrationTest {
     @Test(timeout = 900000)
     public void importsWithAndWithoutInitialDataAndWithShiftedIds() throws Exception {
@@ -48,6 +48,14 @@ public class ExampleDataImportIntegrationTest {
                 assertEquals(8, db.count("rule_external_api_config"));
                 assertEquals(8, db.count("rule_billing_config"));
                 assertEquals(7, db.count("rule_model_input_field"));
+                assertEquals(1, (int) db.jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM rule_model m JOIN rule_model_version v ON v.model_id=m.id
+                        WHERE m.model_code='MAIN_A' AND v.version=9 AND m.model_file_name='main_a_probability.pmml'
+                          AND m.model_file_size=232796 AND m.model_digest=v.model_digest
+                          AND m.model_content=v.model_content AND m.model_content LIKE CONCAT('ts-file-v1:models/',m.project_id,'/%')
+                          AND JSON_UNQUOTE(JSON_EXTRACT(v.execution_snapshot_json,'$.packageFile')) LIKE 'ts-file-v1:packages/%'
+                          AND NOT JSON_CONTAINS_PATH(v.execution_snapshot_json,'one','$.packageContent')
+                        """, Integer.class));
                 assertEquals(1, db.count("rule_model_output_field"));
                 assertEquals(115, db.count("rule_api_doc_scenario"));
                 assertEquals(46, db.count("rule_api_test_case"));

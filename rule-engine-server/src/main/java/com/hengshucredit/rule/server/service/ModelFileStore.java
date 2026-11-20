@@ -32,16 +32,29 @@ public final class ModelFileStore {
     private static final String PREFIX = "ts-file-v1:";
     private static final Pattern KEY = Pattern.compile("(models/[0-9]+|packages)/[0-9a-f]{2}/[\\p{L}\\p{N}_.-]+--[0-9a-f]{64}\\.(onnx|pmml|zip)");
     private final Path root;
+    private final MysqlModelBlobStore shared;
     private final UploadSecurity security;
     private final long fileLimit;
     private final long cacheLimit;
     private final Map<String, byte[]> cache = new LinkedHashMap<>(16, 0.75f, true);
     private long cachedBytes;
 
+    public ModelFileStore(String directory, long fileLimit, long cacheLimit, UploadSecurity security) {
+        this(directory, fileLimit, cacheLimit, security, "FILESYSTEM", null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
     public ModelFileStore(@Value("${rule-engine.model.storage-directory:./data/model-files}") String directory,
                           @Value("${rule-engine.model.max-file-size-bytes:268435456}") long fileLimit,
                           @Value("${rule-engine.model.file-cache-bytes:134217728}") long cacheLimit,
-                          UploadSecurity security) {
+                          UploadSecurity security,
+                          @Value("${rule-engine.model.storage-backend:MYSQL}") String backend,
+                          MysqlModelBlobStore database) {
+        this.shared = switch (backend.toUpperCase(Locale.ROOT)) {
+            case "MYSQL" -> java.util.Objects.requireNonNull(database);
+            case "FILESYSTEM" -> null;
+            default -> throw new IllegalArgumentException("未知模型存储后端：" + backend);
+        };
         this.root = Path.of(directory).toAbsolutePath().normalize();
         this.fileLimit = fileLimit;
         this.cacheLimit = cacheLimit;
@@ -119,8 +132,7 @@ public final class ModelFileStore {
         if (!lower.endsWith(".onnx") && !lower.endsWith(".pmml")) throw new IllegalArgumentException("仅支持 ONNX 或 PMML 原始模型文件");
         String digest = Sha256Digests.bytes(bytes);
         String reference = key(scope(projectId), filename, digest);
-        Path target = path(reference);
-        if (trustedSnapshot && Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+        if (trustedSnapshot && (shared != null ? shared.contains(reference) : Files.exists(path(reference), LinkOption.NOFOLLOW_LINKS))) {
             verifiedRead(reference, digest);
             return reference;
         }
@@ -170,7 +182,9 @@ public final class ModelFileStore {
     }
 
     public byte[] artifactContent(DecisionArtifactPackage pack, byte[] bytes) {
-        boolean models = pack.getComponents().values().stream().anyMatch(c -> "MODEL".equals(c.getMetadata().get("resourceType")));
+        boolean models = pack.getComponents().values().stream().anyMatch(c -> "MODEL".equals(c.getMetadata().get("resourceType"))
+                || c.getPath().startsWith("resources/versions/MODEL-")
+                || c.getPath().startsWith("resources/versions/MODEL_OUTPUT-"));
         return models ? savePackage(bytes).getBytes(StandardCharsets.UTF_8) : bytes;
     }
 
@@ -238,6 +252,10 @@ public final class ModelFileStore {
     }
 
     private void install(String reference, byte[] bytes) {
+        if (shared != null) {
+            shared.put(reference, contentDigest(reference), bytes, reference.startsWith(PREFIX + "packages/"));
+            return;
+        }
         Path dest = path(reference);
         if (Files.isRegularFile(dest, LinkOption.NOFOLLOW_LINKS)) {
             verifiedRead(reference, null);
@@ -268,18 +286,21 @@ public final class ModelFileStore {
     }
 
     private byte[] verifiedRead(String ref, String expected) {
-        Path p = path(ref);
-        String name = p.getFileName().toString();
-        String digest = name.substring(name.lastIndexOf("--") + 2, name.lastIndexOf('.'));
-        if (expected != null && !expected.isBlank() && !digest.equalsIgnoreCase(expected)) throw new IllegalArgumentException("模型引用与保存摘要不一致");
+        String digest = contentDigest(ref);
+        checkExpected(expected, digest);
         synchronized (cache) {
             byte[] found = cache.get(ref);
             if (found != null) return found.clone();
         }
         try {
             long limit = ref.startsWith(PREFIX + "models/") ? fileLimit : 512L * 1024 * 1024;
-            if (Files.size(p) > limit) throw new IllegalArgumentException("文件超出读取上限");
-            byte[] bytes = Files.readAllBytes(p);
+            byte[] bytes;
+            if (shared != null) {
+                if (!shared.contains(ref)) importLegacyFile(ref, digest, limit);
+                bytes = shared.read(ref, digest, limit);
+            } else {
+                bytes = readFile(ref, limit);
+            }
             checkDigest(bytes, digest);
             if (bytes.length <= cacheLimit) synchronized (cache) {
                 if (cache.put(ref, bytes.clone()) == null) cachedBytes += bytes.length;
@@ -290,7 +311,47 @@ public final class ModelFileStore {
                 }
             }
             return bytes;
-        } catch (IOException e) { throw new IllegalStateException("模型文件缺失或无法读取：" + name, e); }
+        } catch (IOException e) { throw new IllegalStateException("模型文件缺失或无法读取：" + ref, e); }
+    }
+
+    private byte[] readFile(String ref, long limit) throws IOException {
+        Path source = path(ref);
+        if (Files.size(source) > limit) throw new IllegalArgumentException("文件超出读取上限");
+        return Files.readAllBytes(source);
+    }
+
+    /** Explicit migration reads through to storage even if a JVM has already warmed its cache. */
+    public void ensureShared(String ref, String expected) {
+        if (!isReference(ref)) throw new IllegalArgumentException("缺少不可变文件引用");
+        String digest = contentDigest(ref);
+        checkExpected(expected, digest);
+        long limit = ref.startsWith(PREFIX + "packages/") ? 512L * 1024 * 1024 : fileLimit;
+        try {
+            if (shared == null) {
+                checkDigest(readFile(ref, limit),digest);
+            } else {
+                if (!shared.contains(ref)) importLegacyFile(ref,digest,limit);
+                shared.read(ref,digest,limit);
+            }
+        } catch (IOException e) { throw new IllegalStateException("迁移时无法读取旧模型卷：" + ref, e); }
+    }
+
+    private static void checkExpected(String expected, String digest) {
+        if (expected != null && !expected.isBlank() && !digest.equalsIgnoreCase(expected))
+            throw new IllegalArgumentException("模型引用与保存摘要不一致");
+    }
+
+    private void importLegacyFile(String ref, String digest, long limit) throws IOException {
+        byte[] bytes = readFile(ref, limit);
+        checkDigest(bytes, digest);
+        boolean archive = ref.startsWith(PREFIX + "packages/");
+        if (archive) {
+            var decoded = new com.hengshucredit.rule.server.artifact.DecisionArtifactPackageCodec().decode(bytes);
+            screenEmbeddedModels(decoded.getArtifactPackage());
+        } else {
+            screen(path(ref).getFileName().toString(), bytes);
+        }
+        shared.put(ref,digest,bytes,archive);
     }
 
     private static void checkDigest(byte[] bytes, String digest) {

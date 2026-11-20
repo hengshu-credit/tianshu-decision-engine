@@ -96,3 +96,5 @@ docker compose --project-name tianshu-server --env-file config/.env.server \
 回退 JAR 不会撤销已执行的数据库迁移。先确认旧版兼容性；不兼容时按已验收备份恢复到不同且不存在的库，再安排应用回退。
 
 - `2026-11-20-resource-test-cases.sql` 新增变量、外数和模型测试用例表，重复执行保留已有用例。
+
+- `2026-11-20-shared-model-files.sql` 建立模型和制品共用的文件目录、二进制载荷和作用域引用表，既有模型数据由显式迁移命令校验后写入。
