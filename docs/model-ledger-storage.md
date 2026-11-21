@@ -9,7 +9,7 @@
 | `rule_file_reference` | 业务存储标识与原件摘要的绑定。保留项目作用域和原有 `ts-file-v1:` 引用，读取必须有对应绑定。 |
 | `rule_file_object` | 原始 SHA-256、原始大小、编码、载荷数和存储大小。同内容跨项目、版本和节点共享一条目录记录。 |
 | `rule_file_object_part` | 文件还原顺序，常规模型原件仅引用一条完整载荷。 |
-| `rule_file_chunk` | LONGBLOB 存放完整的无损压缩原件，按载荷摘要复用。只有单个压缩载荷超过当前 MySQL 服务端包容量（预留 256 字节）才拆分；不会按 1 MiB 固定切分。 |
+| `rule_file_chunk` | LONGBLOB 存放完整的无损压缩原件，按载荷摘要复用。只有单个压缩载荷超过当前 MySQL 服务端包容量（预留 256 字节）才拆分。对于已确认内存紧张的 MySQL 实例，可设置 `RULE_MODEL_WRITE_PAYLOAD_LIMIT_BYTES` 降低单次写入上限；默认 0，完整载荷优先。 |
 
 上传先经过真实扫描和模型格式校验，再按内容摘要在事务中安装。并发写入相同文件由数据库唯一键与行锁串行化。读取时在同一 BLOB 上按小窗口传输，依次核对载荷摘要，最后校验解压长度与原始文件摘要。每个 JVM 的字节缓存和运行时模型用于加速执行，Redis 传递发布通知。清空缓存、重启容器或更换宿主机后仍能从同一管理库恢复。[文件仓库](../rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/ModelFileStore.java) · [MySQL 二进制读写](../rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/MysqlModelBlobStore.java)
 

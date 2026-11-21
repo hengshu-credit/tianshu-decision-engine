@@ -34,6 +34,8 @@ public final class MysqlModelBlobStore {
     private static final int PACKET_OVERHEAD = 256;
     private static final int READ_WINDOW = 1024 * 1024;
     private final JdbcTemplate db;
+    @org.springframework.beans.factory.annotation.Value("${rule-engine.model.write-payload-limit:0}")
+    private long writePayloadLimit;
     private final TransactionTemplate write;
     private final TransactionTemplate read;
 
@@ -61,7 +63,9 @@ public final class MysqlModelBlobStore {
             if (((Number)header.get("byte_size")).longValue()!=data.length) throw new IllegalStateException("共享文件摘要与长度不匹配");
             if (((Number)header.get("part_count")).intValue()==0) {
                 long packet = db.queryForObject("SELECT @@session.max_allowed_packet", Long.class);
-                PayloadWriter sink = new PayloadWriter(digest, Math.toIntExact(packet - PACKET_OVERHEAD));
+                long budget = packet - PACKET_OVERHEAD;
+                if (writePayloadLimit > 0) budget = Math.min(budget, writePayloadLimit);
+                PayloadWriter sink = new PayloadWriter(digest, Math.toIntExact(budget));
                 try {
                     if (archive) writeArchive(data,sink);
                     else deflate(data,sink);
@@ -135,15 +139,17 @@ public final class MysqlModelBlobStore {
             md.update(bytes, offset, size);
             String hash = HexFormat.of().formatHex(md.digest());
             // Server-side binary parameters stream through the driver without building a giant escaped SQL string.
-            db.execute((ConnectionCallback<Void>) connection -> {
-                try (var ps = connection.unwrap(JdbcConnection.class).serverPrepareStatement(
-                        "INSERT INTO rule_file_chunk(digest,content) VALUES(?,?) ON DUPLICATE KEY UPDATE digest=rule_file_chunk.digest")) {
-                    ps.setString(1,hash);
-                    ps.setBinaryStream(2,new ByteArrayInputStream(bytes,offset,size),size);
-                    ps.executeUpdate();
-                }
-                return null;
-            });
+            if (!Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM rule_file_chunk WHERE digest=?)", Boolean.class, hash))) {
+                db.execute((ConnectionCallback<Void>) connection -> {
+                    try (var ps = connection.unwrap(JdbcConnection.class).serverPrepareStatement(
+                            "INSERT INTO rule_file_chunk(digest,content) VALUES(?,?) ON DUPLICATE KEY UPDATE digest=rule_file_chunk.digest")) {
+                        ps.setString(1,hash);
+                        ps.setBinaryStream(2,new ByteArrayInputStream(bytes,offset,size),size);
+                        ps.executeUpdate();
+                    }
+                    return null;
+                });
+            }
             db.update("INSERT INTO rule_file_object_part(object_digest,part_no,chunk_digest) VALUES(?,?,?)",object,count,hash);
             count++;
             total += size;

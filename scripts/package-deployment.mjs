@@ -64,6 +64,18 @@ async function sha256(file) {
   return hash.digest('hex')
 }
 
+export async function copyKycExample(root, stageRoot) {
+  const kycSample = path.join('docker', 'rule-engine-mysql', 'kyc-example', '衡枢KYC-三项人脸规则.zip')
+  if (existsSync(path.join(root, kycSample))) {
+    if (await sha256(path.join(root, kycSample)) !== 'dac328b23d76de7c0242707a10d2d13a881612a7517ba0b57b65b546ba44ec56') {
+      throw new Error('衡枢 KYC 样例包摘要不匹配')
+    }
+    const target = path.join(stageRoot, kycSample)
+    mkdirSync(path.dirname(target), { recursive: true })
+    cpSync(path.join(root, kycSample), target)
+  }
+}
+
 function listFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
     const file = path.join(directory, entry.name)
@@ -106,6 +118,7 @@ async function main() {
   for (const name of ['.env.server.example', '.env.client.example', 'README.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_LICENSES.md', 'docker', 'licenses', 'docs']) {
     cpSync(path.join(sourceRoot, name), path.join(stageRoot, name), { recursive: true })
   }
+  await copyKycExample(root, stageRoot)
   copyDeploymentMigrations(sourceRoot, stageRoot)
   cpSync(path.join(sourceRoot, 'scripts/deploy.py'), path.join(stageRoot, 'deploy.py'))
   cpSync(path.join(sourceRoot, 'scripts/install-release.sh'), path.join(stageRoot, 'install-release.sh'))

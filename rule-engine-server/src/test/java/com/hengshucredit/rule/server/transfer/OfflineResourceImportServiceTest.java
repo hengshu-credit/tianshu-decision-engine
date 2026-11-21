@@ -13,6 +13,20 @@ import static org.junit.Assert.assertTrue;
 /** 项目级离线导入必须按显式项目绑定解析目标 ID，不能按名称猜测。 */
 public class OfflineResourceImportServiceTest {
     @Test
+    public void unavailableAttachedFunctionStopsImportBeforeCreatingTheProject() {
+        var service = new OfflineResourceImportService();
+        ReflectionTestUtils.setField(service, "functionLibraries", new TransferFunctionLibraries("no-deployed-jars"));
+        var fn = new TransferBundle.Resource("FUNCTION:1", Map.of("implType","JAVA","implClass","example.Uninstalled"),List.of(),List.of());
+        var bundle = new TransferBundle(List.of(fn.key()),List.of(fn),List.of());
+        byte[] bytes = { 1, 2, 3 };
+        String sha = com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(bytes);
+        var archive = new TransferBundleCodec().encode(bundle, Map.of(fn.key(), new TransferFunctionLibraries.Library(sha, bytes)));
+        var options = new TransferImportOptions(null, "PROJECT", "REUSE", "REUSE", null, true, "NEW_PROJ", "测试项目", Map.of());
+        var error = org.junit.Assert.assertThrows(IllegalArgumentException.class, () -> service.apply(archive, options, "operator"));
+        assertTrue(error.getMessage(), error.getMessage().contains("function-jars/" + sha + ".jar"));
+    }
+
+    @Test
     public void sourceProjectBindingWinsOverSingleTargetFallback() {
         OfflineResourceImportService service = new OfflineResourceImportService();
         TransferImportOptions options = new TransferImportOptions(

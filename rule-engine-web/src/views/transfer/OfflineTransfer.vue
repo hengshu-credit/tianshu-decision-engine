@@ -212,8 +212,12 @@
       <el-alert v-if="preview.warnings?.length" type="warning" :closable="false" title="导入包存在提示" class="preview-warning">
         <template #default><ul><li v-for="warning in preview.warnings" :key="warning">{{ warning }}</li></ul></template>
       </el-alert>
+      <div v-if="previewFunctionJars.length" class="preview-warning">
+        <strong>随包函数扩展</strong>
+        <ul><li v-for="jar in previewFunctionJars" :key="jar"><code>{{ jar }}</code></li></ul>
+      </div>
       <el-alert v-if="preview.resources?.some(item => item.requiredEnvironmentFields?.length)" type="info" :closable="false" title="目标环境需要补充配置" class="preview-warning">
-        外数、数据库凭据和 Java/Bean 函数运行依赖不会从源环境直接复制，请在目标环境完成复核。
+        请在目标环境配置外数和数据库凭据。Java 扩展随包携带时须与执行节点已部署的 JAR 摘要一致；Spring Bean 须由目标应用提供。
       </el-alert>
     </section>
 
@@ -348,7 +352,11 @@ export default {
     optionsSignature() { return JSON.stringify(this.normalizedOptions()) },
     hasCurrentPreview() {
       return Boolean(this.preview && !this.previewing && this.importFile === this.previewFile
-        && this.optionsSignature === this.previewOptionsSignature && (this.preview.versionAssociations || []).every(row => row.valid))
+        && this.optionsSignature === this.previewOptionsSignature && !this.preview.missingFunctionLibraries?.length
+        && (this.preview.versionAssociations || []).every(row => row.valid))
+    },
+    previewFunctionJars() {
+      return [...new Set((this.preview?.resources || []).map(resource => resource.functionJar).filter(Boolean))]
     },
     previewLineageRoots() {
       const resources = this.preview?.resources || []

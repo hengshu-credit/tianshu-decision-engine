@@ -61,6 +61,7 @@ public class OfflineResourceImportService {
     @Resource private RuleProjectService projectService;
     @Resource private GovernanceSecretCodec secretCodec;
     @Resource private com.hengshucredit.rule.server.governance.GovernanceResourceBootstrapService governanceBootstrapService;
+    @jakarta.annotation.Resource private TransferFunctionLibraries functionLibraries;
     private final TransferBundleCodec codec = new TransferBundleCodec();
     @Resource private TransferVersionService versionTransfers;
 
@@ -68,7 +69,8 @@ public class OfflineResourceImportService {
     public Map<String, Object> apply(byte[] bytes, TransferImportOptions options, String actor) {
         if (options == null) throw new IllegalArgumentException("请选择导入作用范围及目标项目");
         if (actor == null || actor.isBlank()) actor = ConsoleOperatorResolver.SYSTEM_CONSOLE;
-        TransferBundle decodedBundle = codec.decode(bytes).bundle();
+        var decoded = codec.decode(bytes);
+        TransferBundle decodedBundle = decoded.bundle();
         List<TransferBundle.Resource> selectedResources = TransferSelection.select(decodedBundle, options);
         selectedResources.forEach(TransferVersionReferences::descriptors);
         if (accessGuard != null) {
@@ -77,6 +79,14 @@ public class OfflineResourceImportService {
             for (String key : options.normalizedResourceBindings().keySet()) accessGuard.requireResource(TransferKey.parse(key).type().name(), "view");
             if (Boolean.TRUE.equals(options.createProject())) accessGuard.require("project:edit", "project:submit", "approval:submit", "approval:approve");
             if (Boolean.TRUE.equals(options.publishRules())) accessGuard.require("rule:submit", "approval:approve");
+        }
+        var jarCache = new java.util.HashMap<java.nio.file.Path,TransferFunctionLibraries.Library>();
+        for (var resource : selectedResources) {
+            var requirement = decoded.libraries().get(resource.key());
+            if (requirement != null) {
+                var issue = functionLibraries.issue(requirement, resource.configuration(), jarCache);
+                if (issue != null) throw new IllegalArgumentException(issue);
+            }
         }
         if (selectedResources.stream().anyMatch(resource -> resource.key().startsWith("RULE_VERSION:") || !TransferVersionReferences.scan(resource.configuration()).isEmpty()))
             versionTransfers.validate(selectedResources, options);

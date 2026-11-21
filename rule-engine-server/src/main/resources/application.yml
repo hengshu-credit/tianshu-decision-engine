@@ -110,6 +110,7 @@ rule-engine:
     session-cache-max-entries: ${ONNX_SESSION_CACHE_MAX_ENTRIES:16}
   model:
     storage-backend: ${RULE_MODEL_STORAGE_BACKEND:MYSQL}
+    write-payload-limit: ${RULE_MODEL_WRITE_PAYLOAD_LIMIT_BYTES:0}
     storage-directory: ${RULE_MODEL_STORAGE_DIRECTORY:./data/model-files}
     file-cache-bytes: ${RULE_MODEL_FILE_CACHE_BYTES:134217728}
     preload-on-publish: ${RULE_MODEL_PRELOAD_ON_PUBLISH:true}

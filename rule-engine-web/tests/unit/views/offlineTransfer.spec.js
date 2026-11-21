@@ -33,6 +33,12 @@ describe('OfflineTransfer', () => {
     wrapper.vm.preview.versionAssociations[0].valid = true
     await nextTick()
     expect(wrapper.vm.hasCurrentPreview).toBe(true)
+    wrapper.vm.preview.missingFunctionLibraries = ['缺少已部署的函数扩展']
+    await nextTick()
+    expect(wrapper.vm.hasCurrentPreview).toBe(false)
+    wrapper.vm.preview.missingFunctionLibraries = []
+    await nextTick()
+    expect(wrapper.vm.hasCurrentPreview).toBe(true)
     // A binding change invalidates the signature even if the earlier response was valid.
     wrapper.vm.versionBindingsDraft['RULE:1|/operand'] = { resourceId: '50', versionId: '80', expectedSnapshotId: '81' }
     await nextTick()

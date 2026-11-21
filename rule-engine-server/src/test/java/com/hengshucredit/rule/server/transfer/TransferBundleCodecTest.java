@@ -11,6 +11,39 @@ public class TransferBundleCodecTest {
     private final TransferBundleCodec codec = new TransferBundleCodec();
 
     @Test
+    public void sharedExtensionIsPackagedOnceAndTheBindingNeverBecomesEditableConfiguration() {
+        byte[] bytes = "test library content".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String hash = com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(bytes);
+        var library = new TransferFunctionLibraries.Library(hash, bytes);
+        var javaFn = new TransferBundle.Resource("FUNCTION:10", Map.of("implType","JAVA","implClass","sample.Functions"),List.of(),List.of());
+        var beanFn = new TransferBundle.Resource("FUNCTION:11", Map.of("implType","BEAN","implBeanName","sampleBean"),List.of(),List.of());
+        var bundle = new TransferBundle(List.of(javaFn.key(),beanFn.key()),List.of(javaFn,beanFn),List.of());
+        byte[] zip = codec.encode(bundle, Map.of(javaFn.key(),library,beanFn.key(),library));
+        var archive = new com.hengshucredit.rule.server.artifact.DecisionArtifactPackageCodec().decode(zip).getArtifactPackage();
+        Assert.assertEquals("3",archive.getMetadata().get("resourceFormatVersion"));
+        Assert.assertEquals(3,archive.getComponents().size());
+        Assert.assertArrayEquals(bytes,archive.getComponent("function-jars/"+hash+".jar").getContent());
+        var decoded = codec.decode(zip);
+        Assert.assertEquals(2,decoded.libraries().size());
+        for (var fn : decoded.bundle().resources()) {
+            Assert.assertEquals(hash,decoded.libraries().get(fn.key()).digest());
+            Assert.assertFalse(fn.configuration().containsKey("_transferFunctionJar"));
+        }
+        var missing = new TransferFunctionLibraries("unused-test-extension-directory");
+        Assert.assertNotNull(missing.issue(decoded.libraries().get(javaFn.key()),javaFn.configuration(),new java.util.HashMap<>()));
+        Assert.assertTrue(codec.decode(codec.encode(bundle)).libraries().isEmpty());
+    }
+
+    @Test
+    public void mismatchedDeclaredJarDigestFailsEvenWithAnIntactOuterManifest() {
+        var fn = new TransferBundle.Resource("FUNCTION:1", Map.of("implType","JAVA","implClass","sample.A"),List.of(),List.of());
+        var bundle = new TransferBundle(List.of(fn.key()),List.of(fn),List.of());
+        var invalid = new TransferFunctionLibraries.Library("0".repeat(64),new byte[]{1});
+        byte[] zip = codec.encode(bundle, Map.of(fn.key(),invalid));
+        Assert.assertThrows(IllegalArgumentException.class,()->codec.decode(zip));
+    }
+
+    @Test
     public void packageRoundTripKeepsStableKeysAndExcludesListRowsByContract() {
         Map<String, Object> variable = new LinkedHashMap<>();
         variable.put("projectId", 10L);

@@ -67,6 +67,8 @@ public class OfflineResourceTransferService {
     @Resource private com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper modelOutputs;
     @Resource
     private com.hengshucredit.rule.server.mapper.TransferProjectResourceMapper projectResourceMapper;
+    @Resource private TransferFunctionLibraries functionLibraries;
+    @Resource private com.hengshucredit.rule.server.service.FunctionMethodCatalogService nativeCatalog;
     private final TransferBundleCodec codec = new TransferBundleCodec();
     @Resource private TransferVersionService versionTransfers;
 
@@ -198,9 +200,22 @@ public class OfflineResourceTransferService {
                     references, requiredEnvironmentFields(key.type(), configuration), versionReferences));
             visiting.remove(key.value());
         }
+        Map<String,TransferFunctionLibraries.Library> libraries = new LinkedHashMap<>();
+        var jarCache = new java.util.HashMap<java.nio.file.Path,TransferFunctionLibraries.Library>();
+        if (functionLibraries != null) {
+            for (var resource : resources.values()) {
+                if (!resource.key().startsWith("FUNCTION:")) continue;
+                var library = functionLibraries.deployed(resource.configuration(), jarCache);
+                if (library != null) {
+                    nativeCatalog.requireNativePermission(com.alibaba.fastjson.JSON.parseObject(CanonicalJson.write(resource.configuration()),
+                            com.hengshucredit.rule.model.entity.RuleFunction.class));
+                    libraries.put(resource.key(), library);
+                }
+            }
+        }
         var bundle = new TransferBundle(roots.stream().map(TransferKey::value).toList(),
                 new ArrayList<>(resources.values()), warnings);
-        return new ExportedPackage(bundle, codec.encode(bundle));
+        return new ExportedPackage(bundle, codec.encode(bundle, libraries));
     }
 
     @Transactional(readOnly = true)
@@ -259,7 +274,10 @@ public class OfflineResourceTransferService {
                 edge.put("targetName", reference.targetName());
                 return edge;
             }).toList());
-            item.put("requiredEnvironmentFields", resource.requiredEnvironmentFields());
+            var requirement = decoded.libraries().get(resource.key());
+            item.put("requiredEnvironmentFields", requirement == null ? resource.requiredEnvironmentFields()
+                    : resource.requiredEnvironmentFields().stream().filter(field -> !"目标环境需提供同名 Java 类或 Spring Bean".equals(field)).toList());
+            if (requirement != null) item.put("functionJar", requirement.path());
             item.put("configurationOnly", DATA_FREE_TYPES.contains(key.type()));
             item.put("selected", true);
             resources.add(item);
@@ -291,7 +309,19 @@ public class OfflineResourceTransferService {
         result.put("resources", resources);
         result.put("selectedResourceKeys", selectedResources.stream().map(TransferBundle.Resource::key).toList());
         result.put("associations", associations);
-        result.put("warnings", decoded.bundle().warnings());
+        var notes = new ArrayList<>(decoded.bundle().warnings());
+        List<String> missingLibraries = new ArrayList<>();
+        var jarCache = new java.util.HashMap<java.nio.file.Path,TransferFunctionLibraries.Library>();
+        for (var resource : selectedResources) {
+            var library = decoded.libraries().get(resource.key());
+            if (library != null) {
+                String issue = functionLibraries.issue(library, resource.configuration(), jarCache);
+                if (issue != null && !missingLibraries.contains(issue)) missingLibraries.add(issue);
+            }
+        }
+        notes.addAll(missingLibraries);
+        result.put("missingFunctionLibraries", missingLibraries);
+        result.put("warnings", notes);
         result.put("listDataIncluded", false);
         result.put("targetScope", options.normalizedScope());
         result.put("targetProjectId", options.targetProjectId());

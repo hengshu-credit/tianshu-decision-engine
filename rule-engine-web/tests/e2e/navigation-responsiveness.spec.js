@@ -84,6 +84,8 @@ test('外数接口详情的测试编辑器按页签加载，切换后保留测�
 test('逐一点击全部菜单与子页签，往返切换后仍可交互并记录响应耗时', async ({ page, navigationAudit }, testInfo) => {
   test.setTimeout(180000)
   const apiData = createDocsApiData()
+  apiData.set('GET /api/rule/test-data/RULE/catalog', { records: [], total: 0 })
+  apiData.set('GET /api/rule/test-data/rules', [])
   const projectCode = apiData.get('/api/rule/project/list').records[0].projectCode
   const permissions = [...new Set(SIDEBAR_MENUS.flatMap(menu => menu.permission).filter(Boolean)), 'system:audit', 'account:audit']
   apiData.set('/api/auth/console/config', { loginEnabled: true })

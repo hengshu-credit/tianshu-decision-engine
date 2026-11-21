@@ -71,3 +71,6 @@ rule-engine-redis
 rule-engine-builder-ui
 rule-engine-example
 rule-engine-client-http
+
+# Deployment-specific trusted binary providers.
+/extensions/functions/*.jar

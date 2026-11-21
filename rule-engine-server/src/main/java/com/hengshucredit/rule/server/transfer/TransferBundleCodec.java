@@ -16,15 +16,20 @@ public final class TransferBundleCodec {
     private final DecisionArtifactPackageCodec zip = new DecisionArtifactPackageCodec();
 
     public byte[] encode(TransferBundle bundle) {
+        return encode(bundle, Map.of());
+    }
+
+    byte[] encode(TransferBundle bundle, Map<String,TransferFunctionLibraries.Library> libraries) {
         bundle.resources().forEach(TransferVersionReferences::descriptors);
         validate(bundle);
         DecisionArtifactPackage archive = new DecisionArtifactPackage();
         archive.putMetadata("packageKind", PACKAGE_KIND);
         boolean includesModels = bundle.resources().stream()
                 .anyMatch(r -> r.key().startsWith("MODEL:") && r.configuration().get("modelContent") instanceof String);
-        archive.putMetadata("resourceFormatVersion", includesModels ? "2" : "1");
+        archive.putMetadata("resourceFormatVersion", !libraries.isEmpty() ? "3" : includesModels ? "2" : "1");
         archive.putMetadata("roots", bundle.roots());
         archive.putMetadata("warnings", bundle.warnings());
+        Set<String> attached = new LinkedHashSet<>();
         for (var resource : bundle.resources()) {
             var configuration = new LinkedHashMap<>(resource.configuration());
             if (resource.key().startsWith("MODEL:") && configuration.get("modelContent") instanceof String content) {
@@ -33,6 +38,12 @@ public final class TransferBundleCodec {
                 archive.addComponent(binary, "application/octet-stream", original);
                 configuration.remove("modelContent");
                 configuration.put("_transferModelFile", binary);
+            }
+            var lib = libraries.get(resource.key());
+            if (lib != null) {
+                String entry = "function-jars/" + lib.digest() + ".jar";
+                if (attached.add(entry)) archive.addComponent(entry, "application/java-archive", lib.bytes());
+                configuration.put("_transferFunctionJar", lib.digest());
             }
             var row = new TransferBundle.Resource(resource.key(), configuration, resource.references(),
                     resource.requiredEnvironmentFields(), resource.versionReferences());
@@ -45,12 +56,14 @@ public final class TransferBundleCodec {
         var decoded = zip.decode(bytes);
         var archive = decoded.getArtifactPackage();
         if (!PACKAGE_KIND.equals(archive.getMetadata().get("packageKind"))
-                || !Set.of("1","2").contains(archive.getMetadata().getOrDefault("resourceFormatVersion","")))
-            throw new IllegalArgumentException("请选择天枢离线配置迁移包（版本 1 或 2）");
+                || !Set.of("1","2","3").contains(archive.getMetadata().getOrDefault("resourceFormatVersion","")))
+            throw new IllegalArgumentException("请选择天枢离线配置迁移包（版本 1、2 或 3）");
         List<TransferBundle.Resource> resources = new ArrayList<>();
         Set<String> binaries = new LinkedHashSet<>();
+        Map<String,TransferFunctionLibraries.Requirement> libraries = new LinkedHashMap<>();
+        Set<String> verifiedJars = new LinkedHashSet<>();
         for (var component : archive.getComponents().values()) {
-            if (component.getPath().startsWith("model-files/")) continue;
+            if (component.getPath().startsWith("model-files/") || component.getPath().startsWith("function-jars/")) continue;
             Map<String, Object> value = component.getPath().startsWith("resources/MODEL/")
                     ? CanonicalJson.readLegacyModelComponent(component.getContent()) : CanonicalJson.readMap(component.getContent());
             String key = requiredText(value.get("key"));
@@ -66,6 +79,22 @@ public final class TransferBundleCodec {
                         optionalText(reference.get("targetCode")), optionalText(reference.get("targetName"))));
             }
             var configuration = object(value.get("configuration"));
+            Object library = configuration.remove("_transferFunctionJar");
+            if (library != null) {
+                boolean bean = "BEAN".equals(configuration.get("implType"));
+                Object target = configuration.get(bean ? "implBeanName" : "implClass");
+                if (!"3".equals(archive.getMetadata().get("resourceFormatVersion")) || !key.startsWith("FUNCTION:")
+                        || (!bean && !"JAVA".equals(configuration.get("implType"))) || !(target instanceof String className) || className.isBlank()
+                        || !(library instanceof String digest) || !digest.matches("[a-f0-9]{64}"))
+                    throw new IllegalArgumentException("迁移函数 JAR 绑定无效：" + key);
+                var requirement = new TransferFunctionLibraries.Requirement(className, digest);
+                var jar = archive.getComponent(requirement.path());
+                if (jar == null || !"application/java-archive".equals(jar.getMediaType()))
+                    throw new IllegalArgumentException("迁移包缺少函数 JAR：" + className);
+                if (verifiedJars.add(requirement.path()) && !digest.equals(com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(jar.getContent())))
+                    throw new IllegalArgumentException("迁移函数 JAR 摘要不匹配");
+                libraries.put(key, requirement);
+            }
             Object binary = configuration.remove("_transferModelFile");
             if (binary != null) {
                 if (!key.startsWith("MODEL:") || !binaryPath(key).equals(binary) || configuration.containsKey("modelContent"))
@@ -81,11 +110,13 @@ public final class TransferBundleCodec {
         }
         if (archive.getComponents().keySet().stream().anyMatch(p -> p.startsWith("model-files/") && !binaries.contains(p)))
             throw new IllegalArgumentException("迁移包包含未绑定的模型原件");
+        if (archive.getComponents().keySet().stream().anyMatch(p -> p.startsWith("function-jars/") && !verifiedJars.contains(p)))
+            throw new IllegalArgumentException("迁移包包含未绑定的函数 JAR");
         TransferBundle bundle = new TransferBundle(strings(archive.getMetadata().get("roots")), resources,
                 strings(archive.getMetadata().get("warnings")));
         bundle.resources().forEach(TransferVersionReferences::descriptors);
         validate(bundle);
-        return new Decoded(bundle, decoded.getPackageDigest());
+        return new Decoded(bundle, decoded.getPackageDigest(), Map.copyOf(libraries));
     }
 
     private void validate(TransferBundle bundle) {
@@ -135,5 +166,5 @@ public final class TransferBundleCodec {
         return text;
     }
     private String optionalText(Object value) { return value == null ? null : requiredText(value); }
-    public record Decoded(TransferBundle bundle, String packageDigest) { }
+    public record Decoded(TransferBundle bundle, String packageDigest, Map<String,TransferFunctionLibraries.Requirement> libraries) { }
 }

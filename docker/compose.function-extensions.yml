@@ -1,0 +1,18 @@
+services:
+  server:
+    environment:
+      LOADER_PATH: /opt/tianshu/functions
+      RULE_FUNCTION_EXTENSION_DIRECTORY: /opt/tianshu/functions
+    volumes:
+      - type: bind
+        source: ${FUNCTION_EXTENSIONS_MOUNT:?Set FUNCTION_EXTENSIONS_MOUNT to the trusted JAR directory}
+        target: /opt/tianshu/functions
+        read_only: true
+        bind: {create_host_path: false}
+    command:
+      - sh
+      - -ec
+      - |
+        export RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR="/data/logs/execution-persistence-journal/$${HOSTNAME}"
+        export RULE_LIST_ACTION_JOURNAL_DIR="/data/logs/list-action-journal/$${HOSTNAME}"
+        exec java -cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher
