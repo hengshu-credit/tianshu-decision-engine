@@ -14,6 +14,67 @@ import static org.junit.Assert.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 
 public class ConsoleBootstrapFlowTest {
+    @Test public void onlyLatestSessionSurvivesActivationAndLaterLogins() throws Exception {
+        try (var f = new ConsoleAccountSecurityTest.Fixture()) {
+            f.initialize();
+            f.user("alice");
+            var mvc = MockMvcBuilders.standaloneSetup(f.controller()).setControllerAdvice(new PlatformResponseAdvice()).build();
+            var first = signIn(mvc, "admin", "AdminPass123!");
+            var second = signIn(mvc, "admin", "AdminPass123!");
+            var alice = signIn(mvc, "alice", "OldPass123!");
+            assertEquals(200, mvc.perform(get("/api/auth/console/me").session(first)).andReturn().getResponse().getStatus());
+
+            var settings = new com.hengshucredit.rule.server.system.SystemSettingsService(f.jdbc, null, f.props,
+                    new org.springframework.core.env.StandardEnvironment(), null);
+            settings.persist(com.hengshucredit.rule.server.governance.ResourceSnapshot.ofJson(
+                    "{\"id\":3,\"configVersion\":0,\"singleSessionEnabled\":true}"), "reviewer");
+            assertEquals(401, mvc.perform(get("/api/auth/console/me").session(first)).andReturn().getResponse().getStatus());
+            assertFalse(f.login.authenticate("admin", "wrong").authenticated());
+            assertEquals(200, mvc.perform(get("/api/auth/console/me").session(second)).andReturn().getResponse().getStatus());
+            var third = signIn(mvc, "admin", "AdminPass123!");
+
+            settings.persist(com.hengshucredit.rule.server.governance.ResourceSnapshot.ofJson(
+                    "{\"id\":3,\"configVersion\":1,\"singleSessionEnabled\":false}"), "reviewer");
+            var fourth = signIn(mvc, "admin", "AdminPass123!");
+            assertEquals(401, mvc.perform(get("/api/auth/console/profile").session(second)).andReturn().getResponse().getStatus());
+            for (var live : List.of(third, fourth, alice)) {
+                assertEquals(200, mvc.perform(get("/api/auth/console/me").session(live)).andReturn().getResponse().getStatus());
+            }
+        }
+    }
+
+    @Test public void concurrentSuccessfulLoginsLeaveExactlyOneValidSequence() throws Exception {
+        try (var f = new ConsoleAccountSecurityTest.Fixture()) {
+            var owner = f.initialize();
+            f.jdbc.update("UPDATE rule_system_setting SET config_json=? WHERE id=3", "{\"singleSessionEnabled\":true}");
+            var pool = Executors.newFixedThreadPool(2);
+            var start = new CountDownLatch(1);
+            Callable<Long> signIn = () -> {
+                start.await();
+                return f.login.authenticate("admin", "AdminPass123!").sessionRange().latestSequence();
+            };
+            try {
+                var a = pool.submit(signIn);
+                var b = pool.submit(signIn);
+                start.countDown();
+                long first = a.get(20, TimeUnit.SECONDS), second = b.get(20, TimeUnit.SECONDS);
+                assertNotEquals(first, second);
+                var current = f.login.currentUser(owner.userId()).sessionRange();
+                assertEquals(Math.max(first, second), current.minimumSequence());
+                assertEquals(current.latestSequence(), current.minimumSequence());
+            } finally { pool.shutdownNow(); }
+        }
+    }
+
+    private static org.springframework.mock.web.MockHttpSession signIn(org.springframework.test.web.servlet.MockMvc mvc,
+                                                                        String user, String password) throws Exception {
+        var result = mvc.perform(post("/api/auth/console/login").contentType("application/json")
+                .content(com.hengshucredit.rule.server.artifact.CanonicalJson.write(
+                        java.util.Map.of("username", user, "password", password)))).andReturn();
+        assertEquals(result.getResponse().getContentAsString(), 200, result.getResponse().getStatus());
+        return (org.springframework.mock.web.MockHttpSession) result.getRequest().getSession(false);
+    }
+
     @Test public void loginActivityPreservesLegacyTimeAndNeverMovesBackward() throws Exception {
         try (var f = new ConsoleAccountSecurityTest.Fixture()) {
             f.login.initializeAdministrator("owner", "管理员", "InitialOwner123!");

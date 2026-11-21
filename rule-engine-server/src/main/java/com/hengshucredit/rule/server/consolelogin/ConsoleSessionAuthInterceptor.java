@@ -16,6 +16,9 @@ import java.util.Objects;
  */
 public class ConsoleSessionAuthInterceptor implements HandlerInterceptor {
 
+    static final String SESSION_SEQUENCE = "RULE_CONSOLE_SESSION_SEQUENCE";
+    static final String SESSION_REPLACED = "该账号已在其他位置登录或登录策略已更新，请重新登录";
+
     private final RuleEngineConsoleLoginProperties properties;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
     private DatabaseConsoleAccountService databaseAccountService;
@@ -64,28 +67,30 @@ public class ConsoleSessionAuthInterceptor implements HandlerInterceptor {
         if (user == null) {
             return writeUnauthorized(response, "需要登录");
         }
-        if (databaseAccountService != null
-                && !databaseSessionIsCurrent(session)) {
-            clearIdentity(session, properties);
-            return writeUnauthorized(response, "会话权限已变更，请重新登录");
-        }
-        return true;
-    }
-
-    private boolean databaseSessionIsCurrent(HttpSession session) {
+        if (databaseAccountService == null) return true;
         Object userIdValue = session.getAttribute(
                 properties.getSessionUserIdAttribute());
-        if (!(userIdValue instanceof Number number)) return false;
-        DatabaseConsoleAccountService.ConsoleLoginResult current =
-                databaseAccountService.currentUser(number.longValue());
-        if (!current.authenticated()) return false;
-        Object sessionVersion = session.getAttribute(
-                properties.getSessionPermissionVersionAttribute());
-        return Objects.equals(current.permissionVersion(), sessionVersion);
+        var current = userIdValue instanceof Number id ? databaseAccountService.currentUser(id.longValue()) : null;
+        String error = sessionError(session, properties, current);
+        if (error == null) return true;
+        clearIdentity(session, properties);
+        return writeUnauthorized(response, error);
+    }
+
+    static String sessionError(HttpSession session, RuleEngineConsoleLoginProperties properties,
+                               DatabaseConsoleAccountService.ConsoleLoginResult current) {
+        if (current == null || !current.authenticated() || !Objects.equals(current.permissionVersion(),
+                session.getAttribute(properties.getSessionPermissionVersionAttribute()))) {
+            return "会话权限已变更，请重新登录";
+        }
+        Object issued = session.getAttribute(SESSION_SEQUENCE);
+        long sequence = issued instanceof Number number ? number.longValue() : 0;
+        return sequence < current.sessionRange().minimumSequence() ? SESSION_REPLACED : null;
     }
 
     /** 撤销身份但保留会话容器，避免 Redis 并发请求因物理会话已删除而无法提交响应。 */
     static void clearIdentity(HttpSession session, RuleEngineConsoleLoginProperties properties) {
+        session.removeAttribute(SESSION_SEQUENCE);
         session.removeAttribute(properties.getSessionUsernameAttribute());
         session.removeAttribute(properties.getSessionOperatorNameAttribute());
         session.removeAttribute(properties.getSessionUserIdAttribute());

@@ -191,6 +191,24 @@ describe('系统配置', () => {
     expect(wrapper.vm.writable).toBe(false); expect(wrapper.vm.form.codes.enabled).toBe(false)
     wrapper.unmount()
   })
+  test('部署管理注册配置时仍可修改单点登录，旧草稿继承当前生效值', async () => {
+    const data = settings()
+    data.deploymentManaged.access = true
+    data.access.singleSessionEnabled = true
+    api.getSystemSettings.mockResolvedValue({ data })
+    const oldDraft = { ...data.access }
+    delete oldDraft.singleSessionEnabled
+    governance.getWorkspaceDraft.mockResolvedValue({ data: { id: 12, status: 'EDITING', draftSnapshotJson: JSON.stringify(oldDraft) } })
+    const wrapper = shallowMount(SystemSettings); await flushPromises()
+    wrapper.vm.tab = 'access'; await wrapper.vm.refreshTab('access')
+    expect(wrapper.vm.form.access.singleSessionEnabled).toBe(true)
+    expect(wrapper.vm.writable).toBe(true)
+    wrapper.vm.form.access.singleSessionEnabled = false
+    expect(wrapper.vm.dirty).toBe(true)
+    expect(wrapper.vm.draftPayload().singleSessionEnabled).toBe(false)
+    expect(wrapper.vm.effectiveAccess.singleSessionEnabled).toBe(true)
+    wrapper.unmount()
+  })
   test('邮件预览使用生效有效期，系统通知不显示验证按钮和安全提示', async () => {
     const wrapper = shallowMount(SystemSettings); await flushPromises()
     wrapper.vm.form.access.passwordResetTtlMinutes = 90

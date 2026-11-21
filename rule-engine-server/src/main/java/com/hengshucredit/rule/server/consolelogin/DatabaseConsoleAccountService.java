@@ -16,6 +16,9 @@ import com.hengshucredit.rule.server.mapper.ConsoleUserMapper;
 import com.hengshucredit.rule.server.mapper.ConsoleUserRoleMapper;
 import com.hengshucredit.rule.server.security.ConsolePermissionCodes;
 import com.hengshucredit.rule.server.security.ConsolePermissionService;
+import com.hengshucredit.rule.server.artifact.CanonicalJson;
+import com.hengshucredit.rule.server.mapper.ConsoleUserMapper.SessionRange;
+import com.hengshucredit.rule.server.system.SystemSettingsService;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,9 +83,9 @@ public class DatabaseConsoleAccountService {
         }
         synchronizePermissionCatalogForExistingUsers(
                 normalizedUsername);
-        updateLastLogin(user);
+        SessionRange range = recordSuccessfulLogin(user);
         appendAudit(user, "LOGIN_SUCCESS");
-        return successfulResult(user, false);
+        return successfulResult(user, range);
     }
 
     public ConsoleLoginResult currentUser(Long userId) {
@@ -92,7 +95,8 @@ public class DatabaseConsoleAccountService {
                 || (user.getRegistrationStatus() != null && !"ACTIVE".equals(user.getRegistrationStatus()))) {
             return ConsoleLoginResult.failure();
         }
-        return successfulResult(user, false);
+        SessionRange range = userMapper.sessionRange(userId);
+        return successfulResult(user, range == null ? SessionRange.LEGACY : range);
     }
 
     protected long countUsers() {
@@ -144,7 +148,7 @@ public class DatabaseConsoleAccountService {
         return permissionService.scope(userId).availablePermissions();
     }
 
-    protected void updateLastLogin(ConsoleUser user) {
+    protected SessionRange recordSuccessfulLogin(ConsoleUser user) {
         // 账户安全锁一直持有到提交。用 READ_COMMITTED 复核验密期间可能发生的改密、停用和权限变更。
         String currentHash = userMapper.activeLoginHash(user.getId(), user.getPermissionVersion());
         if (!user.getPasswordHash().equals(currentHash)) {
@@ -152,19 +156,23 @@ public class DatabaseConsoleAccountService {
                 com.hengshucredit.rule.model.PlatformCode.CREDENTIAL_INVALID, "账户状态已变更，请重新登录");
         }
         userMapper.recordLoginTime(user.getId(), LocalDateTime.now());
+        boolean single = Boolean.TRUE.equals(CanonicalJson.readMap(userMapper.accessSettingsJson())
+                .get(SystemSettingsService.SINGLE_SESSION));
+        userMapper.advanceLoginSequence(user.getId(), single);
+        return userMapper.sessionRange(user.getId());
     }
 
     private ConsoleLoginResult successfulResult(ConsoleUser user,
-                                                boolean bootstrapped) {
+                                                SessionRange range) {
         return new ConsoleLoginResult(
                 true,
-                bootstrapped,
+                false,
                 user.getId(),
                 user.getUsername(),
                 user.getDisplayName(),
                 user.getPermissionVersion(),
                 resolveRoleCodes(user.getId()),
-                resolvePermissions(user.getId()), user.getOperatorName(), resolveOperatorNames(user));
+                resolvePermissions(user.getId()), user.getOperatorName(), resolveOperatorNames(user), range);
     }
 
     protected Set<String> resolveOperatorNames(ConsoleUser user) {
@@ -299,10 +307,10 @@ public class DatabaseConsoleAccountService {
                                      List<String> roleCodes,
                                      Set<String> permissions,
                                      String operatorName,
-                                     Set<String> operatorNames) {
+                                     Set<String> operatorNames, SessionRange sessionRange) {
         public ConsoleLoginResult(boolean authenticated, boolean bootstrapped, Long userId, String username,
                                   String displayName, Long permissionVersion, List<String> roleCodes, Set<String> permissions, String operatorName) {
-            this(authenticated, bootstrapped, userId, username, displayName, permissionVersion, roleCodes, permissions, operatorName, null);
+            this(authenticated, bootstrapped, userId, username, displayName, permissionVersion, roleCodes, permissions, operatorName, null, SessionRange.LEGACY);
         }
         public ConsoleLoginResult(boolean authenticated, boolean bootstrapped, Long userId, String username,
                                   String displayName, Long permissionVersion, List<String> roleCodes, Set<String> permissions) {

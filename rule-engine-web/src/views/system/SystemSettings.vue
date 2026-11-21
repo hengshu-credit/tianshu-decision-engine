@@ -46,12 +46,16 @@
         </div>
       </el-tab-pane>
       <el-tab-pane lazy label="登录与安全" name="access">
-        <el-alert v-if="managed.access" title="访问策略由部署环境覆盖，请先移除环境覆盖再通过页面维护。" type="info" :closable="false" />
+        <el-alert v-if="managed.access" title="注册和密码找回配置由部署环境管理。单点登录仍可在此配置。" type="info" :closable="false" />
         <el-form v-if="form.access" label-position="top" class="access-form" :disabled="!writable">
-          <el-form-item label="允许新用户注册"><el-switch v-model="form.access.registrationEnabled" /><small>验证邮箱后激活，由管理员分配业务权限。</small></el-form-item>
-          <el-form-item label="允许通过邮箱找回密码"><el-switch v-model="form.access.passwordRecoveryEnabled" /></el-form-item>
-          <el-form-item label="控制台访问地址"><el-input v-model="form.access.baseUrl" placeholder="https://engine.example.com" /><small>用于注册验证和密码重置邮件中的链接。</small></el-form-item>
-          <div class="settings-pair"><el-form-item label="注册验证有效期（分钟）"><el-input-number v-model="form.access.verificationTtlMinutes" :min="5" :max="1440" /></el-form-item><el-form-item label="密码重置有效期（分钟）"><el-input-number v-model="form.access.passwordResetTtlMinutes" :min="5" :max="1440" /></el-form-item></div>
+          <el-form-item label="单点登录">
+            <el-switch v-model="form.access.singleSessionEnabled" aria-label="单点登录" />
+            <small>开启后，每个账号仅保留最近一次登录。其他浏览器或设备需重新登录。</small>
+          </el-form-item>
+          <el-form-item label="允许新用户注册"><el-switch v-model="form.access.registrationEnabled" :disabled="managed.access" /><small>验证邮箱后激活，由管理员分配业务权限。</small></el-form-item>
+          <el-form-item label="允许通过邮箱找回密码"><el-switch v-model="form.access.passwordRecoveryEnabled" :disabled="managed.access" /></el-form-item>
+          <el-form-item label="控制台访问地址"><el-input v-model="form.access.baseUrl" :disabled="managed.access" placeholder="https://engine.example.com" /><small>用于注册验证和密码重置邮件中的链接。</small></el-form-item>
+          <div class="settings-pair"><el-form-item label="注册验证有效期（分钟）"><el-input-number v-model="form.access.verificationTtlMinutes" :disabled="managed.access" :min="5" :max="1440" /></el-form-item><el-form-item label="密码重置有效期（分钟）"><el-input-number v-model="form.access.passwordResetTtlMinutes" :disabled="managed.access" :min="5" :max="1440" /></el-form-item></div>
           <dismissible-guidance guide-id="system.recovery" label="恢复码说明">
             超级管理员的服务器一次性恢复码不受邮箱设置影响。
           </dismissible-guidance>
@@ -105,7 +109,7 @@ export default {
     hasApprovalView() { return hasPermission('approval:view') },
     draft() { return this.drafts[this.tab] },
     configurationUnavailable() { return this.loading || this.tabLoading || Boolean(this.tabError) },
-    writable() { return !this.configurationUnavailable && this.canEdit && !this.managed[this.tab] && (!this.draft || this.draft.status === 'EDITING') },
+    writable() { return !this.configurationUnavailable && this.canEdit && (this.tab === 'access' || !this.managed[this.tab]) && (!this.draft || this.draft.status === 'EDITING') },
     dirty() { return this.tab !== 'history' && (JSON.stringify(this.form[this.tab]) !== JSON.stringify(this.saved[this.tab]) || (this.tab === 'mail' && Boolean(this.mailPassword))) },
     watermarkPreviewConfig() { return this.tab === 'brand' && this.canEdit && this.dirty ? this.form.brand : null },
     logoPreview() { return this.assetPreviews.logoId || resolveBrandImages(this.form.brand).logoUrl },
@@ -167,6 +171,9 @@ export default {
         const snapshot = draft?.draftSnapshotJson ? parseMetadataResponse(draft.draftSnapshotJson) : effective[tab]
         this.effectiveAccess = clone(effective.access)
         this.managed = effective.deploymentManaged || {}
+        if (tab === 'access' && snapshot.singleSessionEnabled === undefined) {
+          snapshot.singleSessionEnabled = effective.access.singleSessionEnabled ?? false
+        }
         this.form[tab] = snapshot; this.saved[tab] = clone(snapshot)
         this.drafts[tab] = draft?.draftSnapshotJson ? draft : state && ['EDITING', 'PENDING'].includes(state.requestStatus)
           ? { id: state.requestId, status: state.requestStatus === 'EDITING' && !state.owned ? 'LOCKED' : state.requestStatus } : null

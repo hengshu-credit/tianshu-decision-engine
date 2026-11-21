@@ -169,6 +169,7 @@ public class ConsoleAuthController {
         session.setAttribute(consoleLoginProperties.getSessionOperatorNameAttribute(), loginResult.operatorName());
         session.setAttribute(consoleLoginProperties.getSessionUserIdAttribute(), loginResult.userId());
         session.setAttribute(consoleLoginProperties.getSessionPermissionVersionAttribute(), loginResult.permissionVersion());
+        session.setAttribute(ConsoleSessionAuthInterceptor.SESSION_SEQUENCE, loginResult.sessionRange().latestSequence());
         return ApiResponse.ok(loginResultData(loginResult, session));
     }
 
@@ -243,10 +244,10 @@ public class ConsoleAuthController {
                 ConsoleSessionAuthInterceptor.clearIdentity(session, consoleLoginProperties);
                 return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.ACCOUNT_DISABLED, null);
             }
-            if (!java.util.Objects.equals(current.permissionVersion(), session.getAttribute(
-                    consoleLoginProperties.getSessionPermissionVersionAttribute()))) {
+            String error = ConsoleSessionAuthInterceptor.sessionError(session, consoleLoginProperties, current);
+            if (error != null) {
                 ConsoleSessionAuthInterceptor.clearIdentity(session, consoleLoginProperties);
-                return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.LOGIN_REQUIRED, "会话权限已变更，请重新登录");
+                return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.LOGIN_REQUIRED, error);
             }
             return ApiResponse.ok(loginResultData(current, session));
         }
@@ -315,8 +316,7 @@ public class ConsoleAuthController {
         Object id = session.getAttribute(consoleLoginProperties.getSessionUserIdAttribute());
         if (!(id instanceof Number number) || databaseAccountService == null) return false;
         var current = databaseAccountService.currentUser(number.longValue());
-        if (!current.authenticated() || !java.util.Objects.equals(current.permissionVersion(),
-                session.getAttribute(consoleLoginProperties.getSessionPermissionVersionAttribute()))) {
+        if (ConsoleSessionAuthInterceptor.sessionError(session, consoleLoginProperties, current) != null) {
             ConsoleSessionAuthInterceptor.clearIdentity(session, consoleLoginProperties);
             return false;
         }
