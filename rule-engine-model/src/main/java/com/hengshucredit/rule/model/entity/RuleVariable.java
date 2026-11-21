@@ -18,6 +18,8 @@ public class RuleVariable {
     /** 脚本中的变量名（默认驼峰，如 totalAmount） */
     private String scriptName;
     private String varType;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private Long mockRuleId;
     private String varSource;
     /** 由系统初始化脚本标记；业务写入不能修改此身份。 */
     @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)

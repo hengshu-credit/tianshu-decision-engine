@@ -3257,7 +3257,7 @@ public class RuleFieldAnalyzer {
         return map;
     }
 
-    private String buildObjectFieldScriptName(RuleDataObjectField field,
+    public static String buildObjectFieldScriptName(RuleDataObjectField field,
                                               Map<Long, RuleDataObject> objectMap,
                                               Map<Long, RuleDataObjectField> objectFieldMap) {
         String fieldScript = trimToNull(field.getScriptName());
@@ -3293,7 +3293,7 @@ public class RuleFieldAnalyzer {
         return type != null ? type.toUpperCase() : null;
     }
 
-    private String trimToNull(String value) {
+    private static String trimToNull(String value) {
         if (value == null) {
             return null;
         }

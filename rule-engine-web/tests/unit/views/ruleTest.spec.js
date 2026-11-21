@@ -7,6 +7,8 @@ import { h, nextTick } from 'vue'
 import fs from 'fs'
 import path from 'path'
 
+import { generateTestInput } from '@/api/testData'
+vi.mock('@/api/testData', () => ({ generateTestInput: vi.fn() }))
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
 import * as projectApi from '@/api/project'
@@ -80,6 +82,8 @@ function mockExecutionResult() {
 }
 
 // ─── 测试辅助 ─────────────────────────────────────────────
+const tabStub = { template: '<div><slot /></div>' }
+
 function makeStub(tag) {
   return { render: () => h(tag) }
 }
@@ -111,8 +115,8 @@ describe('RuleTest — 初始化与数据加载', () => {
         'el-tag': makeStub('span'),
         'el-table': makeStub('table'),
         'el-table-column': makeStub('td'),
-        'el-tabs': makeStub('div'),
-        'el-tab-pane': makeStub('div'),
+        'el-tabs': tabStub,
+        'el-tab-pane': tabStub,
         'el-dialog': makeStub('div'),
         'el-card': makeStub('div'),
         'el-alert': makeStub('div'),
@@ -590,7 +594,7 @@ describe('RuleTest — 辅助方法', () => {
         'el-input': makeStub('input'), 'el-input-number': makeStub('input'),
         'el-button': makeStub('button'), 'el-tag': makeStub('span'),
         'el-table': makeStub('table'), 'el-table-column': makeStub('td'),
-        'el-tabs': makeStub('div'), 'el-tab-pane': makeStub('div'),
+        'el-tabs': tabStub, 'el-tab-pane': tabStub,
         'el-dialog': makeStub('div'), 'el-card': makeStub('div'),
         'el-alert': makeStub('div'), 'el-divider': makeStub('hr'),
         'el-loading': makeStub('div'), 'el-descriptions': makeStub('div'),
@@ -791,28 +795,15 @@ describe('RuleTest — 辅助方法', () => {
     })
   })
 
-  test('applyRiskDemoParams 填充完整综合风控演示样例', () => {
-    wrapper.vm.result = { success: true }
-
-    wrapper.vm.applyRiskDemoParams()
-
-    const keys = wrapper.vm.params.map(p => p.key)
-    expect(keys).toContain('taxpayerType')
-    expect(keys).toContain('yearsInBusiness')
-    expect(keys).toContain('taxBurdenDeviation')
-    expect(keys).toContain('serviceType')
-    expect(keys).toContain('taxpayerQualification')
-    expect(keys).toContain('billingAmount')
+  test('自动生成使用选中的版本并同步表单及精确 JSON', async () => {
+    const source = { sourceType: 'REVISION', sourceId: '51', lockVersion: '2' }
+    await wrapper.setData({ selectedRuleId: 1, testSourceOptions: [{ value: 'draft', source }], selectedTestSourceValue: 'draft', inputLoadState: 'READY', result: { success: true } })
+    generateTestInput.mockResolvedValue({ data: { executionIdentity: { ...source, definitionId: '1' }, paramsJson: '{"customer":{"balance":1234567890123456789}}' } })
+    await wrapper.vm.generateMock()
+    expect(generateTestInput).toHaveBeenCalledWith(1, { executionSource: source, projectId: undefined })
+    expect(stringifyExactJson(wrapper.vm.buildParamMap())).toBe('{"customer":{"balance":1234567890123456789}}')
+    expect(wrapper.vm.paramsJson).toContain('1234567890123456789')
     expect(wrapper.vm.result).toBeNull()
-    expect(JSON.parse(stringifyExactJson(wrapper.vm.buildParamMap()))).toMatchObject({
-      taxpayerType: '一般纳税人',
-      goodsCategory: '货物',
-      totalAmount: 113000,
-      isExempt: false,
-      yearsInBusiness: 10,
-      serviceType: 'ICT服务',
-      taxpayerQualification: '一般纳税人'
-    })
   })
 
   test('applyInputFieldsToParams 根据模型输出字段类型转换模型引用入参', async () => {
@@ -856,7 +847,7 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
         'el-input': makeStub('input'), 'el-input-number': makeStub('input'),
         'el-button': makeStub('button'), 'el-tag': makeStub('span'),
         'el-table': makeStub('table'), 'el-table-column': makeStub('td'),
-        'el-tabs': makeStub('div'), 'el-tab-pane': makeStub('div'),
+        'el-tabs': tabStub, 'el-tab-pane': tabStub,
         'el-dialog': makeStub('div'), 'el-card': makeStub('div'),
         'el-alert': makeStub('div'), 'el-divider': makeStub('hr'),
         'el-loading': makeStub('div'), 'el-descriptions': makeStub('div'),
@@ -1087,7 +1078,7 @@ describe('RuleTest — 执行与结果展示', () => {
         'el-input': makeStub('input'), 'el-input-number': makeStub('input'),
         'el-button': makeStub('button'), 'el-tag': makeStub('span'),
         'el-table': makeStub('table'), 'el-table-column': makeStub('td'),
-        'el-tabs': makeStub('div'), 'el-tab-pane': makeStub('div'),
+        'el-tabs': tabStub, 'el-tab-pane': tabStub,
         'el-dialog': makeStub('div'), 'el-card': makeStub('div'),
         'el-alert': makeStub('div'), 'el-divider': makeStub('hr'),
         'el-loading': makeStub('div'), 'el-descriptions': makeStub('div'),
@@ -1559,7 +1550,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
         'el-input': makeStub('input'), 'el-input-number': makeStub('input'),
         'el-button': makeStub('button'), 'el-tag': makeStub('span'),
         'el-table': makeStub('table'), 'el-table-column': makeStub('td'),
-        'el-tabs': makeStub('div'), 'el-tab-pane': makeStub('div'),
+        'el-tabs': tabStub, 'el-tab-pane': tabStub,
         'el-dialog': makeStub('div'), 'el-card': makeStub('div'),
         'el-alert': makeStub('div'), 'el-divider': makeStub('hr'),
         'el-loading': makeStub('div'), 'el-descriptions': makeStub('div'),

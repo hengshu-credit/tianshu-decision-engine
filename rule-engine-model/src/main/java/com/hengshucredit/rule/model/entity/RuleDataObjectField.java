@@ -22,6 +22,8 @@ public class RuleDataObjectField {
     private String varLabel;
     private String scriptName;
     private String varType;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private Long mockRuleId;
     /** API 响应或数据库首行结果中的字段取值路径。为空时使用字段编码。 */
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String sourcePath;

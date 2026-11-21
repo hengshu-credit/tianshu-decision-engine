@@ -49,6 +49,10 @@ public class SchemaInitializationConfig {
                         for (var resource : scripts) {
                             if (resource.getURL().equals(canonical.getURL())) {
                                 new MysqlSchemaUpgrade(connection).run(resource.getContentAsString(StandardCharsets.UTF_8));
+                                // 在同一结构锁内补齐内置 Mock 规则，保留用户编辑过的配置。
+                                var defaults = new ResourceDatabasePopulator(new ClassPathResource("sql/mock-defaults.sql"));
+                                defaults.setSqlScriptEncoding(StandardCharsets.UTF_8.name());
+                                defaults.populate(connection);
                                 packaged = true;
                             } else {
                                 var populator = new ResourceDatabasePopulator();

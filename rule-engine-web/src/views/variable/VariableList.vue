@@ -1255,6 +1255,9 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="isObjectField || form.varSource === 'INPUT'" label="Mock 生成规则">
+          <mock-rule-select v-if="dialogVisible" v-model="form.mockRuleId" :field-type="form.varType" />
+        </el-form-item>
         <el-form-item v-if="isObjectField && objectHasExternalSource && !objectFieldApiId" label="来源路径">
           <el-input
             v-model="form.sourcePath"
@@ -1722,6 +1725,9 @@
             v-model="objectForm.scriptName"
             placeholder="QLExpress 脚本中的引用名，如 taxRequest"
           />
+        </el-form-item>
+        <el-form-item label="整体 Mock 规则">
+          <mock-rule-select v-if="objectDialogVisible" v-model="objectForm.mockRuleId" field-type="OBJECT" />
         </el-form-item>
         <el-form-item label="对象类型" prop="objectType">
           <el-radio-group v-model="objectForm.objectType">
@@ -2375,6 +2381,7 @@
 
 <script>
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
+import MockRuleSelect from '@/components/test/MockRuleSelect.vue'
 import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
@@ -2821,7 +2828,7 @@ export default {
       canEditFields: hasPermission('field:edit'),
     }
   },
-  components: { ResourceTestCases, DismissibleGuidance,
+  components: { MockRuleSelect, ResourceTestCases, DismissibleGuidance,
     SourceSummaryCard, ProjectResourceSelect, GovernancePublishAction,
     GovernanceResourceStatus,
     ApiSourceBinding,
@@ -4488,6 +4495,7 @@ export default {
       this.objectForm = {
         apiRequestOverrides: sourceConfig.requestOverrides || {},
         lazyLoadReferences: obj.lazyLoadReferences === true,
+        mockRuleId: obj.mockRuleId ?? null,
         id: obj.id,
         objectCode: obj.objectCode,
         objectLabel: obj.objectLabel || '',
@@ -4661,6 +4669,7 @@ export default {
         varCode: row.varCode,
         varLabel: row.varLabel,
         scriptName: Object.prototype.hasOwnProperty.call(row, 'originalScriptName') ? row.originalScriptName : row.scriptName,
+        mockRuleId: row.mockRuleId ?? null,
         varType: row.varType || 'STRING',
         sourcePath: row.sourcePath || '',
         refVariableId: row.refVariableId || null,
@@ -5036,6 +5045,7 @@ export default {
             varCode: this.form.varCode,
             varLabel: this.form.varLabel,
             scriptName: this.form.scriptName,
+            mockRuleId: this.form.mockRuleId || null,
             varType: this.form.varType,
             sourcePath: this.form.sourcePath || null,
             sourceConfig: Object.keys(this.form.apiRequestOverrides || {}).length

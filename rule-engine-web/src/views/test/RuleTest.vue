@@ -1,5 +1,7 @@
 <template>
   <div class="uiue-list-page rule-test-page">
+    <el-tabs v-model="activeTestTab" class="test-page-tabs" aria-label="规则测试工作区" @tab-change="onWorkspaceTabChange">
+      <el-tab-pane label="规则测试" name="test" class="test-workspace">
     <config-layer-guide
       guide-id="rule-test.steps"
       title="规则测试步骤"
@@ -142,7 +144,7 @@
         <div
           class="uiue-card input-parameters-card"
           style="margin-top: 12px"
-          :inert="testCaseLoading"
+          :inert="testCaseLoading || generatingMock"
         >
           <div class="uiue-card-title input-parameters-title">
             输入参数
@@ -168,9 +170,11 @@
               link
               size="small"
               style="margin-left: 8px"
-              @click="applyRiskDemoParams"
+              :disabled="!testContextReady || !selectedExecutionSource || inputLoadState !== 'READY' || executing || batchExecuting"
+              :loading="generatingMock"
+              @click="generateMock"
             >
-              <el-icon><el-icon-magic-stick /></el-icon> 综合风控样例
+              <el-icon><el-icon-magic-stick /></el-icon> 自动生成
             </el-button>
           </div>
           <div class="input-mode-toolbar">
@@ -407,7 +411,7 @@
           <el-button
             type="primary"
             :loading="executing"
-            :disabled="!testContextReady || testCaseLoading"
+            :disabled="!testContextReady || testCaseLoading || generatingMock"
             @click="handleExecute"
             v-permission="'rule:edit'"
           >
@@ -543,11 +547,22 @@
         </div>
       </div>
     </div>
+      </el-tab-pane>
+      <el-tab-pane label="测试用例" name="cases" class="test-management" lazy>
+        <test-cases-panel v-if="activeTestTab === 'cases'" @apply="openCatalogCase" />
+      </el-tab-pane>
+      <el-tab-pane label="Mock 规则" name="mock" class="test-management" lazy>
+        <mock-rules-panel v-if="activeTestTab === 'mock'" />
+      </el-tab-pane>
+    </el-tabs>
     <regression-report-drawer v-if="reportsVisible && selectedRuleId" :definition-id="selectedRuleId" :revision-id="inputExecutionIdentity?.revisionId || null" @close="reportsVisible = false" />
   </div>
 </template>
 
 <script>
+import MockRulesPanel from '@/components/test/MockRulesPanel.vue'
+import TestCasesPanel from '@/components/test/TestCasesPanel.vue'
+import { generateTestInput } from '@/api/testData'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
@@ -566,6 +581,7 @@ import {
 import { listProjects } from '@/api/project'
 import {
   listDefinitions,
+  getDefinition,
   listProjectDefinitions,
   listRuleRevisions,
   listPublishedVersions,
@@ -605,7 +621,7 @@ import {
 } from '@/utils/testCaseTools'
 
 export default {
-  components: { DismissibleGuidance, ExecutionImpactPanel, ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
+  components: { MockRulesPanel, TestCasesPanel, DismissibleGuidance, ExecutionImpactPanel, ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
     TraceTree,
     AsyncState,
     ConfigLayerGuide,
@@ -622,6 +638,8 @@ export default {
   name: 'RuleTest',
   data() {
     return {
+      activeTestTab: 'test',
+      generatingMock: false,
       reportsVisible: false,
       projects: [],
       projectsLoading: false,
@@ -1660,150 +1678,42 @@ export default {
       this.updateInputJson(stringifyExactJson(values, 2))
       this.resetExecutionState()
     },
-    applyRiskDemoParams() {
-      const demoParams = [
-        {
-          key: 'requestId',
-          label: '请求流水号',
-          value: 'REQ_DEMO_001',
-          type: 'STRING',
-        },
-        {
-          key: 'taxpayerType',
-          label: '客商类型',
-          value: '一般纳税人',
-          type: 'STRING',
-        },
-        {
-          key: 'goodsCategory',
-          label: '产品总线',
-          value: '货物',
-          type: 'STRING',
-        },
-        {
-          key: 'totalAmount',
-          label: '交易金额',
-          value: 113000,
-          type: 'NUMBER',
-        },
-        { key: 'isExempt', label: '是否减免', value: false, type: 'BOOLEAN' },
-        { key: 'annualRevenue', label: '年营收', value: 5000, type: 'NUMBER' },
-        {
-          key: 'taxComplianceScore',
-          label: '合规评分',
-          value: 85,
-          type: 'NUMBER',
-        },
-        {
-          key: 'yearsInBusiness',
-          label: '经营年限',
-          value: 10,
-          type: 'NUMBER',
-        },
-        {
-          key: 'hasViolation',
-          label: '严重违规',
-          value: false,
-          type: 'BOOLEAN',
-        },
-        { key: 'creditLevel', label: '信用等级', value: 'A', type: 'STRING' },
-        {
-          key: 'taxBurdenDeviation',
-          label: '指标偏离度',
-          value: 0.08,
-          type: 'NUMBER',
-        },
-        {
-          key: 'violationCount',
-          label: '历史风险事件次数',
-          value: 0,
-          type: 'NUMBER',
-        },
-        {
-          key: 'serviceType',
-          label: '业务类型',
-          value: 'ICT服务',
-          type: 'ENUM',
-        },
-        {
-          key: 'paymentMode',
-          label: '结算方式',
-          value: '后付费',
-          type: 'ENUM',
-        },
-        {
-          key: 'customerType',
-          label: '客户类型',
-          value: '企业客户',
-          type: 'ENUM',
-        },
-        {
-          key: 'taxpayerQualification',
-          label: '纳税人资格',
-          value: '一般纳税人',
-          type: 'ENUM',
-        },
-        { key: 'customerLevel', label: '客户等级', value: '金', type: 'ENUM' },
-        {
-          key: 'monthlyConsumption',
-          label: '月消费金额',
-          value: 5000,
-          type: 'NUMBER',
-        },
-        {
-          key: 'invoiceDeviationRate',
-          label: '开票偏差率',
-          value: 0.05,
-          type: 'NUMBER',
-        },
-        {
-          key: 'redInvoiceRatio',
-          label: '红冲发票比例',
-          value: 0.02,
-          type: 'NUMBER',
-        },
-        {
-          key: 'zeroRateInvoiceRatio',
-          label: '零税率发票占比',
-          value: 0.01,
-          type: 'NUMBER',
-        },
-        {
-          key: 'crossRegionInvoiceRatio',
-          label: '跨地区开票比例',
-          value: 0.08,
-          type: 'NUMBER',
-        },
-        {
-          key: 'billingAmount',
-          label: '含税账单金额',
-          value: 100000,
-          type: 'NUMBER',
-        },
-        {
-          key: 'basicServiceRatio',
-          label: '基础通信占比',
-          value: 0.6,
-          type: 'NUMBER',
-        },
-        {
-          key: 'vasServiceRatio',
-          label: '增值业务占比',
-          value: 0.4,
-          type: 'NUMBER',
-        },
-      ]
-      this.params = demoParams.map((item) => ({
-        key: item.key,
-        label: item.label,
-        value: item.value,
-        type: item.type,
-        example: String(item.value),
-        fromVar: false,
-        options: [],
-      }))
-      this.updateInputJson(stringifyExactJson(this.buildFormParamMap(), 2))
-      this.resetExecutionState()
+    async generateMock() {
+      const source = this.selectedExecutionSource
+      if (!source || this.generatingMock || this.inputLoadState !== 'READY') return
+      const ruleId = this.selectedRuleId
+      const inputRequest = this.inputLoadRequestId
+      const session = this.testCaseEditSession
+      this.generatingMock = true
+      try {
+        const { data } = await generateTestInput(ruleId, { executionSource: source, projectId: this.selectedProjectId || undefined })
+        if (this.activeTestTab !== 'test' || !this.isActiveInputRequest(inputRequest,ruleId) || session !== this.testCaseEditSession) return
+        requireExecutionIdentity(data.executionIdentity,ruleId,source)
+        if (this.inputExecutionIdentity?.modelDigest && data.executionIdentity.modelDigest !== this.inputExecutionIdentity.modelDigest) throw new Error('测试版本已更新，请重新加载字段')
+        const values = parseExactJson(data.paramsJson)
+        this.replaceParamsFromValues(values)
+        this.updateInputJson(stringifyExactJson(values, 2))
+        this.resetExecutionState()
+      } catch (e) { this.notifyError(this.requestErrorMessage(e, '测试输入生成失败')) }
+      finally { this.generatingMock = false }
+    },
+    async onWorkspaceTabChange(tab) {
+      if (tab !== 'test' || !this.selectedRuleId) return
+      await this.loadTestCases({ preserveSelection: true })
+    },
+    async openCatalogCase(row) {
+      const { data: rule } = await getDefinition(row.ownerId)
+      const ownerProject = rule.scope === 'PROJECT' ? rule.projectId : null
+      this.ruleScope = ownerProject && String(ownerProject) === String(this.contextProjectId) ? 'PROJECT' : 'ALL'
+      this.selectedProjectId = this.ruleScope === 'PROJECT' ? ownerProject : null
+      this.selectedRuleId = rule.id
+      this.rules = [rule]
+      this.activeTestTab = 'test'
+      await this.onRuleChange()
+      if (String(this.selectedRuleId) !== String(rule.id)) return
+      const saved = this.testCases.find(item => String(item.id) === String(row.id))
+      if (saved) await this.applyTestCase(saved)
+      else this.notifyWarning('用例加载失败，请刷新用例列表')
     },
     async handleExecute() {
       if (!this.testContextReady || this.testCaseLoading || this.executing) return
@@ -2102,6 +2012,20 @@ export default {
     flex: 0 0 auto;
   }
 }
+.test-page-tabs, .test-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.test-page-tabs > :deep(.el-tabs__content) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.test-workspace > :deep(.config-layer-guide) { flex-shrink: 0; }
+.test-management { overflow: auto; }
 .test-layout {
   display: flex;
   flex: 1;
@@ -2434,6 +2358,8 @@ export default {
 }
 @media screen and (max-width: 1000px) {
   .rule-test-page,
+  .test-page-tabs,
+  .test-workspace,
   .test-layout,
   .test-left,
   .test-right,

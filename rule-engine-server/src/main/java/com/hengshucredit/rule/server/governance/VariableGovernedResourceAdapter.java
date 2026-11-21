@@ -21,6 +21,8 @@ public class VariableGovernedResourceAdapter
     private final VariableSourceReferenceValidator sourceValidator;
     private final SimpleEntityGovernedResourceAdapter.EntityStore<RuleVariable> variableStore;
 
+    @jakarta.annotation.Resource @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.testdata.TestDataCatalog mockCatalog;
     @Resource
     private RuleDataObjectFieldMapper dataObjectFieldMapper;
 
@@ -114,6 +116,8 @@ public class VariableGovernedResourceAdapter
         }
         RuleVariable variable = JSON.parseObject(
                 JSON.toJSONString(snapshot), RuleVariable.class);
+        if (variable.getMockRuleId() != null && !mockCatalog.compatible(variable.getMockRuleId(), variable.getVarType()))
+            issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "请选择与变量类型兼容的 Mock 规则", "VARIABLE", variable.getId(), "$.mockRuleId"));
         issues.addAll(sourceValidator.validate(variable));
     }
 

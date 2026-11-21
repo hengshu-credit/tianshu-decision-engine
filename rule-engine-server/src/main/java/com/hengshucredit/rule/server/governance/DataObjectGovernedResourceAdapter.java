@@ -27,6 +27,8 @@ public class DataObjectGovernedResourceAdapter
     private final RuleDataObjectFieldMapper fieldMapper;
     private final RuleDataObjectFieldOptionMapper optionMapper;
     private final DataObjectFieldReferenceValidator referenceValidator;
+    @jakarta.annotation.Resource @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.testdata.TestDataCatalog mockCatalog;
     @jakarta.annotation.Resource private VariableSourceReferenceValidator sourceValidator;
     @jakarta.annotation.Resource private DataObjectUpdateReferenceGuard updateReferenceGuard;
 
@@ -236,6 +238,8 @@ public class DataObjectGovernedResourceAdapter
                                      List<GovernanceIssue> issues) {
         List<FieldDraft> fields = parseDrafts(snapshot);
         RuleDataObject owner = JSON.parseObject(CanonicalJson.write(snapshot), RuleDataObject.class);
+        if (owner.getMockRuleId() != null && !mockCatalog.compatible(owner.getMockRuleId(), "OBJECT"))
+            issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "请选择对象类型的 Mock 规则", "DATA_OBJECT", owner.getId(), "$.mockRuleId"));
         validateObjectSource(snapshot, owner, issues);
         if ("API".equals(owner.getSourceType()) && sourceValidator != null) {
             var source = new com.hengshucredit.rule.model.entity.RuleVariable();
@@ -267,6 +271,8 @@ public class DataObjectGovernedResourceAdapter
                         longValue(snapshot.get("id")),
                         "$.fields"));
             }
+            if (field.getMockRuleId() != null && !mockCatalog.compatible(field.getMockRuleId(), field.getVarType()))
+                issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "子字段 Mock 规则与字段类型不兼容", "DATA_OBJECT", owner.getId(), "$.fields"));
             referenceValidator.validate(owner, field, referenceFields).forEach(issue ->
                     issues.add(GovernanceIssue.error(issue.getCode(), issue.getMessage(),
                             GovernanceResourceTypes.DATA_OBJECT, owner.getId(), issue.getPath())));

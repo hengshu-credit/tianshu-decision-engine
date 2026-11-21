@@ -101,6 +101,9 @@ function createOperationsApiData() {
     }
   ])
   routes.set('POST /api/rule/definition/refreshFields/101', {})
+  routes.set('POST /api/rule/test-data/generate/101', ({ request }) => ({
+    paramsJson: '{"age":36}', executionIdentity: { ...request.postDataJSON().executionSource, definitionId: '101' }
+  }))
   routes.set('POST /api/rule/test-schema', withTestExecutionIdentity(({ request }) => {
     const payload = request.postDataJSON()
     if (payload.targetType === 'EXPERIMENT' && payload.targetId === 61) {

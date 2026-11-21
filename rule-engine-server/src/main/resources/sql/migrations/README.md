@@ -102,3 +102,5 @@ docker compose --project-name tianshu-server --env-file config/.env.server \
 - `2026-11-20-resource-test-cases.sql` 新增变量、外数和模型测试用例表，重复执行保留已有用例。
 
 - `2026-11-20-shared-model-files.sql` 建立模型和制品共用的文件目录、二进制载荷和作用域引用表，既有模型数据由显式迁移命令校验后写入。
+
+- `2026-11-21-test-mock.sql` 建立测试生成规则与变量、对象及子字段的绑定外键，重复执行保留已编辑的规则。
