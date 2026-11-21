@@ -14,6 +14,26 @@ import static org.junit.Assert.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 
 public class ConsoleBootstrapFlowTest {
+    @Test public void loginActivityPreservesLegacyTimeAndNeverMovesBackward() throws Exception {
+        try (var f = new ConsoleAccountSecurityTest.Fixture()) {
+            f.login.initializeAdministrator("owner", "管理员", "InitialOwner123!");
+            Long id = f.jdbc.queryForObject("SELECT id FROM console_user WHERE username='owner'", Long.class);
+            var legacy = java.time.LocalDateTime.of(2020, 1, 1, 0, 0);
+            f.jdbc.update("UPDATE console_user SET last_login_time=? WHERE id=?", legacy, id);
+            assertEquals(legacy, f.accounts.listUsers().get(0).getLastLoginTime());
+
+            assertFalse(f.login.authenticate("owner", "wrong").authenticated());
+            assertEquals(0, f.jdbc.queryForObject("SELECT COUNT(*) FROM console_user_login_activity", Integer.class).intValue());
+            assertTrue(f.login.authenticate("owner", "InitialOwner123!").authenticated());
+            var successful = f.accounts.getUser(id).getLastLoginTime();
+            assertTrue(successful.isAfter(legacy));
+            f.sessions.getMapper(ConsoleUserMapper.class).recordLoginTime(id, legacy);
+            assertEquals(successful, f.accounts.listUsers().get(0).getLastLoginTime());
+            assertEquals(legacy, f.jdbc.queryForObject("SELECT last_login_time FROM console_user WHERE id=?", java.time.LocalDateTime.class, id));
+            assertEquals(1, f.jdbc.queryForObject("SELECT COUNT(*) FROM console_security_audit_log WHERE user_id=? AND action='LOGIN_SUCCESS'", Integer.class, id).intValue());
+        }
+    }
+
     @Test public void firstAdministratorRegistersWithoutMailOrEnvironmentCredentials() throws Exception {
         try (var f = new ConsoleAccountSecurityTest.Fixture()) {
             f.props.setRegistrationEnabled(false);

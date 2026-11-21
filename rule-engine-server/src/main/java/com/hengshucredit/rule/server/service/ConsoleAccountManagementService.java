@@ -77,8 +77,13 @@ public class ConsoleAccountManagementService {
                         .isNull(ConsoleUser::getMergedIntoUserId)
                         .orderByAsc(ConsoleUser::getUsername));
         List<ConsoleUserDetail> result = new ArrayList<>(users.size());
+        if (users.isEmpty()) return result;
+        var activity = new LinkedHashMap<Long, java.time.LocalDateTime>();
+        for (var row : userMapper.loginActivity(users.stream().map(ConsoleUser::getId).toList())) {
+            activity.put(row.userId(), row.lastLoginTime());
+        }
         for (ConsoleUser user : users) {
-            result.add(toUserDetail(user));
+            result.add(toUserDetail(user, activity.get(user.getId())));
         }
         return result;
     }
@@ -494,6 +499,11 @@ public class ConsoleAccountManagementService {
     }
 
     private ConsoleUserDetail toUserDetail(ConsoleUser user) {
+        var activities = userMapper.loginActivity(List.of(user.getId()));
+        return toUserDetail(user, activities.isEmpty() ? null : activities.get(0).lastLoginTime());
+    }
+
+    private ConsoleUserDetail toUserDetail(ConsoleUser user, java.time.LocalDateTime latestLogin) {
         List<ConsoleUserRole> memberships = userRoleMapper.selectList(
                 new LambdaQueryWrapper<ConsoleUserRole>()
                         .eq(ConsoleUserRole::getUserId, user.getId()));
@@ -516,7 +526,9 @@ public class ConsoleAccountManagementService {
         detail.setProjectAccessMode("SELECTED".equals(user.getProjectAccessMode()) ? "SELECTED" : "ALL");
         detail.setGlobalEditable(!Boolean.FALSE.equals(user.getGlobalEditable()));
         detail.setProjectPermissionOverrides(permissionService.projectOverrides(user.getId()));
-        detail.setLastLoginTime(user.getLastLoginTime());
+        var legacyLogin = user.getLastLoginTime();
+        detail.setLastLoginTime(latestLogin != null && (legacyLogin == null || latestLogin.isAfter(legacyLogin))
+                ? latestLogin : legacyLogin);
         detail.setRoleIds(roleIds);
         detail.setRoleCodes(roles.stream().map(ConsoleRole::getRoleCode).toList());
         detail.setInheritedPermissions(inherited);

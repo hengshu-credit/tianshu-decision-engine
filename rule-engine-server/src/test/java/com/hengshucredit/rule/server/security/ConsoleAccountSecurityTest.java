@@ -53,7 +53,7 @@ public class ConsoleAccountSecurityTest {
         Fixture() throws Exception {
             var ds = new DriverManagerDataSource("jdbc:h2:mem:audit" + UUID.randomUUID().toString().replace("-", "") + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
             jdbc = new JdbcTemplate(ds);
-            TestSchemaTables.create(jdbc, List.of("rule_project", "console_user_project", "console_user_project_permission", "console_security_lock", "console_user", "console_account_token", "console_role", "console_permission", "console_user_role", "console_role_permission", "console_user_permission_override", "console_security_audit_log"));
+            TestSchemaTables.create(jdbc, List.of("rule_project", "console_user_project", "console_user_project_permission", "console_security_lock", "console_user", "console_user_login_activity", "console_account_token", "console_role", "console_permission", "console_user_role", "console_role_permission", "console_user_permission_override", "console_security_audit_log"));
             jdbc.update("INSERT INTO console_security_lock (id) VALUES (1)");
             var config = new MybatisConfiguration();
             config.setMapUnderscoreToCamelCase(true);

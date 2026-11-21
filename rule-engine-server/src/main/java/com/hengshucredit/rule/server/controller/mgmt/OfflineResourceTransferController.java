@@ -62,8 +62,9 @@ public class OfflineResourceTransferController {
     public ResponseEntity<byte[]> export(@RequestBody List<TransferRootRequest> roots) {
         String operator = operatorResolver == null ? ConsoleOperatorResolver.SYSTEM_CONSOLE : operatorResolver.resolve();
         try {
-            byte[] bytes = service.export(roots);
-            if (logService != null) logService.recordExport(roots, bytes, operator);
+            var exported = service.exportPackage(roots, true);
+            byte[] bytes = exported.bytes();
+            if (logService != null) logService.recordExport(roots, exported, operator);
             return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=tianshu-resource-transfer.zip")
                 .header("X-Transfer-Package", "TIANSHU_RESOURCE_TRANSFER")
@@ -82,8 +83,9 @@ public class OfflineResourceTransferController {
         String operator = operatorResolver == null ? ConsoleOperatorResolver.SYSTEM_CONSOLE : operatorResolver.resolve();
         List<TransferRootRequest> roots = request == null ? List.of() : request.roots();
         try {
-            byte[] bytes = service.export(roots, request == null || request.recursive());
-            if (logService != null) logService.recordExport(roots, bytes, operator);
+            var exported = service.exportPackage(roots, request == null || request.recursive());
+            byte[] bytes = exported.bytes();
+            if (logService != null) logService.recordExport(roots, exported, operator);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=tianshu-resource-transfer.zip")
                     .header("X-Transfer-Package", "TIANSHU_RESOURCE_TRANSFER")

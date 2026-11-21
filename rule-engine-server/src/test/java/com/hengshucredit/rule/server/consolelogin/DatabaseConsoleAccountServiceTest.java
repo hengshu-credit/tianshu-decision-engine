@@ -17,6 +17,31 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class DatabaseConsoleAccountServiceTest {
+    @Test
+    public void onlyCurrentCredentialsMayRecordLoginActivity() throws Exception {
+        var account = user(9L, "reviewer", "pass", 1);
+        var service = new DatabaseConsoleAccountService();
+        var valid = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var times = new AtomicInteger();
+        setField(service, "userMapper", mapper(com.hengshucredit.rule.server.mapper.ConsoleUserMapper.class,
+                (method, type, args) -> {
+                    if (method.equals("activeLoginHash")) {
+                        Assert.assertArrayEquals(new Object[]{9L, 1L}, args);
+                        return valid.get() ? account.getPasswordHash() : "changed hash";
+                    }
+                    if (method.equals("recordLoginTime")) {
+                        Assert.assertEquals(9L, args[0]);
+                        Assert.assertTrue(args[1] instanceof java.time.LocalDateTime);
+                        times.incrementAndGet();
+                        return null;
+                    }
+                    throw new AssertionError(method);
+                }));
+        service.updateLastLogin(account);
+        valid.set(false);
+        Assert.assertThrows(com.hengshucredit.rule.model.PlatformException.class, () -> service.updateLastLogin(account));
+        Assert.assertEquals(1, times.get());
+    }
 
     @Test
     public void loginCannotInitializeAnEmptyDatabase() {

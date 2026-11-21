@@ -12,6 +12,7 @@ import com.hengshucredit.rule.server.transfer.TransferBundleCodec;
 import com.hengshucredit.rule.server.transfer.TransferBundle;
 import com.hengshucredit.rule.server.transfer.TransferRootRequest;
 import com.hengshucredit.rule.server.transfer.TransferImportOptions;
+import com.hengshucredit.rule.server.transfer.OfflineResourceTransferService.ExportedPackage;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
@@ -25,21 +26,21 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
     @Resource private com.hengshucredit.rule.server.mapper.OfflineTransferLogResourceMapper visibilityIndex;
     private final TransferBundleCodec codec = new TransferBundleCodec();
 
-    /** 旧日志只补齐权限关联，不改写原始内容；无法解析的内容保持不可读取。 */
+    /** 根据旧日志保存的血缘校正导出数量，补齐权限索引，保留原始审计内容。 */
     @jakarta.annotation.PostConstruct
     public void indexExistingLogs() {
         if (visibilityIndex == null) return;
+        baseMapper.repairExportResourceCounts();
         for (var rows = visibilityIndex.unindexed(); !rows.isEmpty(); rows = visibilityIndex.unindexed()) rows.forEach(this::indexVisibility);
     }
 
-    public void recordExport(List<TransferRootRequest> roots, byte[] bytes, String operator) {
+    public void recordExport(List<TransferRootRequest> roots, ExportedPackage exported, String operator) {
         Map<String, Object> content = new LinkedHashMap<>();
         content.put("roots", roots == null ? List.of() : roots);
-        try { content.put("lineage", lineageSnapshot(codec.decode(bytes).bundle(), null)); }
-        catch (RuntimeException ignored) { }
-        saveLog("EXPORT", "SUCCESS", operator, Sha256Digests.bytes(bytes),
-                roots == null ? List.of() : roots.stream().map(root -> root.resourceType() + ":" + root.resourceId()).toList(),
-                roots == null ? 0 : roots.size(), content, null);
+        TransferBundle bundle = exported.bundle();
+        content.put("lineage", lineageSnapshot(bundle, null));
+        saveLog("EXPORT", "SUCCESS", operator, Sha256Digests.bytes(exported.bytes()),
+                bundle.roots(), bundle.resources().size(), content, null);
     }
 
     public void recordImport(byte[] bytes, Map<String, Object> result, String operator, String errorMessage) {

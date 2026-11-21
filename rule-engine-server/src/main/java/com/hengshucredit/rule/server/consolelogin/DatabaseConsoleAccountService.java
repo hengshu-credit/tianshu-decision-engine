@@ -66,7 +66,7 @@ public class DatabaseConsoleAccountService {
         appendAudit(user, "INITIALIZE_SUPER_ADMIN");
     }
 
-    @Transactional
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public ConsoleLoginResult authenticate(String username, String rawPassword) {
         if (username == null || username.isBlank() || rawPassword == null) {
             return ConsoleLoginResult.failure();
@@ -145,15 +145,13 @@ public class DatabaseConsoleAccountService {
     }
 
     protected void updateLastLogin(ConsoleUser user) {
-        user.setLastLoginTime(LocalDateTime.now());
-        int changed = userMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<ConsoleUser>()
-                .eq(ConsoleUser::getId, user.getId())
-                .eq(ConsoleUser::getStatus, 1)
-                .eq(ConsoleUser::getPermissionVersion, user.getPermissionVersion())
-                .eq(ConsoleUser::getPasswordHash, user.getPasswordHash())
-                .set(ConsoleUser::getLastLoginTime, user.getLastLoginTime()));
-        if (changed != 1) throw new com.hengshucredit.rule.model.PlatformException(
+        // 账户安全锁一直持有到提交。用 READ_COMMITTED 复核验密期间可能发生的改密、停用和权限变更。
+        String currentHash = userMapper.activeLoginHash(user.getId(), user.getPermissionVersion());
+        if (!user.getPasswordHash().equals(currentHash)) {
+            throw new com.hengshucredit.rule.model.PlatformException(
                 com.hengshucredit.rule.model.PlatformCode.CREDENTIAL_INVALID, "账户状态已变更，请重新登录");
+        }
+        userMapper.recordLoginTime(user.getId(), LocalDateTime.now());
     }
 
     private ConsoleLoginResult successfulResult(ConsoleUser user,

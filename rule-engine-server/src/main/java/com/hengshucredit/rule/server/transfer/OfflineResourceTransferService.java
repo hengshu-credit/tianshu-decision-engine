@@ -77,6 +77,13 @@ public class OfflineResourceTransferService {
 
     @Transactional(readOnly = true)
     public byte[] export(List<TransferRootRequest> requests, boolean includeDependencies) {
+        return exportPackage(requests, includeDependencies).bytes();
+    }
+
+    public record ExportedPackage(TransferBundle bundle, byte[] bytes) {}
+
+    @Transactional(readOnly = true)
+    public ExportedPackage exportPackage(List<TransferRootRequest> requests, boolean includeDependencies) {
         List<TransferKey> roots = normalizeRoots(requests);
         Map<String, TransferRootRequest> selectedVersions = new LinkedHashMap<>();
         for (TransferRootRequest request : requests) {
@@ -191,8 +198,9 @@ public class OfflineResourceTransferService {
                     references, requiredEnvironmentFields(key.type(), configuration), versionReferences));
             visiting.remove(key.value());
         }
-        return codec.encode(new TransferBundle(roots.stream().map(TransferKey::value).toList(),
-                new ArrayList<>(resources.values()), warnings));
+        var bundle = new TransferBundle(roots.stream().map(TransferKey::value).toList(),
+                new ArrayList<>(resources.values()), warnings);
+        return new ExportedPackage(bundle, codec.encode(bundle));
     }
 
     @Transactional(readOnly = true)

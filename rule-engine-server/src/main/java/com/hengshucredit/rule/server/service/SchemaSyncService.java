@@ -52,6 +52,7 @@ public class SchemaSyncService {
     private static final List<String> CONSOLE_RBAC_TABLES = Arrays.asList(
             "console_security_lock",
             "console_user",
+            "console_user_login_activity",
             "console_role",
             "console_permission",
             "console_user_project",
