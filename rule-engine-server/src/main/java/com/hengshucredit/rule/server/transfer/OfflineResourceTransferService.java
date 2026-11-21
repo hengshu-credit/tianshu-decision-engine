@@ -124,6 +124,7 @@ public class OfflineResourceTransferService {
             GovernedResourceAdapter adapter = adapterRegistry.require(key.type().name());
             ResourceSnapshot snapshot = exportSnapshot(key, selectedVersions.get(key.value()), adapter);
             Map<String, Object> configuration = CanonicalJson.readMap(snapshot.snapshotJson());
+            if (key.type() == TransferResourceType.FUNCTION) TransferResourceComparison.removeInactiveFunctionFields(configuration);
             // 模型文件不是凭据：还原后打入迁移包，目标治理适配器会再次加密保存。
             // 外数/数据库/鉴权敏感字段不还原，必须在目标环境重新配置。
             if (key.type() == TransferResourceType.MODEL && secretCodec != null) {

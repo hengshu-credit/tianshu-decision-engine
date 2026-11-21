@@ -325,14 +325,14 @@
         <template v-if="isNativeFunction">
           <el-form-item :label="editForm.implType === 'JAVA' ? 'Java类名' : 'Bean名称'" required>
             <div class="function-method-target">
-              <el-input v-if="editForm.implType === 'JAVA'" v-model="editForm.implClass" placeholder="已部署的 Java 类全名" />
-              <el-input v-else v-model="editForm.implBeanName" placeholder="已部署的 Spring Bean 名称" />
+              <el-input v-if="editForm.implType === 'JAVA'" v-model="editForm.implClass" placeholder="已部署的 Java 类全名" @change="inspectConfiguredTarget" />
+              <el-input v-else v-model="editForm.implBeanName" placeholder="已部署的 Spring Bean 名称" @change="inspectConfiguredTarget" />
               <el-button :loading="methodLoading" @click="loadFunctionMethods">读取方法</el-button>
             </div>
           </el-form-item>
           <el-form-item label="实际方法">
             <div class="function-method-selection">
-              <el-select v-if="!nativeManual" :model-value="selectedNativeSignature" filterable style="width: 100%" placeholder="先读取方法，再选择实际签名" data-testid="function-method-select" @change="selectFunctionMethod">
+              <el-select v-if="!nativeManual" :model-value="selectedNativeSignature" :loading="methodLoading" filterable style="width: 100%" placeholder="选择实际方法签名" data-testid="function-method-select" @change="selectFunctionMethod">
                 <el-option v-for="method in nativeMethodChoices" :key="method.signature" :value="method.signature" :label="method.displaySignature" :disabled="!method.available" :title="method.unavailableReason || method.displaySignature" />
               </el-select>
               <el-input v-else v-model="editForm.implMethod" placeholder="实际方法名（不包含括号和参数）" data-testid="function-method-name" />
@@ -340,7 +340,7 @@
                 <span v-if="editForm.implMethod">已配置方法：{{ editForm.implMethod }}</span>
                 <el-button link @click="nativeManual = !nativeManual">{{ nativeManual ? '返回方法选择' : '手工填写目标签名' }}</el-button>
               </div>
-              <el-alert v-if="currentMethodCatalog" :title="currentMethodCatalog.message" :type="currentMethodCatalog.valid && !currentMethodCatalog.legacySignature ? 'success' : 'warning'" :closable="false" show-icon />
+              <el-alert v-if="currentMethodCatalog" :title="currentMethodCatalog.valid && currentMethodCatalog.legacySignature ? '已自动匹配当前方法，参数类型已显示。' : currentMethodCatalog.message" :type="currentMethodCatalog.valid ? 'success' : 'warning'" :closable="false" show-icon />
               <div v-if="nativeManual" class="function-method-help">用于目标运行端尚未安装的实现。请明确填写方法名和每个参数的实际类型；未验证状态会保留在审批预检中。</div>
             </div>
           </el-form-item>
@@ -418,6 +418,7 @@
       </el-form>
       <template v-slot:footer>
         <el-button size="small" :disabled="functionSaving" @click="closeConfigurationDialog('dialogVisible')">取消</el-button>
+        <el-button v-if="editForm.implType === 'SCRIPT'" v-permission="'function:edit'" size="small" :disabled="functionSaving" @click="testCurrentScript">测试当前脚本</el-button>
         <el-button v-permission="'function:edit'" size="small" type="primary" :loading="functionSaving" @click="handleSave"
           >保存</el-button
         >
@@ -425,7 +426,7 @@
     </el-dialog>
 
     <el-dialog
-      title="函数测试"
+      :title="testingCurrentScript ? '测试当前脚本' : '函数测试'"
       v-model="functionTestVisible"
       width="760px"
       append-to-body
@@ -583,6 +584,7 @@ import {
   compareVersions,
   rollbackVersion,
   testFunction,
+  testFunctionScript,
   inspectFunctionMethods,
 } from '@/api/function'
 import { listProjects } from '@/api/project'
@@ -676,6 +678,7 @@ export default {
       functionTestVisible: false,
       functionTesting: false,
       functionTestTarget: {},
+      testingCurrentScript: false,
       functionTestParamsText: '{}',
       functionTestResultText: '',
       varTypeFormOptions: VAR_TYPE_FORM_OPTIONS,
@@ -760,7 +763,8 @@ export default {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     functionBindingKey(form = this.editForm, params = this.editParams) {
-      return JSON.stringify([form.implType, form.implClass, form.implBeanName, form.implMethod, form.funcCode, params])
+      return JSON.stringify([form.scope, form.projectId, form.implType, form.implClass, form.implBeanName, form.implMethod, form.funcCode,
+        params.map(param => [param.type, param.javaType])])
     },
     functionDeclarationKey() {
       return JSON.stringify([this.nativeTargetKey, this.editForm.implMethod?.trim() || this.editForm.funcCode,
@@ -784,6 +788,10 @@ export default {
     resetFunctionParameters() {
       this.editParams = []; this.parameterConfigError = ''
       this.methodCatalog = null; this.methodCatalogKey = ''
+    },
+    inspectConfiguredTarget() {
+      const target = this.editForm.implType === 'JAVA' ? this.editForm.implClass : this.editForm.implBeanName
+      if (this.isNativeFunction && target?.trim() && !this.parameterConfigError) return this.loadFunctionMethods()
     },
     async loadFunctionMethods() {
       const requestId = ++this.methodRequestId
@@ -815,7 +823,8 @@ export default {
         const previous = this.editParams[index]
         const untouched = previous && !previous.name && !previous.label && previous.type === 'STRING' && !previous.javaType
         return { ...previous, name: previous?.name || parameter.name || '', label: previous?.label || '',
-          type: !previous || untouched ? parameter.suggestedType : previous.type, javaType: parameter.javaType }
+          type: previous && !untouched && (previous.javaType === parameter.javaType || parameter.javaType === 'java.lang.Object')
+            ? previous.type : parameter.suggestedType, javaType: parameter.javaType }
       })
       this.parameterConfigError = ''; this.nativeManual = false
       this.methodCatalog = { ...catalog, signature, legacySignature: false, valid: true, message: '已选择实际方法；保存前将再次核对完整参数配置' }
@@ -1017,12 +1026,22 @@ export default {
         this.editParams = [{ name: '', type: 'STRING', label: '' }]
       this.originalBindingKey = this.functionDeclarationKey()
       this.dialogVisible = true
+      return this.inspectConfiguredTarget()
     },
     handleTestFunction(row) {
+      this.testingCurrentScript = false
       this.functionTestTarget = row || {}
       this.functionTestParamsText = this.buildFunctionTestParamsTemplate(row)
       this.functionTestResultText = ''
       this.functionTestVisible = true
+    },
+    testCurrentScript() {
+      try {
+        const params = validatedFunctionParameters(this.editParams)
+        if (!this.editForm.funcCode?.trim() || !this.editForm.implScript?.trim()) throw new Error('请填写函数编码和实现脚本')
+        this.handleTestFunction({ ...this.editForm, paramsJson: JSON.stringify(params) })
+        this.testingCurrentScript = true
+      } catch (error) { this.$message.error(error.message) }
     },
     buildFunctionTestParamsTemplate(row) {
       const params = this.parseParams(row && row.paramsJson)
@@ -1069,7 +1088,7 @@ export default {
       return params
     },
     async doTestFunction() {
-      if (!this.functionTestTarget || !this.functionTestTarget.id) return
+      if (!this.testingCurrentScript && !this.functionTestTarget?.id) return
       let params
       try {
         params = this.functionTestParamsText
@@ -1082,13 +1101,14 @@ export default {
       }
       this.functionTesting = true
       try {
-        const res = await testFunction(this.functionTestTarget.id, params)
+        const res = this.testingCurrentScript ? await testFunctionScript(this.functionTestTarget, params) : await testFunction(this.functionTestTarget.id, params)
         this.functionTestResultText = JSON.stringify(
           (res && res.data) || res || {},
           null,
           2
         )
-        this.$message.success('测试完成')
+        if (res?.data?.success === false) this.$message.error(res.data.errorMessage || '函数测试失败')
+        else this.$message.success('测试完成')
       } catch (e) {
         this.functionTestResultText = JSON.stringify(
           { success: false, errorMessage: e.message || '测试失败' },
@@ -1124,6 +1144,11 @@ export default {
         params = validatedFunctionParameters(this.editParams, this.originalBuiltinCode === this.editForm.funcCode && this.editForm.scope === 'GLOBAL' ? this.originalBuiltinParams : [])
       } catch (error) { this.$message.warning(error.message); return }
       const payload = { ...this.editForm, projectId: this.editForm.scope === 'GLOBAL' ? 0 : this.editForm.projectId, paramsJson: JSON.stringify(params) }
+      if (payload.implType === 'SCRIPT') {
+        payload.implClass = null
+        payload.implBeanName = null
+        payload.implMethod = null
+      }
       this.functionSaving = true
       try {
         if (this.isNativeFunction) {

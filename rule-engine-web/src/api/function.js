@@ -54,6 +54,10 @@ export function testFunction(id, params) {
   return request.post('/rule/function/' + id + '/test', params, { acceptExecutionFailure: true })
 }
 
+export function testFunctionScript(functionConfig, params) {
+  return request.post('/rule/function/script-test', { function: functionConfig, params }, { acceptExecutionFailure: true })
+}
+
 export function listVersions(functionId) {
   return request.get('/rule/function/versions/' + functionId, metadataResponse)
 }

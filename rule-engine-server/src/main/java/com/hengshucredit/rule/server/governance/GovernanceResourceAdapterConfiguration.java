@@ -254,7 +254,9 @@ public class GovernanceResourceAdapterConfiguration {
 
             @Override
             public void update(T entity) {
-                if (mapper.updateById(entity) != 1) {
+                int updated = mapper instanceof RuleFunctionMapper functions && entity instanceof RuleFunction function
+                        ? functions.updateImplementation(function) : mapper.updateById(entity);
+                if (updated != 1) {
                     throw new IllegalStateException(
                             "资源不存在或已被并发修改");
                 }

@@ -248,6 +248,19 @@ describe('FunctionList — 函数操作', () => {
     expect(JSON.parse(wrapper.vm.functionTestResultText).result).toBe(12.3)
   })
 
+  test('编辑弹窗测试未保存脚本时传入当前正文和参数，不更新生效版本', async () => {
+    wrapper.vm.handleEdit({ id: 7, scope: 'GLOBAL', implType: 'SCRIPT', funcName: '回显', funcCode: 'sampleEcho',
+      implScript: 'return value;', paramsJson: '[{"name":"value","type":"NUMBER"}]' })
+    wrapper.vm.editForm.implScript = 'return value + 2;'
+    wrapper.vm.testCurrentScript()
+    wrapper.vm.functionTestParamsText = '{"value":3}'
+    functionApi.testFunctionScript.mockResolvedValueOnce({ data: { success: true, result: 5 } })
+    await wrapper.vm.doTestFunction()
+    expect(functionApi.testFunctionScript).toHaveBeenCalledWith(expect.objectContaining({ implScript: 'return value + 2;' }), { value: 3 })
+    expect(JSON.parse(wrapper.vm.functionTestResultText).result).toBe(5)
+    expect(functionApi.updateFunction).not.toHaveBeenCalled()
+  })
+
   test('handleTestFunction 优先使用参数 example 生成复杂函数测试入参', () => {
     const row = {
       id: 6,
@@ -601,11 +614,10 @@ describe('FunctionList — 精确方法签名', () => {
 
   test('旧DOUBLE绑定Object明确展示且改说明时不自动迁移重载', async () => {
     const params = [{ name: 'amount', type: 'DOUBLE', label: '金额' }]
-    wrapper.vm.handleEdit({ id: 9, scope: 'GLOBAL', implType: 'JAVA', implClass: 'example.Methods', implMethod: 'choose', funcCode: 'old', funcName: '旧函数', paramsJson: JSON.stringify(params) })
-    expect(wrapper.vm.methodParameterType(0)).toBe('')
     const legacy = catalog('choose(java.lang.Object)', { legacySignature: true })
     functionApi.inspectFunctionMethods.mockResolvedValue({ data: legacy })
-    await wrapper.vm.loadFunctionMethods()
+    await wrapper.vm.handleEdit({ id: 9, scope: 'GLOBAL', implType: 'JAVA', implClass: 'example.Methods', implMethod: 'choose', funcCode: 'old', funcName: '旧函数', paramsJson: JSON.stringify(params) })
+    expect(functionApi.inspectFunctionMethods).toHaveBeenCalledTimes(1)
     expect(wrapper.vm.selectedNativeSignature).toBe('choose(java.lang.Object)')
     expect(wrapper.vm.methodParameterType(0)).toBe('java.lang.Object')
     wrapper.vm.editParams[0].label = '修改后的业务说明'

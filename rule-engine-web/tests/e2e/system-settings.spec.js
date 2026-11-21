@@ -109,6 +109,7 @@ test('全局水印保存、跨页刷新、弹窗操作、身份变化及关闭',
   await expect(watermark).toHaveCount(0)
   await page.goto('http://tianshu.local/index.html#/system/settings')
   await expect(tile).toBeVisible()
+  await page.getByRole('tab', { name: '基本信息', exact: true }).click()
   await page.locator('.el-switch').filter({ has: page.getByRole('switch', { name: '开启页面水印' }) }).click()
   await page.getByRole('button', { name: '保存配置', exact: true }).click()
   await expect(watermark).toHaveCount(0)

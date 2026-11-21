@@ -67,7 +67,7 @@ async function sha256(file) {
 export async function copyKycExample(root, stageRoot) {
   const kycSample = path.join('docker', 'rule-engine-mysql', 'kyc-example', '衡枢KYC-三项人脸规则.zip')
   if (existsSync(path.join(root, kycSample))) {
-    if (await sha256(path.join(root, kycSample)) !== 'dac328b23d76de7c0242707a10d2d13a881612a7517ba0b57b65b546ba44ec56') {
+    if (await sha256(path.join(root, kycSample)) !== '7ef5659681583e0007760d8d5b29a4712a1892d6e841cb7743251a6bc895a7b4') {
       throw new Error('衡枢 KYC 样例包摘要不匹配')
     }
     const target = path.join(stageRoot, kycSample)

@@ -86,6 +86,7 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
   const apiData = createDocsApiData()
   apiData.set('GET /api/rule/test-data/RULE/catalog', { records: [], total: 0 })
   apiData.set('GET /api/rule/test-data/rules', [])
+  apiData.set('GET /api/rule/test-data/cases', { records: [], total: 0 })
   const projectCode = apiData.get('/api/rule/project/list').records[0].projectCode
   const permissions = [...new Set(SIDEBAR_MENUS.flatMap(menu => menu.permission).filter(Boolean)), 'system:audit', 'account:audit']
   apiData.set('/api/auth/console/config', { loginEnabled: true })

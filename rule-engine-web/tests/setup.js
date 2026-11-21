@@ -230,6 +230,7 @@ vi.mock('@/api/function', () => ({
   updateFunction: vi.fn(),
   deleteFunction: vi.fn(),
   testFunction: vi.fn(),
+  testFunctionScript: vi.fn(),
   listVersions: vi.fn(),
   getVersion: vi.fn(),
   compareVersions: vi.fn(),

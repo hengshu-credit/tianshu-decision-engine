@@ -73,6 +73,19 @@ public class DecisionBuiltinFunctions {
         return decimal(value).abs();
     }
 
+    public boolean requireCondition(boolean condition, String message) {
+        if (!condition) throw new ScriptConditionException(message);
+        return true;
+    }
+
+    public static final class ScriptConditionException extends IllegalArgumentException {
+        private ScriptConditionException(String message) { super(message); }
+    }
+
+    public boolean isFiniteNumber(Object value) {
+        return value instanceof Number number && Double.isFinite(number.doubleValue());
+    }
+
     public double numPow(double value, double exponent) {
         return Math.pow(value, exponent);
     }
