@@ -1406,6 +1406,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
@@ -1698,7 +1699,7 @@ export default {
     ElIconDocumentChecked,
   },
   name: 'RuleDetail',
-  mixins: [workspaceTabTitleMixin(vm => vm.rule.ruleName)],
+  mixins: [pageTabState('activeDetailTab', ['lifecycle', 'inputs', 'outputs', 'execution', 'open-api', 'api-scenarios']), workspaceTabTitleMixin(vm => vm.rule.ruleName)],
   activated() {
     const resuming = !this.detailActive
     this.detailActive = true

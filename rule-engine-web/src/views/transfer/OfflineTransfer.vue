@@ -270,6 +270,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import TransferVersionBindingRow from '@/components/transfer/TransferVersionBindingRow.vue'
@@ -304,6 +305,8 @@ const LINEAGE_TYPES = { DATABASE: 'DB', SFTP: 'SFTP', EXTERNAL_DATASOURCE: 'DATA
 const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', versionSelection: { versionMode: 'LATEST', versionId: null }, versionLabel: '最新版（当前生产）', loadError: '', requestId: 0, fetchOptions: params => fetch(key, params) })
 
 export default {
+  created() { if (this.activeTab === 'logs') this.loadLogs() },
+  mixins: [pageTabState('activeTab', ['transfer', 'logs'])],
   name: 'OfflineTransfer',
   components: { DismissibleGuidance, RemoteFilterSelect, LineageGraph, TransferAssociationPanel, TransferVersionBindingRow, ResourceVersionSelect },
   data() {

@@ -1214,6 +1214,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
@@ -1401,7 +1402,7 @@ export default {
     }
   },
   name: 'ApiDetail',
-  mixins: [configurationDraftMixin(vm => ({ form: vm.form, apiAuthConfig: vm.apiAuthConfig, scriptVariableRows: vm.scriptVariableRows, cacheKeyRows: vm.cacheKeyRows, successConditionRoot: vm.successConditionRoot, exceptionConditionRoot: vm.exceptionConditionRoot, retryConditionRoot: vm.retryConditionRoot, tokenFailureMode: vm.tokenFailureMode, tokenFailureConditionRoot: vm.tokenFailureConditionRoot, billingConfig: vm.billingConfig, payloadCapture: vm.payloadCapture })), workspaceTabTitleMixin(vm => vm.form.apiName)],
+  mixins: [pageTabState('activeConfigTab', vm => [...vm.configTabs.map(t => t.name), ...vm.executionTabs.concat(vm.executionPolicyTabs).map(t => 'execution.' + t.name), 'execution.steps']), configurationDraftMixin(vm => ({ form: vm.form, apiAuthConfig: vm.apiAuthConfig, scriptVariableRows: vm.scriptVariableRows, cacheKeyRows: vm.cacheKeyRows, successConditionRoot: vm.successConditionRoot, exceptionConditionRoot: vm.exceptionConditionRoot, retryConditionRoot: vm.retryConditionRoot, tokenFailureMode: vm.tokenFailureMode, tokenFailureConditionRoot: vm.tokenFailureConditionRoot, billingConfig: vm.billingConfig, payloadCapture: vm.payloadCapture })), workspaceTabTitleMixin(vm => vm.form.apiName)],
   components: { ResourceTestCases, DismissibleGuidance, RemoteFilterSelect,
     ProtocolPathPicker,
     ApiRequestSampleEditor,
@@ -1666,13 +1667,9 @@ export default {
         await this.loadDatasourceOptions()
         if (!this.isCurrentInitialization(requestId)) return
         this.form = this.emptyForm()
-        this.activeConfigGroup = 'business'
-        if (this.$route.query?.tab === 'billing') {
-          this.activeConfigGroup = 'reliability'
-          this.activeConfigTab = 'billing'
-        } else {
-          this.activeConfigTab = 'auth'
-        }
+        const requested = this.$route.query?.tab
+        this.activeConfigTab = this.rememberedPageTab?.() || (['billing','test','execution.samples'].includes(requested) ? requested : 'auth')
+        this.syncConfigGroupForTab(this.activeConfigTab)
         this.invokeResultText = ''
         this.requestPreviewText = ''
         this.previewToken = ''
@@ -1694,6 +1691,11 @@ export default {
           return
         }
         await this.loadDetail(requestId)
+        const sample = this.executionSamples?.find(item => String(item.id) === this.$route.query?.sampleId)
+        if (this.isCurrentInitialization(requestId) && sample) {
+          this.selectedSampleId = sample.id
+          this.selectExecutionSample()
+        }
       } catch (error) {
         if (this.isCurrentInitialization(requestId)) this.initializationError = error.message || '无法读取接口配置，请重试'
       } finally {

@@ -316,6 +316,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
@@ -341,7 +342,7 @@ import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
-  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'dialogVisible', draft: vm => vm.form, busy: vm => vm.saving }])],
+  mixins: [pageTabState('activeTab', ['list', 'logs']), governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'dialogVisible', draft: vm => vm.form, busy: vm => vm.saving }])],
   data() {
     return {
       repairListCode: false,

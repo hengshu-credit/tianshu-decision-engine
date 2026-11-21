@@ -168,6 +168,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import router from '@/router'
 import {
@@ -225,6 +226,7 @@ const RESOURCE_OPTIONS = [
 ]
 
 export default {
+  mixins: [pageTabState('activeScope', ['PENDING', 'MINE', 'COMPLETED', 'ALL'])],
   name: 'ApprovalList',
   components: { DismissibleGuidance, RemoteFilterSelect, TableColumnSettings },
   data() {

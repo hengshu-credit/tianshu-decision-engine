@@ -23,6 +23,15 @@ public class TestDataCatalog {
                 .contains(MockRule.group(type));
     }
 
+    public boolean validExample(String mode, Long ruleId, String type) {
+        if (mode == null) return compatible(ruleId,type);
+        return switch (mode) {
+            case "RULE" -> ruleId != null && compatible(ruleId,type);
+            case "FIXED","AUTO","NONE" -> ruleId == null;
+            default -> false;
+        };
+    }
+
     List<MockRule> rules() {
         return jdbc.query("SELECT * FROM rule_mock_rule ORDER BY seed_key IS NULL DESC,id DESC", (rs,i) ->
                 new MockRule(rs.getLong("id"),rs.getString("name"),rs.getString("value_type"),rs.getString("match_names"),

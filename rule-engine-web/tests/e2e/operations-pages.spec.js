@@ -1088,3 +1088,29 @@ test('预期模式按钮在明暗实时预览后仍使用可读文字色', async
   await drawer.getByRole('button', { name: '取消', exact: true }).click()
   assertClean()
 })
+
+test('规则测试刷新恢复管理页签，默认跨类型展示用例并保留筛选栏底部间距', async ({ page }) => {
+  const fixtures = createOperationsApiData()
+  fixtures.set('GET /api/rule/test-data/rules', [])
+  fixtures.set('GET /api/rule/test-data/cases', { total: 2, records: [
+    { type: 'VARIABLE', source: 'CASE', ownerId: 8, id: '1', name: '低收入申请', resourceName: '收入', code: 'income' },
+    { type: 'API', source: 'API_NAMED', ownerId: 9, id: 'high', name: '高分响应', resourceName: '风险评分', code: 'score' },
+  ] })
+  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+  await page.goto('http://tianshu.local/index.html#/test')
+  for (const tab of ['Mock 规则','测试用例']) {
+    await page.getByRole('tab', { name: tab, exact: true }).click()
+    await page.reload()
+    await expect(page.getByRole('tab', { name: tab, exact: true })).toHaveAttribute('aria-selected','true')
+  }
+  await expect(page.getByText('低收入申请', { exact: true })).toBeVisible()
+  await expect(page.getByText('高分响应', { exact: true })).toBeVisible()
+  const toolbar = page.locator('.test-management:visible .uiue-filter-toolbar')
+  for (const width of [1440, 680]) {
+    await page.setViewportSize({ width, height: 800 })
+    const gap = await toolbar.evaluate(el => el.getBoundingClientRect().bottom -
+      Math.max(...Array.from(el.querySelectorAll('button')).map(b => b.getBoundingClientRect().bottom)))
+    expect(gap).toBeGreaterThanOrEqual(8)
+  }
+  assertClean()
+})

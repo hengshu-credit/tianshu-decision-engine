@@ -448,6 +448,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
@@ -478,7 +479,7 @@ import { canUseWorkbenchAction, workbenchActionRoute } from '@/utils/workbenchAc
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 export default {
   name: 'ProjectDetail',
-  mixins: [workspaceTabTitleMixin(vm => vm.project?.projectName)],
+  mixins: [pageTabState('activeProjectTab', ['workbench', 'rules']), workspaceTabTitleMixin(vm => vm.project?.projectName)],
   components: { DismissibleGuidance, GovernanceWorkspaceToolbar, GovernancePublishAction, GovernanceResourceStatus, ProjectWorkbenchOverview, RuleModelTypeHelp, RemoteFilterSelect },
   data() {
     return {

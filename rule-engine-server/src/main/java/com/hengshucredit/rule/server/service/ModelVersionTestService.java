@@ -128,7 +128,7 @@ public class ModelVersionTestService {
             }
         }
         result.put("model", model);
-        result.put("schema", loaded.schema());
+        result.put("schema", schemas.withExamples(loaded.schema(), loaded.runtime()));
         return result;
     }
 

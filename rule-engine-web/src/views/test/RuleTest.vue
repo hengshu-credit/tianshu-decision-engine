@@ -560,6 +560,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import MockRulesPanel from '@/components/test/MockRulesPanel.vue'
 import TestCasesPanel from '@/components/test/TestCasesPanel.vue'
 import { generateTestInput } from '@/api/testData'
@@ -621,6 +622,7 @@ import {
 } from '@/utils/testCaseTools'
 
 export default {
+  mixins: [pageTabState('activeTestTab', ['test', 'cases', 'mock'])],
   components: { MockRulesPanel, TestCasesPanel, DismissibleGuidance, ExecutionImpactPanel, ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
     TraceTree,
     AsyncState,
@@ -1460,7 +1462,7 @@ export default {
           )
           return
         }
-        if (source && source.sourceType !== 'WORKSPACE') {
+        if (schema.generatedExamples || source && source.sourceType !== 'WORKSPACE') {
           this.commitInputLoad(requestId, ruleId, manualParams, 'SCHEMA', warnings)
           return
         }

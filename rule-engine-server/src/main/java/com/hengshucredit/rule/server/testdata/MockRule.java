@@ -39,6 +39,7 @@ public record MockRule(Long id, String name, String valueType, String matchNames
     }
     boolean matches(String key, String label) {
         return Arrays.stream(matchNames.split("[,，]")).map(String::trim)
+                .map(s -> s.startsWith("$.") ? s.substring(2) : s)
                 .anyMatch(s -> !s.isEmpty() && (s.equalsIgnoreCase(key) || s.equalsIgnoreCase(label)));
     }
     void validate() {
@@ -61,7 +62,7 @@ public record MockRule(Long id, String name, String valueType, String matchNames
                     && config.get(0).canConvertToInt() && config.get(1).canConvertToInt()
                     && config.get(0).intValue() <= config.get(1).intValue();
             case "TEXT","PHONE","EMAIL","UUID" -> valueType.equals("STRING");
-            case "DATE","BOOLEAN" -> valueType.equals(generator);
+            case "DATE","BOOLEAN","DATETIME","TIMESTAMP" -> valueType.equals(generator);
             default -> false;
         };
         if (!valid) throw new IllegalArgumentException("生成方式或 JSON 参数与字段类型不匹配");
@@ -95,6 +96,7 @@ public record MockRule(Long id, String name, String valueType, String matchNames
             case "PHONE" -> TextNode.valueOf("13" + rng.nextLong(100000000L, 1000000000L));
             case "EMAIL" -> TextNode.valueOf("test" + rng.nextInt(1000000) + "@example.com");
             case "UUID" -> TextNode.valueOf(UUID.randomUUID().toString());
+            case "DATETIME","TIMESTAMP" -> fallback(generator);
             case "DATE" -> TextNode.valueOf(LocalDate.now().minusDays(rng.nextInt(365)).toString());
             case "BOOLEAN" -> BooleanNode.valueOf(rng.nextBoolean());
             case "TEXT" -> TextNode.valueOf("示例" + rng.nextInt(1000000));

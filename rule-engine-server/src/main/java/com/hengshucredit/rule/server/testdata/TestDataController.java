@@ -13,11 +13,33 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class TestDataController {
     private final TestDataCatalog catalog;
+    private final SavedTestDirectory directory;
+    private final MockFieldBindings bindings;
     private final TestMockService generator;
 
     @GetMapping("/rules")
     @RequirePermission(value="rule:view",anyOf="field:view")
     public ApiResponse<List<MockRule>> rules() { return ApiResponse.ok(catalog.rules()); }
+
+    @GetMapping("/rules/{id}/fields")
+    @RequirePermission("field:view")
+    public ApiResponse<List<Map<String,Object>>> fields(@PathVariable long id) { return ApiResponse.ok(bindings.list(id)); }
+
+    @PutMapping("/rules/{id}/fields/{type}/{ref}")
+    @RequirePermission("field:edit")
+    public ApiResponse<Void> bind(@PathVariable long id,@PathVariable MockFieldBindings.Target type,@PathVariable long ref) {
+        bindings.bind(id,type,ref,false); return ApiResponse.ok();
+    }
+    @DeleteMapping("/rules/{id}/fields/{type}/{ref}")
+    @RequirePermission("field:edit")
+    public ApiResponse<Void> unbind(@PathVariable long id,@PathVariable MockFieldBindings.Target type,@PathVariable long ref) {
+        bindings.bind(id,type,ref,true); return ApiResponse.ok();
+    }
+    @PostMapping("/rules/preview")
+    @RequirePermission(value="rule:view",anyOf="field:view")
+    public ApiResponse<Map<String,String>> preview(@RequestBody MockRule rule) {
+        rule.validate(); return ApiResponse.ok(Map.of("valueJson",rule.sample().toString()));
+    }
 
     @PostMapping("/rules")
     @RequirePermission("field:edit")
@@ -38,6 +60,18 @@ public class TestDataController {
     @RequirePermission("rule:view")
     public ApiResponse<TestMockService.Sample> generate(@PathVariable long id,@RequestBody RuleTestSchemaRequest request) {
         return ApiResponse.ok(generator.generate(id,request));
+    }
+    @GetMapping("/samples/{type}/{owner}")
+    @RequirePermission("rule:view")
+    public ApiResponse<Map<String,String>> sample(@PathVariable TestResource type,@PathVariable long owner,
+            @RequestParam String source,@RequestParam String id) {
+        return ApiResponse.ok(Map.of("paramsJson",directory.sample(type,source,owner,id)));
+    }
+    @GetMapping("/cases")
+    @RequirePermission("rule:view")
+    public ApiResponse<Map<String,Object>> cases(@RequestParam(required=false) TestResource type,
+            @RequestParam(defaultValue="") String keyword,@RequestParam(defaultValue="1") int page) {
+        return ApiResponse.ok(directory.list(type,keyword,page));
     }
     @GetMapping("/{type}/catalog")
     @RequirePermission("rule:view")

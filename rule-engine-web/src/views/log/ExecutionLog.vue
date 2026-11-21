@@ -598,6 +598,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ExecutionVersionFilter from '@/components/common/ExecutionVersionFilter.vue'
 import ExecutionDiagnosisPanel from '@/components/common/ExecutionDiagnosisPanel.vue'
@@ -630,6 +631,7 @@ import { loadPagedCatalog } from '@/utils/pagedCatalog'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
+  mixins: [pageTabState('activeView', vm => vm.canViewRuntime ? ['logs','ruleSetStats','runtime'] : ['logs','ruleSetStats'])],
   components: { DismissibleGuidance, ExecutionDiagnosisPanel, ExecutionVersionFilter,
     TableColumnSettings,
     ExecutionMetricsPanel,
@@ -825,6 +827,7 @@ this.contextProjectId = contextId
 const trace = this.$route?.query?.traceId
 this.focusedTrace = typeof trace === 'string' && Boolean(trace.trim())
 if (this.focusedTrace) {
+  this.activeView = 'logs'
   this.qp.traceId = trace
 } else {
   this.initDefaultTimeRange()
@@ -850,6 +853,7 @@ if (contextId) {
   }
 }
 this.load()
+if (this.activeView === 'ruleSetStats') this.loadRuleSetStats()
 },
 beforeUnmount() {
 this.detailRequestId++

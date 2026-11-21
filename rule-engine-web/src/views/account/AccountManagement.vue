@@ -419,6 +419,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -467,7 +468,7 @@ function emptyRoleForm() {
 }
 
 export default {
-  mixins: [configurationDialogsMixin([
+  mixins: [pageTabState('activeTab', vm => [vm.canViewAccounts && 'accounts', vm.canViewRoles && 'roles', vm.canViewLogs && 'logs'].filter(Boolean)), configurationDialogsMixin([
     { visible: 'accountDialogVisible', draft: vm => vm.accountForm, busy: vm => vm.accountSaving },
     { visible: 'roleDialogVisible', draft: vm => vm.roleForm, busy: vm => vm.accountSaving },
     { visible: 'passwordDialogVisible', draft: vm => vm.newPassword, busy: vm => vm.accountSaving },
@@ -596,7 +597,7 @@ export default {
     }
   },
   mounted() {
-    this.activeTab = this.canViewAccounts ? 'accounts' : this.canViewRoles ? 'roles' : 'logs'
+    if (!({ accounts: this.canViewAccounts, roles: this.canViewRoles, logs: this.canViewLogs })[this.activeTab]) this.activeTab = this.canViewAccounts ? 'accounts' : this.canViewRoles ? 'roles' : 'logs'
     this.loadData()
   },
   beforeUnmount() { this.accountEditEpoch++; this.newPassword = ''; this.accountForm.password = '' },

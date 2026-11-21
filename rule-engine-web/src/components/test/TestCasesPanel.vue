@@ -1,29 +1,42 @@
 <template>
   <section class="uiue-card">
     <div class="uiue-search-container uiue-filter-toolbar">
-      <el-select v-model="type" aria-label="用例类型" class="case-type" @change="search">
+      <el-select v-model="filterType" aria-label="用例类型" class="case-type" @change="search">
+        <el-option label="全部类型" value="" />
         <el-option v-for="(label,key) in kinds" :key="key" :value="key" :label="label" />
       </el-select>
       <el-input v-model="keyword" clearable class="case-search" placeholder="搜索用例、资源名称或编码" @clear="search" @keyup.enter="search" />
       <el-button @click="search">查询</el-button>
-      <div class="case-actions"><el-button @click="load">刷新</el-button><el-button v-if="canEdit" type="primary" @click="create">新增用例</el-button></div>
+      <div class="case-actions"><el-button @click="load">刷新</el-button><el-button v-if="editableKinds.length" type="primary" @click="create">新增用例</el-button></div>
     </div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-table :aria-busy="loading" :data="rows" border size="small" show-overflow-tooltip empty-text="暂无测试用例">
       <el-table-column prop="name" label="用例名称" min-width="150" />
-      <el-table-column prop="resourceName" :label="'所属' + kinds[type]" min-width="160" />
+      <el-table-column label="来源" min-width="115"><template #default="{ row }">{{ kinds[row.type] }} · {{ sources[row.source] }}</template></el-table-column>
+      <el-table-column prop="resourceName" label="所属资源" min-width="160" />
       <el-table-column prop="code" label="资源编码" min-width="130" />
       <el-table-column label="操作" min-width="150"><template #default="{ row }">
-        <el-button v-if="type==='RULE'" link @click="$emit('apply',row)">载入测试</el-button>
-        <el-button link @click="open(row)">{{ type==='RULE' ? '管理场景' : '详情' }}</el-button>
-        <el-button v-if="type!=='RULE' && canEdit" link type="danger" @click="remove(row)">删除</el-button>
+        <el-button v-if="row.source==='CASE' && row.type==='RULE'" link @click="$emit('apply',row)">载入测试</el-button>
+        <el-button v-if="row.source!=='CASE'" link @click="inspect(row)">查看样例</el-button>
+        <el-button v-else link @click="open(row)">{{ row.type==='RULE' ? '管理场景' : '详情' }}</el-button>
+        <el-button v-if="row.source==='CASE' && row.type!=='RULE' && editableKinds.includes(row.type)" link type="danger" @click="remove(row)">删除</el-button>
       </template></el-table-column>
     </el-table>
     <el-pagination v-if="total>20" v-model:current-page="page" :total="total" :page-size="20" layout="prev, pager, next, total" @current-change="load" />
+    <el-dialog v-model="inspecting" title="已保存的测试样例" width="min(680px, 95vw)" append-to-body>
+      <template v-if="sampleRow">
+        <p>{{ sampleRow.resourceName }} · {{ sampleRow.name }}</p>
+        <el-input type="textarea" :rows="10" readonly :model-value="sampleJson" aria-label="样例输入 JSON" />
+      </template>
+      <template #footer><el-button @click="inspecting=false">关闭</el-button><el-button type="primary" @click="openSource(sampleRow)">打开原配置</el-button></template>
+    </el-dialog>
     <el-dialog v-model="visible" :title="dialogTitle" width="min(920px, 95vw)" append-to-body @closed="load">
-      <el-form v-if="!selected || type!=='RULE'" label-position="top">
+      <el-form v-if="!editing || type!=='RULE'" label-position="top">
+        <el-form-item v-if="!editing" label="用例类型"><el-select v-model="type" @change="resetOwner">
+          <el-option v-for="key in editableKinds" :key="key" :value="key" :label="kinds[key]" />
+        </el-select></el-form-item>
         <el-form-item v-if="!editing" :label="'所属' + kinds[type]">
-          <remote-filter-select v-model:value="ownerId" :fetch-options="owners" :selected-option="selected"
+          <remote-filter-select :key="type" v-model:value="ownerId" :fetch-options="owners" :selected-option="selected"
             option-value-key="ownerId" option-label-key="displayName" placeholder="按资源名称或编码搜索" @change="choose" />
         </el-form-item>
         <template v-if="type!=='RULE' && selected">
@@ -45,15 +58,20 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { testCatalog, getResourceCase, saveResourceCase, deleteResourceCase } from '@/api/testData'
+import { useRouter } from 'vue-router'
+import { getSavedSample, listTestCases, testCatalog, getResourceCase, saveResourceCase, deleteResourceCase } from '@/api/testData'
 import { hasPermission } from '@/security/permissionState'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ApiScenarioPanel from '@/components/rule/ApiScenarioPanel.vue'
 defineEmits(['apply'])
 const kinds = { RULE: '规则', VARIABLE: '变量', MODEL: '模型', API: '外数接口' }
-const type = ref('RULE'), keyword = ref(''), rows = ref([]), page = ref(1), total = ref(0), loading = ref(false), error = ref('')
+const router = useRouter()
+const inspecting = ref(false), sampleRow = ref(null), sampleJson = ref('')
+const sources = { CASE: '固定用例', DESIGN: '设计器', REVISION: '设计修订', MODEL_SAMPLE: '测试参数', MODEL_VERSION: '版本参数', API_SAMPLE: '接口样例', API_NAMED: '具名样例' }
+const filterType = ref(''), type = ref('RULE'), keyword = ref(''), rows = ref([]), page = ref(1), total = ref(0), loading = ref(false), error = ref('')
 const visible = ref(false), editing = ref(null), selected = ref(null), ownerId = ref(null), draft = ref({}), saving = ref(false)
-const canEdit = computed(() => hasPermission(({ RULE: 'rule', VARIABLE: 'field', MODEL: 'model', API: 'datasource' })[type.value]+':edit'))
+const editableKinds = computed(() => Object.keys(kinds).filter(key => hasPermission(({ RULE: 'rule', VARIABLE: 'field', MODEL: 'model', API: 'datasource' })[key]+':edit')))
+const canEdit = computed(() => editableKinds.value.includes(type.value))
 const dialogTitle = computed(() => selected.value ? selected.value.resourceName + ' · 测试用例' : '新增测试用例')
 let revision = 0
 const ownerRows = new Map()
@@ -61,7 +79,7 @@ async function load() {
   const ticket = ++revision
   loading.value = true; error.value = ''; rows.value = []
   try {
-    const { data } = await testCatalog(type.value,{ keyword: keyword.value.trim(), page: page.value })
+    const { data } = await listTestCases({ type: filterType.value || undefined, keyword: keyword.value.trim(), page: page.value })
     if (ticket === revision) { rows.value = data.records; total.value = data.total }
   } catch (e) { if (ticket === revision) error.value = e.message || '用例加载失败' }
   finally { if (ticket === revision) loading.value = false }
@@ -78,7 +96,22 @@ async function owners(params) {
 }
 const contextRules = params => choices('RULE',params)
 function choose(id) { selected.value = ownerRows.get(String(id)) }
+async function inspect(row) {
+  const ticket = ++revision
+  const { data } = await getSavedSample(row)
+  if (ticket !== revision) return
+  sampleJson.value = data.paramsJson
+  sampleRow.value = row
+  inspecting.value = true
+}
+function openSource(row) {
+  if (row.type === 'API') return router.push({ path: '/datasource/api/'+row.ownerId, query: { tab: 'test', sampleId: row.source === 'API_NAMED' ? row.id : undefined } })
+  if (row.type === 'MODEL') return router.push({ path: '/model/'+row.ownerId, query: { testVersion: row.source === 'MODEL_VERSION' ? row.id : 'current' } })
+  return router.push({ path: '/designer/score/'+row.ownerId, query: row.source === 'REVISION' ? { sourceType: 'REVISION', sourceId: row.id } : {} })
+}
+function resetOwner() { ownerRows.clear(); selected.value = null; ownerId.value = null }
 function create() {
+  type.value = editableKinds.value.includes(filterType.value) ? filterType.value : editableKinds.value[0]
   ownerRows.clear()
   editing.value = null; selected.value = null; ownerId.value = null
   draft.value = { name: '', code: '', paramsJson: '{}', expectedJson: '[{"path":["result"],"op":"eq","value":true}]', contextDefinitionId: null }
@@ -86,9 +119,9 @@ function create() {
 }
 async function open(row) {
   const ticket = revision
-  const details = type.value === 'RULE' ? {} : (await getResourceCase(type.value,row.ownerId,row.id)).data
+  const details = row.type === 'RULE' ? {} : (await getResourceCase(row.type,row.ownerId,row.id)).data
   if (ticket !== revision) return
-  editing.value = row.id; ownerId.value = row.ownerId; selected.value = row; draft.value = details; visible.value = true
+  type.value = row.type; editing.value = row.id; ownerId.value = row.ownerId; selected.value = row; draft.value = details; visible.value = true
 }
 async function save() {
   saving.value = true
@@ -96,7 +129,7 @@ async function save() {
 }
 async function remove(row) {
   if (!await ElMessageBox.confirm('删除用例「' + row.name + '」？','删除确认').then(() => true, () => false)) return
-  await deleteResourceCase(type.value,row.ownerId,row.id); await load()
+  await deleteResourceCase(row.type,row.ownerId,row.id); await load()
 }
 onMounted(load)
 </script>

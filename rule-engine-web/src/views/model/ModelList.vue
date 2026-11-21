@@ -801,6 +801,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
@@ -887,7 +888,7 @@ const createEditForm = () => ({
 })
 
 export default {
-  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([
+  mixins: [pageTabState('activeTab', ['list', 'logs']), governanceWorkspaceMixin, configurationDialogsMixin([
     { visible: 'uploadVisible', draft: vm => ({ form: vm.uploadForm, fileName: vm.selectedFileName }), busy: vm => vm.uploading },
     { visible: 'editVisible', draft: vm => vm.editForm, busy: vm => vm.editLoading },
     { visible: 'toGlobalVisible', draft: vm => vm.toGlobalForm, busy: vm => vm.toGlobalLoading },

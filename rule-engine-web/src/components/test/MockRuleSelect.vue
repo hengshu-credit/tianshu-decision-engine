@@ -1,5 +1,5 @@
 <template>
-  <el-select :model-value="modelValue" clearable filterable placeholder="自动匹配" aria-label="Mock 生成规则"
+  <el-select :model-value="modelValue" clearable filterable placeholder="选择生成方法" aria-label="Mock 生成规则"
     :loading="loading" @visible-change="open" @update:model-value="$emit('update:modelValue', $event || null)">
     <el-option v-for="rule in options" :key="rule.id" :label="rule.name" :value="rule.id" />
   </el-select>

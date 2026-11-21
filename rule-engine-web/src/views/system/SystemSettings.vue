@@ -81,6 +81,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { getSystemSettings, saveSystemBrand, uploadSystemAsset, testSystemMail, getSystemSettingsHistory } from '@/api/systemSettings'
 import { createResourceDraft, saveGovernanceDraft, submitGovernanceRequest, getWorkspaceDraft } from '@/api/governance'
@@ -98,6 +99,7 @@ const clone = value => JSON.parse(JSON.stringify(value))
 const groups = { brand: 1, mail: 2, access: 3, codes: 4 }
 
 export default {
+  mixins: [pageTabState('tab', vm => ['brand','mail','access','codes', ...(vm.canAudit ? ['history'] : [])])],
   name: 'SystemSettings',
   components: { DismissibleGuidance, NavigationBrand, LoginPage, WatermarkSettings, FontSettings },
   data: () => ({ fontBusy: false, fontValid: true, tabLoading: false, tabError: '', tabRequestId: 0, imageAccept: BRAND_IMAGE_ACCEPT, brandImageFields: [{ id: 'logoId', url: 'logoUrl', label: '系统 Logo' }, { id: 'faviconId', url: 'faviconUrl', label: '浏览器图标' }], tab: 'brand', form: {}, saved: {}, drafts: {}, effectiveAccess: {}, catalog: [], managed: {}, history: [], historyPage: 1, historyTotal: 0, brand: systemBrand, loading: false, saving: false, mailPassword: '', assetPreviews: {}, codeSearch: '', codeGroup: '', codePage: 1, previewCode: '000000', testDialog: false, testRecipient: '', testing: false, mailResult: '', mailTemplate: 'reset', codeGroups: [{ value: '0', label: '成功' }, { value: '1', label: '请求参数' }, { value: '2', label: '规则与模型' }, { value: '3', label: '身份与权限' }, { value: '4', label: '执行与限流' }, { value: '5', label: '资源与额度' }, { value: '6', label: '外部调用' }, { value: '7', label: '治理与发布' }, { value: '9', label: '系统异常' }] }),

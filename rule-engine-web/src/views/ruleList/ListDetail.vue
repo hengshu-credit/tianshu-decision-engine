@@ -398,6 +398,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
@@ -473,7 +474,7 @@ export default {
     }
   },
   name: 'ListDetail',
-  mixins: [workspaceTabTitleMixin(vm => vm.library.listName)],
+  mixins: [pageTabState('activeTab', ['records', 'logs']), workspaceTabTitleMixin(vm => vm.library.listName)],
   created() {
     this.loadLibrary()
     this.loadRecords()

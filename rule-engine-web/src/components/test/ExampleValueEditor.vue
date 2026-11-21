@@ -1,0 +1,35 @@
+<template>
+  <div class="example-editor">
+    <el-select :model-value="selected" aria-label="示例方式" @update:model-value="change">
+      <el-option label="自动匹配" value="AUTO" />
+      <el-option label="不生成 Mock" value="NONE" />
+      <el-option label="固定值" value="FIXED" />
+      <el-option label="指定 Mock 方法" value="RULE" />
+    </el-select>
+    <el-input v-if="selected==='FIXED'" :model-value="value" :type="structured ? 'textarea' : 'text'"
+      :placeholder="structured ? '输入 JSON，可留空' : '输入固定示例，可留空'" aria-label="固定示例值" @update:model-value="$emit('update:value',$event)" />
+    <mock-rule-select v-if="selected==='RULE'" :model-value="ruleId" :field-type="fieldType"
+      @update:model-value="$emit('update:ruleId',$event)" />
+  </div>
+</template>
+<script setup>
+import { computed } from 'vue'
+import MockRuleSelect from './MockRuleSelect.vue'
+const props = defineProps({
+  mode: { type: String, default: '' }, value: { type: String, default: '' },
+  ruleId: { type: [String, Number], default: null }, fieldType: { type: String, required: true }
+})
+const emit = defineEmits(['update:mode','update:value','update:ruleId'])
+const selected = computed(() => props.mode || (props.ruleId ? 'RULE' : props.value ? 'FIXED' : 'AUTO'))
+const structured = computed(() => ['OBJECT','MAP','LIST','ARRAY'].includes(props.fieldType))
+function change(mode) {
+  emit('update:mode',mode)
+  if (mode !== 'RULE') emit('update:ruleId',null)
+  if (mode !== 'FIXED') emit('update:value','')
+}
+</script>
+<style scoped>
+.example-editor { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+.example-editor > :first-child { flex: 0 1 145px; }
+.example-editor > :nth-child(2) { flex: 1 1 180px; min-width: 0; }
+</style>

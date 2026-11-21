@@ -792,6 +792,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
@@ -914,7 +915,7 @@ export default {
     GroupActionForm,
     TraceTree,
   },
-  mixins: [configurationDraftMixin(vm => ({ form: vm.form, inputValidationConfigMap: vm.inputValidationConfigMap })), varPickerMixin, workspaceTabTitleMixin(vm => vm.form.experimentName)],
+  mixins: [pageTabState('activeTab', ['champion', 'test', 'inputFields', 'outputFields', 'logs']), configurationDraftMixin(vm => ({ form: vm.form, inputValidationConfigMap: vm.inputValidationConfigMap })), varPickerMixin, workspaceTabTitleMixin(vm => vm.form.experimentName)],
   computed: {
     editorFunctions() {
       return this.$data.projectFunctions || []

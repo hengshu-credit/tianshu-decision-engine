@@ -1255,8 +1255,8 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="isObjectField || form.varSource === 'INPUT'" label="Mock 生成规则">
-          <mock-rule-select v-if="dialogVisible" v-model="form.mockRuleId" :field-type="form.varType" />
+        <el-form-item v-if="isObjectField" label="示例值">
+          <example-value-editor v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
         </el-form-item>
         <el-form-item v-if="isObjectField && objectHasExternalSource && !objectFieldApiId" label="来源路径">
           <el-input
@@ -1557,7 +1557,8 @@
               <el-input v-model="form.valueRange" placeholder="如：0~100、A/B/C" />
             </el-form-item>
             <el-form-item label="示例值">
-              <el-input v-model="form.exampleValue" placeholder="如：15000.50" />
+              <example-value-editor v-if="form.varSource === 'INPUT'" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
+              <el-input v-else v-model="form.exampleValue" placeholder="可留空" />
             </el-form-item>
             <el-form-item label="排序">
               <el-input-number v-model="form.sortOrder" :min="0" :max="9999" />
@@ -1726,8 +1727,8 @@
             placeholder="QLExpress 脚本中的引用名，如 taxRequest"
           />
         </el-form-item>
-        <el-form-item label="整体 Mock 规则">
-          <mock-rule-select v-if="objectDialogVisible" v-model="objectForm.mockRuleId" field-type="OBJECT" />
+        <el-form-item label="整体示例值">
+          <example-value-editor v-model:mode="objectForm.exampleMode" v-model:value="objectForm.exampleValue" v-model:rule-id="objectForm.mockRuleId" field-type="OBJECT" />
         </el-form-item>
         <el-form-item label="对象类型" prop="objectType">
           <el-radio-group v-model="objectForm.objectType">
@@ -2380,8 +2381,9 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
-import MockRuleSelect from '@/components/test/MockRuleSelect.vue'
+import ExampleValueEditor from '@/components/test/ExampleValueEditor.vue'
 import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
@@ -2512,7 +2514,7 @@ function isVariableListTimeout(error) {
 }
 
 export default {
-  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([
+  mixins: [pageTabState('activeTab', ['list', 'objects', 'constants', 'validations']), governanceWorkspaceMixin, configurationDialogsMixin([
     { visible: 'dialogVisible', draft: vm => vm.form, busy: vm => vm.variableSubmitting || vm.objectFieldSubmitting || vm.objectFieldReferenceValidating },
     { visible: 'objectDialogVisible', draft: vm => vm.objectForm, busy: vm => vm.objectSubmitting },
     { visible: 'validationDialogVisible', draft: vm => vm.validationForm, busy: vm => vm.validationSaving },
@@ -2828,7 +2830,7 @@ export default {
       canEditFields: hasPermission('field:edit'),
     }
   },
-  components: { MockRuleSelect, ResourceTestCases, DismissibleGuidance,
+  components: { ExampleValueEditor, ResourceTestCases, DismissibleGuidance,
     SourceSummaryCard, ProjectResourceSelect, GovernancePublishAction,
     GovernanceResourceStatus,
     ApiSourceBinding,
@@ -4495,6 +4497,8 @@ export default {
       this.objectForm = {
         apiRequestOverrides: sourceConfig.requestOverrides || {},
         lazyLoadReferences: obj.lazyLoadReferences === true,
+        exampleMode: obj.exampleMode || null,
+        exampleValue: obj.exampleValue ?? null,
         mockRuleId: obj.mockRuleId ?? null,
         id: obj.id,
         objectCode: obj.objectCode,
@@ -4669,6 +4673,8 @@ export default {
         varCode: row.varCode,
         varLabel: row.varLabel,
         scriptName: Object.prototype.hasOwnProperty.call(row, 'originalScriptName') ? row.originalScriptName : row.scriptName,
+        exampleMode: row.exampleMode || null,
+        exampleValue: row.exampleValue ?? null,
         mockRuleId: row.mockRuleId ?? null,
         varType: row.varType || 'STRING',
         sourcePath: row.sourcePath || '',
@@ -5045,6 +5051,8 @@ export default {
             varCode: this.form.varCode,
             varLabel: this.form.varLabel,
             scriptName: this.form.scriptName,
+            exampleMode: this.form.exampleMode || null,
+            exampleValue: this.form.exampleValue ?? null,
             mockRuleId: this.form.mockRuleId || null,
             varType: this.form.varType,
             sourcePath: this.form.sourcePath || null,
@@ -5203,7 +5211,7 @@ export default {
         if (requestId === this.sourceOptionsRequestId) this.$message.warning('测试字段结构加载失败，请核对当前配置生成的样例')
       }
       if (requestId !== this.sourceOptionsRequestId) return
-      const hasSchema = schema && (schema.inputs.length || Object.keys(schema.sampleParams).length)
+      const hasSchema = schema && (schema.generatedExamples || schema.inputs.length || Object.keys(schema.sampleParams).length)
       if (!hasSchema) await this.prepareSampleTree(row)
       if (requestId !== this.sourceOptionsRequestId) return
       this.variableTestRoot = null

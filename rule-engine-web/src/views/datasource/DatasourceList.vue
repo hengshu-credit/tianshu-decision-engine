@@ -569,6 +569,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -597,6 +598,7 @@ import { routeProjectId } from '@/utils/projectContext'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
+  mixins: [pageTabState('activeTab', ['datasource', 'api', 'monitor', 'logs'])],
   data() {
     return {
       tableColumnOrders: { datasourceColumns: null, apiColumns: null },
@@ -719,7 +721,7 @@ export default {
     ProjectFilterSelect,
   },
   async created() {
-    const requestedTab = this.$route && this.$route.query && this.$route.query.tab
+    const requestedTab = this.rememberedPageTab?.() || this.$route?.query?.tab
     if (['datasource', 'api', 'monitor', 'logs'].includes(requestedTab)) {
       this.activeTab = requestedTab
     }

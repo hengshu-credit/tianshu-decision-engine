@@ -436,6 +436,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -456,6 +457,7 @@ import { routeProjectId } from '@/utils/projectContext'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
+  mixins: [pageTabState('activeTab', ['datasource', 'logs'])],
   data() {
     return {
       tableColumnOrders: { databaseColumns: null },

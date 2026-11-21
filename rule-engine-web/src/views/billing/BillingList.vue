@@ -939,6 +939,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import { APPROVAL_REFRESH_KEY } from '@/utils/governanceWorkspace'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
@@ -978,7 +979,7 @@ import { trialStatusLabel, trialStatusType } from '@/utils/apiTrialStatus'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
-  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'configDialogVisible', draft: vm => vm.configForm, busy: vm => vm.configSaving }])],
+  mixins: [pageTabState('activeTab', ['config', 'record', 'summary']), governanceWorkspaceMixin, configurationDialogsMixin([{ visible: 'configDialogVisible', draft: vm => vm.configForm, busy: vm => vm.configSaving }])],
   data() {
     return {
       repairBillingCode: false,
@@ -1193,7 +1194,7 @@ export default {
     refreshDate() { if (this.activeTab === 'summary') this.loadSummaryRefreshTask() },
   },
   created() {
-    this.loadConfigs()
+    this.onTabChange()
   },
   mounted() { this.listenForConfigChanges() },
   beforeUnmount() {

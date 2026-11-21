@@ -157,9 +157,9 @@
     </el-card>
 
     <!-- 输入输出字段 -->
-    <el-tabs type="border-card">
+    <el-tabs v-model="activeModelTab" type="border-card">
       <!-- 输入字段 tab -->
-      <el-tab-pane>
+      <el-tab-pane name="inputs">
         <template v-slot:label>
           <span
             ><el-icon><el-icon-arrow-down /></el-icon> 输入字段</span
@@ -335,7 +335,7 @@
       </el-tab-pane>
 
       <!-- 输出字段 tab -->
-      <el-tab-pane>
+      <el-tab-pane name="outputs">
         <template v-slot:label>
           <span
             ><el-icon><el-icon-arrow-up /></el-icon> 输出字段</span
@@ -917,6 +917,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
@@ -1000,6 +1001,7 @@ const MODEL_TYPE_LABELS = {
 export default {
   data() {
     return {
+      activeModelTab: 'inputs',
       loading: false,
       detailActivated: false,
       model: {},
@@ -1081,7 +1083,7 @@ export default {
     ResourcePreflightPanel,
   },
   name: 'ModelDetail',
-  mixins: [configurationDraftMixin(vm => ({ model: vm.model })), workspaceTabTitleMixin(vm => vm.model.modelName)],
+  mixins: [pageTabState('activeModelTab', ['inputs', 'outputs']), configurationDraftMixin(vm => ({ model: vm.model })), workspaceTabTitleMixin(vm => vm.model.modelName)],
   computed: {
     preflightConfigSignature() {
       if (!this.model || !this.model.id) return ''
@@ -1261,8 +1263,12 @@ export default {
       return options
     },
   },
-  created() {
-    this.load()
+  async created() {
+    await this.load()
+    const version = this.$route?.query?.testVersion
+    if (this.model?.id && (version === 'current' || /^[1-9]\d*$/.test(version || ''))) {
+      this.openTestDialog(version === 'current' ? undefined : Number(version))
+    }
   },
   activated() {
     if (!this.detailActivated) { this.detailActivated = true; return }

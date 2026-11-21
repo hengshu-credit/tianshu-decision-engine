@@ -20,6 +20,10 @@ public class RuleDataObject {
     private String objectType;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long mockRuleId;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String exampleMode;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String exampleValue;
     /** 仅引用型叶子字段可按需取值；默认关闭。 */
     private Boolean lazyLoadReferences;
     private String sourceType;
