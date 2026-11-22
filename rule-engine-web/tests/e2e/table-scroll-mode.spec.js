@@ -107,7 +107,14 @@ for (const mode of ['FIXED', 'AUTO']) test(`版本与审批抽屉支持左侧调
     }
     return owners
   })
-  expect(scrollOwners).toEqual(['el-drawer__body'])
+  expect(scrollOwners).toEqual(['preview-region-body', 'el-drawer__body'])
+  await params.locator('.section-toggle').click()
+  await expect(lastValue).toBeHidden()
+  await params.locator('.section-toggle').click()
+  await params.getByRole('button', { name: '显示完整高度' }).click()
+  await lastValue.scrollIntoViewIfNeeded()
+  await expect(lastValue).toBeInViewport()
+  expect(await params.locator('.preview-region-body').evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1)
   await params.getByText('field_29', { exact: true }).scrollIntoViewIfNeeded()
   await expect(params.getByText('field_29', { exact: true })).toBeInViewport()
   await versions.locator('.version-comparison-toolbar .el-select').click()

@@ -1,16 +1,20 @@
 <template>
   <resource-version-manager resource-type="LEDGER_ARTICLE" :resource-id="articleId" :provider="provider" @changed="$emit('changed')">
     <template #preview="{ snapshot, version, draft }">
-      <div class="ledger-version-preview"><h3>{{ content(snapshot).title || '未命名草稿' }} <el-tag size="small">{{ draft ? '草稿' : `v${version?.versionNo}` }}</el-tag></h3><ledger-markdown :value="content(snapshot).body || ''" /></div>
+      <version-preview-region label="文章正文">
+        <div class="ledger-version-preview"><h3>{{ content(snapshot).title || '未命名草稿' }} <el-tag size="small">{{ draft ? '草稿' : `v${version?.versionNo}` }}</el-tag></h3><ledger-markdown :value="content(snapshot).body || ''" /></div>
+      </version-preview-region>
     </template>
     <template #comparison="{ original, modified, originalVersion, modifiedVersion }">
-      <div class="ledger-version-columns">
-        <section v-for="(item, index) in [{ snapshot: original, version: originalVersion }, { snapshot: modified, version: modifiedVersion }]" :key="index" class="ledger-version-preview">
-          <p>{{ index === 0 ? '左侧 · 基准版本' : '右侧 · 当前所选版本' }} · {{ item.version ? `v${item.version.versionNo} · 修订 ${item.version.revisionNo}` : '草稿' }}</p>
-          <h3>{{ content(item.snapshot).title || '未命名草稿' }}</h3>
-          <ledger-markdown :value="content(item.snapshot).body || ''" />
-        </section>
-      </div>
+      <version-preview-region label="文章正文对比">
+        <div class="ledger-version-columns">
+          <section v-for="(item, index) in [{ snapshot: original, version: originalVersion }, { snapshot: modified, version: modifiedVersion }]" :key="index" class="ledger-version-preview">
+            <p>{{ index === 0 ? '左侧 · 基准版本' : '右侧 · 当前所选版本' }} · {{ item.version ? `v${item.version.versionNo} · 修订 ${item.version.revisionNo}` : '草稿' }}</p>
+            <h3>{{ content(item.snapshot).title || '未命名草稿' }}</h3>
+            <ledger-markdown :value="content(item.snapshot).body || ''" />
+          </section>
+        </div>
+      </version-preview-region>
       <resource-version-preview resource-type="LEDGER_ARTICLE" :original="metadata(original)" :snapshot="metadata(modified)" comparing original-label="左侧文章配置" modified-label="右侧文章配置" />
     </template>
   </resource-version-manager>
@@ -19,11 +23,12 @@
 import ResourceVersionManager from '@/components/common/ResourceVersionManager.vue'
 import LedgerMarkdown from './LedgerMarkdown.vue'
 import ResourceVersionPreview from '@/components/common/ResourceVersionPreview.vue'
+import VersionPreviewRegion from '@/components/common/VersionPreviewRegion.vue'
 import { getLedgerVersions, getLedgerVersionEvents, restoreLedgerVersion } from '@/api/ledger'
 import { snapshotContent } from '@/utils/ledger'
 export default {
   name: 'LedgerVersions',
-  components: { ResourceVersionManager, LedgerMarkdown, ResourceVersionPreview },
+  components: { ResourceVersionManager, LedgerMarkdown, ResourceVersionPreview, VersionPreviewRegion },
   props: { articleId: { type: [Number, String], required: true } },
   emits: ['changed'],
   computed: {

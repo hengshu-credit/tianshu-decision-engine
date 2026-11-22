@@ -7,15 +7,17 @@
     </slot>
     <el-collapse v-model="rawPanels" class="version-raw-collapse">
       <el-collapse-item v-if="$slots.detail" title="逐项变更明细" name="detail">
-        <div v-if="rawPanels.includes('detail')" class="version-detail-scroll"><slot name="detail" /></div>
+        <version-preview-region label="逐项变更明细"><slot v-if="rawPanels.includes('detail')" name="detail" /></version-preview-region>
       </el-collapse-item>
       <el-collapse-item title="查看原始 JSON（完整配置）" name="raw">
-        <template v-if="rawPanels.includes('raw')">
-          <json-version-diff v-if="comparing" :original="rawLeft" :modified="rawRight" height="auto"
-            :original-label="originalLabel" :modified-label="modifiedLabel" />
-          <pre v-else class="version-preview">{{ formatSnapshotJson(rawRight) }}</pre>
-          <slot name="technical" />
-        </template>
+        <version-preview-region label="原始 JSON">
+          <template v-if="rawPanels.includes('raw')">
+            <json-version-diff v-if="comparing" :original="rawLeft" :modified="rawRight" height="auto"
+              :original-label="originalLabel" :modified-label="modifiedLabel" />
+            <pre v-else class="version-preview">{{ formatSnapshotJson(rawRight) }}</pre>
+            <slot name="technical" />
+          </template>
+        </version-preview-region>
       </el-collapse-item>
     </el-collapse>
   </div>
@@ -23,6 +25,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import ResourceVersionPreview from './ResourceVersionPreview.vue'
+import VersionPreviewRegion from './VersionPreviewRegion.vue'
 import JsonVersionDiff from './JsonVersionDiff.vue'
 import { historicalSnapshot, formatSnapshotJson } from '@/utils/versionSnapshot'
 
@@ -45,6 +48,5 @@ watch(() => [props.resourceType, props.snapshot, props.original, props.comparing
 <style scoped>
 .version-snapshot-panel { container: version-snapshot / inline-size; min-width: 0; }
 .version-raw-collapse { margin: 16px 0; }
-.version-detail-scroll { max-width: 100%; overflow-x: auto; }
 .version-preview { margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tianshu-text-primary); background: var(--tianshu-bg-soft); }
 </style>
