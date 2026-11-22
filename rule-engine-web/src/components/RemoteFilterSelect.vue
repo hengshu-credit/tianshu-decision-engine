@@ -9,6 +9,7 @@
     :fetch-suggestions="scheduleSuggestions"
     :debounce="0"
     fit-input-width
+    :placement="suggestionPlacement"
     :popper-options="suggestionPopperOptions"
     :highlight-first-item="false"
     :teleported="true"
@@ -18,7 +19,7 @@
     @update:model-value="updateValue"
     @change="$emit('change', $event)"
     @select="handleSelect"
-    @focus="onSuggestionFocus"
+    @focus="resumeSuggestions"
     @blur="closeSuggestions"
     @keydown.esc.capture="handleEscape"
     @clear="closeSuggestions"
@@ -67,6 +68,8 @@ import AppLoadingIcon from '@/components/common/AppLoadingIcon.vue'
 import ContentReference from '@/components/common/ContentReference.vue'
 import { $emit } from '../utils/gogocodeTransfer'
 
+const suggestionGap = 8
+
 // 文本筛选使用受控输入；候选查询只更新建议，不改写筛选条件。
 // 页面通过 fetchOptions、optionLabelKey、optionValueKey 配置数据源和字段。
 export default {
@@ -98,7 +101,13 @@ export default {
       optionsRequestId: 0,
       suggestionsCallback: null,
       suggestionTimer: null,
-      suggestionPopperOptions: undefined,
+      suggestionPlacement: 'bottom-start',
+      suggestionPopperOptions: {
+        modifiers: [
+          { name: 'offset', options: { offset: [0, suggestionGap] } },
+          { name: 'filterSuggestions', enabled: true, phase: 'beforeRead', fn: this.fitSuggestionPanel },
+        ],
+      },
       dropdownWrap: null,
       lastInputValue: this.value,
       composingEnter: false,
@@ -213,15 +222,31 @@ export default {
         this.cancelPendingLoad()
       }
     },
-    onSuggestionFocus(event) {
-      this.resumeSuggestions()
-      const form = event.target.closest('.uiue-filter-toolbar form, .tab-filter-fields')
-      if (!form) return
-      // 换行的筛选表单仍需留出下一行查询和重置按钮。
-      const extra = form.getBoundingClientRect().bottom - event.target.getBoundingClientRect().bottom
-      this.suggestionPopperOptions = extra > 20 ? {
-        modifiers: [{ name: 'offset', options: { offset: ({ placement }) => [0, placement.startsWith('bottom') ? extra + 8 : 12] } }],
-      } : undefined
+    fitSuggestionPanel({ state }) {
+      const { reference, popper } = state.elements
+      const wrap = popper.querySelector('.el-autocomplete-suggestion__wrap')
+      if (!wrap || !popper.offsetWidth || !reference.getClientRects().length) return
+      const rect = reference.getBoundingClientRect()
+      const panelHeight = parseFloat(getComputedStyle(wrap).maxHeight)
+      const toolbar = reference.closest('.uiue-filter-toolbar, .tab-filter-row')
+      const buttons = toolbar?.querySelectorAll('button.el-button') || []
+      // 只检查候选层所在的水平范围。其他列换行不影响输入框与弹层之间的距离。
+      const overlapsAction = Array.from(buttons).some(button => {
+        const action = button.getBoundingClientRect()
+        return action.width > 0 && action.right > rect.left && action.left < rect.right &&
+          action.top >= rect.bottom && action.top < rect.bottom + suggestionGap + panelHeight
+      })
+      // 翻到上方时为箭头、边框和视口边缘留出空间，其余位置交给 Popper 自动避让。
+      const above = Math.floor(rect.top) - suggestionGap - 8
+      const openAbove = overlapsAction && above >= 48
+      this.suggestionPlacement = openAbove ? 'top-start' : 'bottom-start'
+      const room = openAbove ? above + 'px' : '100vh'
+      const width = rect.width + 'px'
+      if (popper.style.getPropertyValue('--filter-panel-room') === room && popper.style.getPropertyValue('--filter-anchor-width') === width) return
+      popper.style.setProperty('--filter-panel-room', room)
+      popper.style.setProperty('--filter-anchor-width', width)
+      state.rects.popper.height = popper.offsetHeight
+      state.rects.popper.width = popper.offsetWidth
     },
     resumeSuggestions() {
       this.suggestionsClosed = false
@@ -347,7 +372,20 @@ export default {
 :global(.remote-filter-options) {
   --filter-panel-height: min(176px, 35vh);
 }
-:global(.remote-filter-suggestions .el-autocomplete-suggestion__wrap),
+:global(.remote-filter-suggestions.el-popper) {
+  box-sizing: border-box;
+  width: var(--filter-anchor-width);
+  max-width: calc(100vw - 8px);
+}
+:global(.remote-filter-suggestions .el-autocomplete-suggestion) {
+  min-width: 100%;
+  max-width: 100%;
+}
+:global(.remote-filter-suggestions .el-autocomplete-suggestion__wrap) {
+  height: min(var(--filter-panel-height), var(--filter-panel-room, 100vh));
+  max-height: var(--filter-panel-height);
+}
+
 :global(.remote-filter-options .el-select-dropdown__wrap),
 :global(.remote-filter-options .el-select-dropdown__loading),
 :global(.remote-filter-options .el-select-dropdown__empty) {

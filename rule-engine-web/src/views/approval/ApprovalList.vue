@@ -42,51 +42,35 @@
       </el-tabs>
 
       <div class="filter-bar uiue-search-container uiue-filter-toolbar">
-        <el-form :inline="true" size="small" class="approval-filters" @keyup.enter="search">
-        <remote-filter-select
-          v-model:value="filters.keyword"
-          :fetch-options="fetchKeywordOptions"
-          :option-fields="['requestNo', 'changeSummary']"
-          allow-free-input
-          placeholder="审批单号或变更说明"
-          class="keyword-filter"
-        />
-        <el-select
-          v-model="filters.resourceType"
-          clearable
-          filterable
-          placeholder="资源类型"
-        >
-          <el-option
-            v-for="item in resourceOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-        <el-select
-          v-if="activeScope !== 'PENDING'"
-          v-model="filters.status"
-          clearable
-          placeholder="申请状态"
-        >
-          <el-option
-            v-for="item in visibleStatusOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-        <el-select v-model="filters.action" clearable placeholder="生命周期动作">
-          <el-option
-            v-for="item in actionOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-        <el-button type="primary" @click="search">查询</el-button>
-        <el-button @click="resetFilters">重置</el-button>
+        <el-form inline size="small" class="approval-filters" @submit.prevent @keyup.enter="search">
+          <el-form-item label="关键词" class="approval-keyword">
+            <remote-filter-select
+              v-model:value="filters.keyword"
+              :fetch-options="fetchKeywordOptions"
+              :option-fields="['requestNo', 'changeSummary']"
+              allow-free-input
+              placeholder="审批单号或变更说明"
+            />
+          </el-form-item>
+          <el-form-item label="资源类型">
+            <el-select v-model="filters.resourceType" clearable filterable placeholder="全部类型">
+              <el-option v-for="item in resourceOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="activeScope !== 'PENDING'" label="申请状态">
+            <el-select v-model="filters.status" clearable placeholder="全部状态">
+              <el-option v-for="item in visibleStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="生命周期动作">
+            <el-select v-model="filters.action" clearable placeholder="全部动作">
+              <el-option v-for="item in actionOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item class="approval-query-actions">
+            <el-button type="primary" @click="search">查询</el-button>
+            <el-button @click="resetFilters">重置</el-button>
+          </el-form-item>
         </el-form>
         <div class="uiue-btn-bar">
           <div class="btn-right">
@@ -639,21 +623,9 @@ export default {
   background: var(--tianshu-bg-soft);
 }
 
-.approval-filters {
-  gap: 10px;
-}
-
-.filter-bar .keyword-filter {
-  flex: 0 1 360px;
-  width: 360px;
-  max-width: 100%;
-  min-width: 160px;
-}
-
-.filter-bar :deep(.el-select) {
-  width: 160px;
-}
-
+.approval-filters .approval-keyword { width: 252px; max-width: 100%; }
+.approval-filters :deep(.el-select) { width: 128px; }
+.approval-query-actions :deep(.el-form-item__content) { flex-wrap: nowrap; }
 .filter-bar > .uiue-btn-bar {
   margin-bottom: 0;
 }
@@ -731,13 +703,14 @@ export default {
     display: none;
   }
 
-  .filter-bar .keyword-filter {
-    flex-basis: 100%;
-    width: 100%;
-  }
-
   .summary-grid {
     grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 560px) {
+  .approval-filters :deep(.el-form-item__label) {
+    width: 7em;
+    justify-content: flex-start;
   }
 }
 </style>
