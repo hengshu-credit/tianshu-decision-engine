@@ -1,34 +1,29 @@
 <template>
   <div class="uiue-list-page account-page management-list-page">
     <header class="page-header">
-      <div>
-        <span class="page-eyebrow">CONSOLE ACCESS</span>
-        <h1>账户管理</h1>
-        <dismissible-guidance tag="p" guide-id="accounts.intro" label="账户管理说明">通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</dismissible-guidance>
-      </div>
-      <div class="uiue-btn-bar account-actions">
+      <dismissible-guidance tag="p" guide-id="accounts.intro" label="账户管理说明">通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</dismissible-guidance>
+      <div v-if="activeTab !== 'logs'" class="uiue-btn-bar account-actions">
         <div class="btn-right">
-      <table-column-settings v-model="tableColumnOrders[activeTab === 'accounts' ? 'accountColumns' : 'roleColumns']" :key="activeTab"
-        v-if="activeTab !== 'logs'"
-        :columns="activeTab === 'accounts' ? accountColumns : roleColumns"
-        :storage-key="`tianshu:table-columns:account-management-${activeTab}`"
-      />
-      <el-button
-        v-if="activeTab === 'accounts'"
-        v-permission="'account:manage'"
-        type="primary"
-        @click="openAccountDialog()"
-      >
-        新增账户
-      </el-button>
-      <el-button
-        v-else-if="activeTab === 'roles'"
-        v-permission="'role:manage'"
-        type="primary"
-        @click="openRoleDialog()"
-      >
-        新增角色
-      </el-button>
+          <table-column-settings v-model="tableColumnOrders[activeTab === 'accounts' ? 'accountColumns' : 'roleColumns']" :key="activeTab"
+            :columns="activeTab === 'accounts' ? accountColumns : roleColumns"
+            :storage-key="`tianshu:table-columns:account-management-${activeTab}`"
+          />
+          <el-button
+            v-if="activeTab === 'accounts'"
+            v-permission="'account:manage'"
+            type="primary"
+            @click="openAccountDialog()"
+          >
+            新增账户
+          </el-button>
+          <el-button
+            v-else-if="activeTab === 'roles'"
+            v-permission="'role:manage'"
+            type="primary"
+            @click="openRoleDialog()"
+          >
+            新增角色
+          </el-button>
         </div>
       </div>
     </header>
@@ -785,39 +780,18 @@ export default {
 
 <style lang="scss" scoped>
 .account-actions {
-  margin: 0 0 0 auto;
+  margin: 0 0 12px auto;
 }
 .account-page {
   color: var(--tianshu-text-primary);
 }
 .page-header {
   display: flex;
-  min-height: 76px;
-  margin-bottom: 16px;
+  flex-wrap: wrap;
   align-items: flex-start;
-  justify-content: space-between;
-
-  h1 {
-    margin: 4px 0 0;
-    color: var(--tianshu-text-primary);
-    font-size: 24px;
-    font-weight: 650;
-    line-height: 32px;
-  }
-
-  p {
-    margin: 4px 0 0;
-    color: var(--tianshu-text-tertiary);
-    font-size: 14px;
-    line-height: 22px;
-  }
+  gap: 0 12px;
 }
-.page-eyebrow {
-  color: var(--el-color-primary);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
+.page-header > .dismissible-guidance { flex: 1 1 18rem; }
 .content-card {
   padding: 16px 20px 24px;
   background: var(--tianshu-bg-surface);

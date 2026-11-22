@@ -164,7 +164,8 @@ test('离线迁移页面展示导出、目标范围和冲突策略流程', async
   const { assertClean, logRequests } = await installTransferRoutes(page)
   await page.goto(`${baseUrl}#/transfer`)
 
-  await expect(page.getByRole('heading', { name: '离线配置迁移' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '配置迁移', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '离线配置迁移' })).toHaveCount(0)
   await expect(page.getByText('配置包即时生成')).toBeVisible()
   await expect(page.getByRole('button', { name: '生成并下载配置包' })).toBeVisible()
   await expect(page.getByText('名单记录、日志和账单不会进入配置包。')).toBeVisible()

@@ -224,7 +224,8 @@ test('外数的数据源、API、调用日志和质量看板均正常', async ({
   expect(logRequests).toHaveLength(0)
 
   const monitorPane = await activateTab(page, '监控看板')
-  await expect(monitorPane.getByText('外数供应商质量看板', { exact: true })).toBeVisible()
+  await expect(monitorPane.getByText('外数供应商质量看板', { exact: true })).toHaveCount(0)
+  await expect(monitorPane.getByText(/缓存命中只计算缓存期内命中的数据/)).toBeVisible()
   await expect(monitorPane.locator('.datasource-stat-cell')).toHaveCount(8)
   await expect(monitorPane.getByText('credit_query', { exact: true })).toBeVisible()
   await expect(monitorPane.locator('.module-call-log')).toHaveCount(0)
@@ -234,7 +235,8 @@ test('外数的数据源、API、调用日志和质量看板均正常', async ({
   await expect.poll(() => statsRequests.length).toBe(2)
 
   const logPane = await activateTab(page, '调用日志')
-  await expect(logPane.getByText('外数调用日志', { exact: true })).toBeVisible()
+  await expect(logPane.getByRole('region', { name: '外数调用日志' })).toBeVisible()
+  await expect(logPane.getByText('外数调用日志', { exact: true })).toHaveCount(0)
   await expect(logPane.getByText('credit_query', { exact: true }).first()).toBeVisible()
   await expect(logPane.locator('.datasource-stat-cell')).toHaveCount(0)
   expect(logRequests).toHaveLength(1)
@@ -285,7 +287,8 @@ for (const moduleCase of [
     await page.goto(`http://tianshu.local/index.html#${moduleCase.path}`)
 
     const pane = await activateTab(page, moduleCase.tab)
-    await expect(pane.getByText(moduleCase.title, { exact: true }).first()).toBeVisible()
+    await expect(pane.getByRole('region', { name: moduleCase.title })).toBeVisible()
+    await expect(pane.getByText(moduleCase.title, { exact: true })).toHaveCount(0)
     const rowText = pane.getByText(moduleCase.rowText, { exact: true }).first()
     await expect(rowText).toBeVisible()
     await expectTextSelectable(rowText, moduleCase.rowText)
@@ -325,7 +328,43 @@ for (const [path, logTab] of [['/list', '名单日志'], ['/database', '调用�
     await page.goto('http://tianshu.local/#' + path)
     await expect(page.getByRole('tab', { name: logTab, exact: true })).toBeVisible()
     expect(calls()).toBe(0)
-    await activateTab(page, logTab)
+    const pane = await activateTab(page, logTab)
+    await expect(pane.getByText('仅展示本人及明确授权的调用记录。')).toBeVisible()
+    await expect(pane.locator('.log-title')).toHaveCount(0)
     await expect.poll(calls).toBe(1)
   })
 }
+
+test('分流实验提示铺满内容区，单条关闭后收展，窄屏逐条排列', async ({ page }) => {
+  const apiData = createManagementApiData()
+  apiData.set('/api/rule/experiment/list', { records: [], total: 0 })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.setViewportSize({ width: 3000, height: 900 })
+  await page.goto('http://tianshu.local/index.html#/experiment')
+  const hints = page.getByRole('region', { name: '分流实验说明' })
+  const cards = hints.getByRole('listitem')
+  const toolbar = page.locator('.experiment-page .uiue-filter-toolbar')
+  await expect(cards).toHaveCount(2)
+  for (const width of [3000, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    const [area, first, last] = await Promise.all([toolbar, cards.first(), cards.last()].map(el => el.boundingBox()))
+    expect(Math.abs(area.x - first.x)).toBeLessThan(2)
+    expect(Math.abs(area.x + area.width - last.x - last.width)).toBeLessThan(2)
+    if (width === 390) {
+      expect(last.y).toBeGreaterThanOrEqual(first.y + first.height)
+      expect(Math.abs(area.width - first.width)).toBeLessThan(2)
+      expect(Math.abs(area.width - last.width)).toBeLessThan(2)
+    } else {
+      expect(first.y).toBe(last.y)
+      expect(Math.abs(first.width - last.width)).toBeLessThan(2)
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await hints.getByRole('button', { name: '关闭分流实验说明' }).click()
+  await expect(cards).toHaveCount(1)
+  expect(Math.abs((await toolbar.boundingBox()).width - (await cards.first().boundingBox()).width)).toBeLessThan(2)
+  await hints.getByRole('button', { name: '关闭生产分流与空跑' }).click()
+  await expect(hints).toHaveCount(0)
+  await expect(toolbar.getByRole('button', { name: '查询', exact: true })).toBeVisible()
+  assertClean()
+})

@@ -1,16 +1,6 @@
 <template>
   <div class="uiue-list-page approval-page management-list-page">
-    <header class="page-header">
-      <div>
-        <span class="page-eyebrow">LIFECYCLE GOVERNANCE</span>
-        <h1>审批任务中心</h1>
-        <dismissible-guidance tag="p" guide-id="approvals.intro" label="审批任务说明">优先处理待审批事项，也可按申请人、资源和动作追踪变更；仅展示本人及明确授权的记录。</dismissible-guidance>
-      </div>
-      <div class="header-stat">
-        <strong>{{ summary.pendingCount }}</strong>
-        <span>待处理</span>
-      </div>
-    </header>
+    <dismissible-guidance tag="p" guide-id="approvals.intro" label="审批任务说明">优先处理待审批事项，也可按申请人、资源和动作追踪变更；仅展示本人及明确授权的记录。</dismissible-guidance>
 
     <section class="summary-grid" aria-label="审批任务概览">
       <button
@@ -524,45 +514,6 @@ export default {
   color: var(--tianshu-text-primary);
 }
 
-.page-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.page-eyebrow {
-  display: block;
-  margin-bottom: 7px;
-  color: var(--el-color-primary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-}
-
-.page-header h1 {
-  margin: 0;
-  font-size: 30px;
-  letter-spacing: -0.04em;
-}
-
-.page-header p {
-  margin: 9px 0 0;
-  color: var(--tianshu-text-secondary);
-}
-
-.header-stat {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  color: var(--tianshu-text-secondary);
-}
-
-.header-stat strong {
-  color: var(--tianshu-text-primary);
-  font-size: 30px;
-}
-
 .approval-card {
   overflow: hidden;
   border: 1px solid var(--tianshu-border-subtle);
@@ -699,10 +650,6 @@ export default {
 }
 
 @media (max-width: 900px) {
-  .header-stat {
-    display: none;
-  }
-
   .summary-grid {
     grid-template-columns: 1fr 1fr;
   }

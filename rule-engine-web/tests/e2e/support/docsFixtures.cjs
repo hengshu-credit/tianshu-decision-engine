@@ -626,6 +626,7 @@ function createDocsApiData() {
     status: 1
   })
   routes.set('/api/rule/datasource/api-config/22', {
+    ...routes.get('/api/rule/datasource/api-config/22'),
     id: 22,
     datasourceId: 21,
     datasourceCode: 'face_service_provider',
@@ -838,9 +839,35 @@ function createDocsApiData() {
     faceImageUrl: 'https://example.test/face/demo.jpg',
     idCardNumber: '110101199001011234'
   })
+  const model = routes.get('/api/rule/model/41')
+  const modelVersion = {
+    version: model.currentVersion,
+    configurationDigest: 'face-embedding-configuration-v5',
+    modelDigest: model.fileDigest
+  }
+  const toSchemaField = (field) => ({
+    refId: field.varId,
+    refType: field.refType,
+    scriptName: field.scriptName,
+    label: field.fieldLabel,
+    valueType: field.fieldType
+  })
+  routes.set('/api/rule/model/versions/41', [modelVersion])
+  routes.set(`/api/rule/model/version/41/${model.currentVersion}/test-context`, {
+    ...modelVersion,
+    modelId: model.id,
+    currentVersion: model.currentVersion,
+    model,
+    schema: {
+      inputs: model.inputFields.map(toSchemaField),
+      outputs: model.outputFields.map(toSchemaField),
+      sampleParams: routes.get('/api/rule/model/testParams/41')
+    }
+  })
   routes.set('POST /api/rule/model/execute/41', {
+    ...modelVersion,
     success: true,
-    result: {
+    outputs: {
       faceSimilarity: 0.936,
       faceQualityScore: 0.974,
       modelVersion: 'V3.4'

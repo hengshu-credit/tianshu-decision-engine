@@ -194,13 +194,13 @@ test('生成字段管理、规则字段、模型字段和调用详情截图', as
 
   routing = await openPage(page, '/datasource')
   await page.getByRole('tab', { name: '调用日志', exact: true }).click()
-  await expect(page.getByText('外数调用日志', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '外数调用日志', exact: true })).toBeVisible()
   await screenshot(page, 'project-usage-10-datasource-log.png')
   routing.assertClean()
 
   routing = await openPage(page, '/database')
   await page.getByRole('tab', { name: '调用日志', exact: true }).click()
-  await expect(page.getByText('数据库调用日志', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '数据库调用日志', exact: true })).toBeVisible()
   await screenshot(page, 'project-usage-12-database-log.png')
   routing.assertClean()
 

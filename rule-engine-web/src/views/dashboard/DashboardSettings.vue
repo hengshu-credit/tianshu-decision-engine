@@ -1,7 +1,6 @@
 <template>
   <div class="uiue-list-page dashboard-settings-page">
     <div class="dashboard-settings-heading">
-      <strong>数据看板设置</strong>
       <el-button @click="$router.push('/dashboard')">返回看板</el-button>
     </div>
     <dismissible-guidance guide-id="dashboard-settings.intro" label="看板设置说明">
@@ -480,7 +479,7 @@ export default {
 .dashboard-settings-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 16px;
 }
 

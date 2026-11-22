@@ -818,9 +818,9 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
 
   await page.goto('http://tianshu.local/index.html#/experiment')
   await expectStyleUsesToken(
-    page.locator('.experiment-page h2'),
+    page.locator('.experiment-page .guidance-heading').first(),
     'color',
-    '--tianshu-text-primary'
+    '--tianshu-info-text'
   )
   const experimentRow = page.getByRole('row').filter({ hasText: 'risk_ab' })
   await experimentRow.getByRole('button', { name: '验证执行', exact: true }).click()

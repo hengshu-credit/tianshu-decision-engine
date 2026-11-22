@@ -1,11 +1,8 @@
 <template>
-  <div class="module-call-log management-table-region">
+  <section class="module-call-log management-table-region" :aria-label="title || profile.title">
     <div class="log-header">
-      <div>
-        <div class="log-title">{{ title || profile.title }}</div>
-        <div class="log-subtitle">{{ profile.subtitle }}</div>
-        <div class="log-subtitle">仅展示本人及明确授权的调用记录。</div>
-      </div>
+      <div>{{ profile.subtitle }}</div>
+      <div>仅展示本人及明确授权的调用记录。</div>
     </div>
 
     <div class="log-filter uiue-search-container uiue-filter-toolbar">
@@ -421,7 +418,7 @@
         </template>
       </div>
     </el-drawer>
-  </div>
+  </section>
 </template>
 
 <script>
@@ -835,20 +832,11 @@ export default {
   margin-top: 16px;
 }
 .log-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  display: grid;
+  gap: 3px;
   margin-bottom: 10px;
-}
-.log-title {
-  color: #1f2937;
-  font-weight: 700;
-}
-.log-subtitle {
   color: var(--tianshu-text-tertiary);
   font-size: 12px;
-  margin-top: 3px;
 }
 .log-filter {
   margin-bottom: 10px;

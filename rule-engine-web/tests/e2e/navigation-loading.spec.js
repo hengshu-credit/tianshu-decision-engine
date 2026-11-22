@@ -76,7 +76,8 @@ for (const navigationLayout of ['LEFT', 'TOP']) {
     try {
       await page.locator('[data-menu-path="/experiment"]').click()
       await expect(page).toHaveURL(/#\/experiment$/, { timeout: 1500 })
-      await expect(page.getByRole('heading', { name: '分流实验', exact: true })).toBeVisible()
+      await expect(page.locator('.workspace-tab__main[data-path="/experiment"]')).toBeVisible()
+      await expect(page.getByRole('heading', { name: '分流实验', exact: true })).toHaveCount(0)
       await expect(page.getByRole('button', { name: '新建实验', exact: true })).toBeVisible()
       await expect(page.getByPlaceholder('编码或名称')).toBeVisible()
       await expect(page.getByRole('columnheader', { name: '实验编码', exact: true })).toBeVisible()

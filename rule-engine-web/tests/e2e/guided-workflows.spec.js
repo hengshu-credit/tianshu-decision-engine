@@ -336,7 +336,8 @@ test('审批任务中心默认跨模块展示待处理事项并覆盖全部资�
 
   await page.goto('http://tianshu.local/index.html#/approval')
 
-  await expect(page.getByRole('heading', { name: '审批任务中心' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '审批任务概览' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '审批任务中心' })).toHaveCount(0)
   await expect(page.getByRole('tab', { name: '待处理', exact: true }))
     .toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText('手机号黑名单 · 4 条内容变更', { exact: true }))

@@ -74,6 +74,7 @@ function createManagementApiData() {
       ],
       total: 1
     }],
+    ...variables.map(variable => [`/api/rule/variable/${variable.id}`, variable]),
     ['/api/rule/variable/list', ({ url }) => {
       const rows = url.searchParams.get('varSource') === 'CONSTANT'
         ? constants

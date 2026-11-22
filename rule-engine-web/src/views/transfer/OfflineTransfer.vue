@@ -1,13 +1,6 @@
 <template>
   <div class="uiue-list-page transfer-page">
-    <header class="page-header">
-      <div>
-        <span class="page-eyebrow">CROSS ENVIRONMENT</span>
-        <h1>离线配置迁移</h1>
-        <dismissible-guidance tag="p" guide-id="transfer.intro" label="离线配置迁移说明">按血缘导出配置，上传到其他环境后预检冲突并确认导入。名单记录、日志和账单不会进入配置包。</dismissible-guidance>
-      </div>
-
-    </header>
+    <dismissible-guidance tag="p" guide-id="transfer.intro" label="离线配置迁移说明">按血缘导出配置，上传到其他环境后预检冲突并确认导入。名单记录、日志和账单不会进入配置包。</dismissible-guidance>
 
     <el-tabs v-model="activeTab" class="transfer-tabs" @tab-change="onTabChange">
       <el-tab-pane label="配置迁移" name="transfer">
@@ -788,7 +781,6 @@ export default {
 
 <style scoped>
 .export-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.transfer-page > .page-header { margin-bottom: 12px; }
 .transfer-page { padding-bottom: 36px; }
 .transfer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .transfer-card { background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color-light); border-radius: 14px; padding: 20px; box-shadow: 0 8px 28px rgba(15, 23, 42, .05); }

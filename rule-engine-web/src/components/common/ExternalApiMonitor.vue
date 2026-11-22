@@ -1,12 +1,8 @@
 <template>
   <div class="external-api-monitor stats-panel" aria-label="外数监控看板">
     <div class="stats-heading">
-      <div>
-        <div class="log-title">外数供应商质量看板</div>
-        <div class="log-subtitle">
-          全部指标从 API
-          外数调用日志表统计；缓存命中只计算缓存期内命中的数据。
-        </div>
+      <div class="log-subtitle">
+        全部指标从 API 外数调用日志表统计；缓存命中只计算缓存期内命中的数据。
       </div>
       <div class="uiue-btn-bar monitor-actions">
         <div class="btn-right">
@@ -338,10 +334,6 @@ export default {
 <style scoped>
 .external-api-monitor {
   margin-top: 16px;
-}
-.log-title {
-  color: var(--tianshu-text-primary);
-  font-weight: 700;
 }
 .log-subtitle {
   color: var(--tianshu-text-tertiary);
