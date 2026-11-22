@@ -6,7 +6,7 @@
       class="monaco-editor-container"
       :class="{ 'has-reference-decorations': referenceDecorationIds.length > 0 }"
       :aria-busy="loading"
-      :style="{ height: initialScriptHeight ? scriptHeight + 'px' : height }"
+      :style="{ height: displayHeight }"
       @mousedown.capture="focusReferenceCode"
       @dblclick.capture="focusReferenceCode"
       @mouseup.capture="normalizeReferenceCaret"
@@ -25,6 +25,7 @@ import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
 import { contentSourceIcon } from '@/utils/contentDisplay'
 import { waitForMonaco } from '@/utils/monacoLoader'
 import { identifyMonacoFields } from '@/utils/monacoFieldIds'
+import { followMonacoContentHeight } from '@/utils/monacoContentHeight'
 import {
   buildQlCompletionItems,
   buildQlHover,
@@ -119,6 +120,7 @@ export default {
     return {
       editor: null,
       customScriptHeight: null,
+      contentHeight: 48,
       loading: true,
       loadController: null,
       intelligenceDisposables: [],
@@ -130,6 +132,10 @@ export default {
     }
   },
   computed: {
+    displayHeight() {
+      if (this.height === 'auto') return this.contentHeight + 'px'
+      return this.initialScriptHeight ? this.scriptHeight + 'px' : this.height
+    },
     initialScriptHeight() {
       if (this.readOnly || this.options.readOnly || !['ql', 'javascript'].includes(this.language)) return 0
       return /^\d+px$/.test(this.height) ? Number.parseInt(this.height, 10) : 0
@@ -228,6 +234,10 @@ export default {
     this.editor = markRaw(
       window.monaco.editor.create(this.$refs.container, options)
     )
+    if (this.height === 'auto') {
+      this.editor.updateOptions({ scrollbar: { ...options.scrollbar, handleMouseWheel: false } })
+      followMonacoContentHeight([this.editor], height => { this.contentHeight = height })
+    }
     identifyMonacoFields(this.editor)
     this.registerIntelligenceProviders(window.monaco)
     this.refreshReferenceDecorations()

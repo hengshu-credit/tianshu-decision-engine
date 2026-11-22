@@ -117,8 +117,6 @@ const detailRows = computed(() => {
 <style scoped>
 .version-preview-summary {
   container: version-preview / inline-size;
-  --version-value-max-height: min(16rem, 36vh);
-  --version-section-max-height: min(36rem, 64vh);
   margin: 16px 0;
   color: var(--tianshu-text-primary);
   min-width: 0;
@@ -147,11 +145,7 @@ const detailRows = computed(() => {
 .basic-field dt { color: var(--tianshu-text-secondary); }
 .basic-field dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .basic-field dt .el-tag { margin-left: 4px; }
-.basic-field dd, .basic-field dt, .business-preview-head p {
-  max-height: var(--version-value-max-height);
-  overflow: auto;
-  overflow-wrap: anywhere;
-}
+.basic-field dt { overflow-wrap: anywhere; }
 .narrow-version-label { display: none; }
 @container version-preview (max-width: 640px) {
   .is-comparing .pane-grid { grid-template-columns: minmax(0, 1fr); }

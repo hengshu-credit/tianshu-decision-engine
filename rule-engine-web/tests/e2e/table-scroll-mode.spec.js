@@ -47,7 +47,7 @@ async function expectFixedList(page) {
 
 async function resizeDrawer(page, drawer, delta) {
   const handle = drawer.locator('.el-drawer__dragger')
-  await expect(handle).toBeVisible()
+  await handle.hover()
   const rect = await handle.boundingBox()
   const before = await drawer.boundingBox()
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2)
@@ -95,18 +95,20 @@ for (const mode of ['FIXED', 'AUTO']) test(`版本与审批抽屉支持左侧调
   const params = versions.locator('[data-section="paramsJson"]')
   await expect(params).toContainText('embeddings')
   await resizeDrawer(page, versions, 128)
-  const first = params.getByRole('button', { name: /第 1 项/ }).first()
+  const first = params.getByRole('button', { name: /第 1 项$/, expanded: false }).first()
   await first.click()
-  const values = first.locator('..').locator(':scope > .config-group-content')
-  await expect(values.getByText('第 512 项', { exact: true })).toHaveCount(1)
-  expect((await values.boundingBox()).height).toBeLessThan(280)
-  await values.scrollIntoViewIfNeeded()
-  await values.evaluate(el => { el.scrollTop = el.scrollHeight })
-  await expect(values.getByText('第 512 项', { exact: true })).toBeInViewport()
-  const parameterScroll = mode === 'FIXED' ? params.locator('.el-scrollbar__wrap').first() : params.locator('.business-preview-card')
-  await parameterScroll.evaluate(el => { el.scrollTop = el.scrollHeight })
-  await expect.poll(() => parameterScroll.evaluate(el => el.scrollTop)).toBeGreaterThan(50)
-  await parameterScroll.scrollIntoViewIfNeeded()
+  const lastValue = params.getByText('第 512 项', { exact: true })
+  await lastValue.scrollIntoViewIfNeeded()
+  await expect(lastValue).toBeInViewport()
+  const scrollOwners = await lastValue.evaluate(el => {
+    const owners = []
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      if (/auto|scroll/.test(getComputedStyle(p).overflowY) && p.scrollHeight > p.clientHeight + 1) owners.push(p.className)
+    }
+    return owners
+  })
+  expect(scrollOwners).toEqual(['el-drawer__body'])
+  await params.getByText('field_29', { exact: true }).scrollIntoViewIfNeeded()
   await expect(params.getByText('field_29', { exact: true })).toBeInViewport()
   await versions.locator('.version-comparison-toolbar .el-select').click()
   await page.getByRole('option', { name: 'v1 · 修订 1', exact: true }).click()

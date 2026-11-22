@@ -268,7 +268,6 @@ export default {
 .version-actions { justify-content: flex-end; margin-left: auto; }
 .version-help { color: var(--tianshu-text-secondary); line-height: 1.6; margin: 16px 0; white-space: normal; }
 .el-select { width: 256px; max-width: 100%; }
-.version-preview { background: var(--tianshu-bg-secondary); color: var(--tianshu-text-primary); padding: 16px; max-height: 480px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .version-history { margin-top: 24px; }
 .version-preview-summary { margin: 16px 0; overflow-wrap: anywhere; }
 .version-edit-form :deep(.el-form-item__content) { gap: 12px; }

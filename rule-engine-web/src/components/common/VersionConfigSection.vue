@@ -31,7 +31,7 @@
       <template v-else-if="section.nodes.length">
         <template v-for="(item, index) in section.nodes" :key="index">
           <monaco-editor v-if="item.key === 'script' && section.key === 'rule:script'" :value="item.text"
-            language="ql" read-only reference-catalog-mode="FROZEN" height="220px" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" />
+            language="ql" read-only reference-catalog-mode="FROZEN" height="auto" :options="{ minimap: { enabled: false }, wordWrap: 'on' }" />
           <version-business-node v-else :node="item" :bare="item.kind === 'settings' || item.title === section.title" />
         </template>
       </template>
@@ -68,19 +68,14 @@ const rowLabels = computed(() => {
   min-width: 0;
   color: var(--tianshu-text-primary);
   overflow-wrap: anywhere;
-  max-height: var(--version-section-max-height);
-  overflow: auto;
   align-self: start;
 }
 .business-preview-card > .snapshot-branch { overflow-x: auto; padding-block: 4px; }
 .business-preview-card > .source-summary-card { margin: 0; }
 .matrix-scroll { max-width: 100%; overflow: auto; }
-html[data-table-scroll-mode='fixed'] .matrix-scroll { max-height: calc(var(--version-section-max-height) - 2rem); }
-html[data-table-scroll-mode='fixed'] .result-matrix thead { position: sticky; top: 0; }
 .result-matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
 .result-matrix :is(th, td) { padding: 8px; border: 1px solid var(--tianshu-border); text-align: left; }
 .result-matrix th > span { display: block; }
-.result-matrix :is(th, td) > span, .business-preview-card :deep(.threshold-item) { max-height: var(--version-value-max-height); overflow: auto; }
 .result-matrix th { background: var(--tianshu-bg-soft); font-weight: 600; }
 .missing, .graph-details summary, .narrow-version-label { font-size: 12px; color: var(--tianshu-text-secondary); }
 .graph-details summary { padding: 10px 0; cursor: pointer; }

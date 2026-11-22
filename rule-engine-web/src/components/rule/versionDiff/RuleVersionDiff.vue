@@ -66,7 +66,7 @@
         :original="diff.script.leftScript"
         :modified="diff.script.rightScript"
         language="ql"
-        height="480px"
+        :height="scriptHeight"
         :references="scriptReferences"
         :functions="scriptFunctions"
       />
@@ -117,6 +117,7 @@ export default {
     RuleConditionDiff,
   },
   props: {
+    scriptHeight: { type: String, default: '480px' },
     modelType: {
       type: String,
       required: true,

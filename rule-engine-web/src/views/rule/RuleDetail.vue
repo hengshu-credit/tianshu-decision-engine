@@ -1366,7 +1366,7 @@
           resource-type="RULE" :model-type="rule.modelType" :snapshot="versionCompare.right" :original="versionCompare.left"
           :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)">
           <template #detail>
-            <rule-version-diff :model-type="rule.modelType" :left-version="versionCompare.left" :right-version="versionCompare.right"
+            <rule-version-diff script-height="auto" :model-type="rule.modelType" :left-version="versionCompare.left" :right-version="versionCompare.right"
               :references="ruleVersionReferences" :functions="idempotencyFunctions" />
           </template>
           <template #technical>
@@ -3959,7 +3959,7 @@ export default {
 }
 .version-compare-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -3972,8 +3972,8 @@ export default {
 .version-compare-grid pre {
   margin: 0;
   padding: 10px;
-  height: 220px;
-  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   background: var(--tianshu-bg-muted);
   border: 1px solid var(--tianshu-border-subtle);
   border-radius: 4px;

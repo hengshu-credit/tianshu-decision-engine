@@ -1,5 +1,6 @@
 <template>
-  <div class="monaco-diff-editor" :style="{ height }">
+  <div class="monaco-diff-editor" :class="{ 'fit-content': height === 'auto' }"
+    :style="{ height: height === 'auto' && !loadFailed ? contentHeight + 'px' : height }">
     <div
       v-show="!loadFailed"
       ref="container"
@@ -28,6 +29,7 @@ import { $emit } from '../../../utils/gogocodeTransfer'
 import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
 import { waitForMonaco } from '@/utils/monacoLoader'
 import { identifyMonacoFields } from '@/utils/monacoFieldIds'
+import { followMonacoContentHeight } from '@/utils/monacoContentHeight'
 import { buildQlReferenceDecorations, collectQlScriptReferences } from '@/utils/qlScriptReferences'
 export default {
   components: {
@@ -59,6 +61,7 @@ export default {
   data() {
     return {
       diffEditor: null,
+      contentHeight: 48,
       originalModel: null,
       modifiedModel: null,
       originalDecorationIds: [],
@@ -126,7 +129,7 @@ export default {
         lineNumbers: 'on',
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
-        scrollbar: getMonacoScrollbarOptions(),
+        scrollbar: { ...getMonacoScrollbarOptions(), handleMouseWheel: this.height !== 'auto' },
         folding: true,
         padding: { top: 8, bottom: 8 },
       })
@@ -135,6 +138,10 @@ export default {
       original: this.originalModel,
       modified: this.modifiedModel,
     })
+    if (this.height === 'auto') {
+      followMonacoContentHeight([this.diffEditor.getOriginalEditor(), this.diffEditor.getModifiedEditor()],
+        height => { this.contentHeight = height })
+    }
     identifyMonacoFields(this.diffEditor.getOriginalEditor?.())
     identifyMonacoFields(this.diffEditor.getModifiedEditor?.())
     this.refreshReferenceDecorations()
@@ -285,6 +292,8 @@ export default {
   width: 100%;
   height: 100%;
 }
+.monaco-diff-editor.fit-content { min-height: 0; }
+.fit-content .monaco-diff-fallback { height: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-wrap: anywhere; }
 .monaco-diff-state {
   position: absolute;
   inset: 0;

@@ -11,7 +11,7 @@
       </el-collapse-item>
       <el-collapse-item title="查看原始 JSON（完整配置）" name="raw">
         <template v-if="rawPanels.includes('raw')">
-          <json-version-diff v-if="comparing" :original="rawLeft" :modified="rawRight"
+          <json-version-diff v-if="comparing" :original="rawLeft" :modified="rawRight" height="auto"
             :original-label="originalLabel" :modified-label="modifiedLabel" />
           <pre v-else class="version-preview">{{ formatSnapshotJson(rawRight) }}</pre>
           <slot name="technical" />
@@ -45,6 +45,6 @@ watch(() => [props.resourceType, props.snapshot, props.original, props.comparing
 <style scoped>
 .version-snapshot-panel { container: version-snapshot / inline-size; min-width: 0; }
 .version-raw-collapse { margin: 16px 0; }
-.version-detail-scroll { max-width: 100%; max-height: min(36rem, 64vh); overflow: auto; }
-.version-preview { max-height: 420px; overflow: auto; margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tianshu-text-primary); background: var(--tianshu-bg-soft); }
+.version-detail-scroll { max-width: 100%; overflow-x: auto; }
+.version-preview { margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tianshu-text-primary); background: var(--tianshu-bg-soft); }
 </style>
