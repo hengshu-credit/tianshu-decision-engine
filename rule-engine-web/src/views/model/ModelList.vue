@@ -222,10 +222,7 @@
             >
           </el-table-column>
           <el-table-column v-if="columnKey === 'fieldCount'" label="字段数" min-width="80" align="center">
-            <template v-slot="{ row }"
-              >{{ row.inputFieldCount ?? row.inputFields?.length ?? '—' }}进 /
-              {{ row.outputFieldCount ?? row.outputFields?.length ?? '—' }}出</template
-            >
+            <template #default="{ row }"><model-field-count :model="row" /></template>
           </el-table-column>
           <el-table-column v-if="columnKey === 'currentVersion'"
             prop="currentVersion"
@@ -805,6 +802,7 @@ import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
+import ModelFieldCount from './ModelFieldCount.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
@@ -1058,7 +1056,7 @@ export default {
       ElIconUpload2: markRaw(ElIconUpload2),
     }
   },
-  components: { DismissibleGuidance, ProjectResourceSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { ModelFieldCount, DismissibleGuidance, ProjectResourceSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     ModuleCallLog,

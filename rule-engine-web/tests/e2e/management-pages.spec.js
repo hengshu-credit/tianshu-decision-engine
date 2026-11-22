@@ -2,6 +2,25 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
 
+test('模型字段数按实际数量显示数字进出，旧列表缺少汇总时读取对应详情', async ({ page }) => {
+  const apiData = createManagementApiData()
+  const list = apiData.get('/api/rule/model/list')
+  const current = list.records[0]
+  const legacy = { ...current, id: 42, modelCode: 'legacy_model', inputFieldCount: null, outputFieldCount: null }
+  const empty = { ...legacy, id: 43, modelCode: 'empty_model', inputFields: [], outputFields: [] }
+  list.records.push(legacy, empty)
+  list.total = list.records.length
+  apiData.set('/api/rule/model/42', { ...legacy, inputFields: [{ fieldName: 'image' }], outputFields: [{ fieldName: 'boxes' }] })
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const { assertClean, requests } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+  await page.goto(`${origin}/#/model`)
+  for (const [code, count] of [['credit_score', '5进 / 2出'], ['legacy_model', '1进 / 1出'], ['empty_model', '0进 / 0出']]) {
+    await expect(page.getByRole('row').filter({ hasText: code }).getByRole('cell', { name: count, exact: true })).toBeVisible()
+  }
+  expect(requests.filter(r => /\/model\/\d+$/.test(new URL(r.url).pathname)).map(r => new URL(r.url).pathname)).toEqual(['/api/rule/model/42'])
+  assertClean()
+})
+
 const pages = [
   {
     name: '项目管理',

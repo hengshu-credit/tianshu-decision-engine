@@ -490,14 +490,38 @@ test('数据库只读查询按 SQL 占位符引导填写参数并区分结果状
     queryPayload = request.postDataJSON()
     return [{ score: queryPayload.params[0] }]
   })
-  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: fixtures })
 
-  await page.goto('http://tianshu.local/index.html#/database')
+  await page.goto(`${origin}/#/database`)
   const datasourceRow = page.getByRole('row').filter({ hasText: 'risk_mysql' })
   await datasourceRow.getByRole('button', { name: '查询', exact: true }).click()
 
   const dialog = page.locator('.el-dialog:visible').last()
   await expect(dialog.getByText('只读查询', { exact: true })).toBeVisible()
+  for (const width of [1440, 450]) {
+    await page.setViewportSize({ width, height: 900 })
+    const layout = await dialog.evaluate(el => {
+      const rect = selector => el.querySelector(selector).getBoundingClientRect()
+      const timeoutLabel = Array.from(el.querySelectorAll('label')).find(label => label.textContent.includes('查询超时'))
+      const text = document.createRange()
+      text.selectNodeContents(timeoutLabel)
+      const body = el.querySelector('.el-dialog__body')
+      return {
+        targetGap: rect('.el-form').top - rect('.query-target').bottom,
+        timeoutGap: rect('.query-no-params').top - text.getBoundingClientRect().bottom,
+        stateGap: rect('.query-result-state').top - rect('.query-no-params').bottom,
+        descriptionGap: rect('.query-result-state span').top - rect('.query-result-state strong').bottom,
+        overflow: body.scrollWidth - body.clientWidth
+      }
+    })
+    expect(layout.targetGap).toBeGreaterThanOrEqual(12)
+    expect(layout.timeoutGap).toBeGreaterThanOrEqual(8)
+    expect(layout.stateGap).toBeGreaterThanOrEqual(12)
+    expect(layout.descriptionGap).toBeGreaterThanOrEqual(4)
+    expect(layout.overflow).toBeLessThanOrEqual(1)
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
   const editor = dialog.getByRole('textbox', { name: /Editor content/ })
   await editor.click()
   await page.keyboard.insertText('SELECT ? AS score')

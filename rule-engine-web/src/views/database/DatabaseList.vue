@@ -270,6 +270,7 @@
 
     <el-dialog
       title="只读查询"
+      class="readonly-query-dialog"
       v-model="queryDialogVisible"
       width="900px"
       append-to-body
@@ -279,7 +280,7 @@
         当前数据源：{{ queryTarget.datasourceName }} /
         {{ queryTarget.datasourceCode }}
       </div>
-      <el-form label-width="90px" size="small">
+      <el-form label-width="9em" size="small">
         <el-form-item label="SQL">
           <monaco-editor
             v-model:value="queryForm.sql"
@@ -864,15 +865,6 @@ export default {
 
 <style lang="scss" scoped>
 .database-page {
-  .query-target {
-    color: var(--tianshu-text-secondary);
-    line-height: 1.5;
-  }
-
-  .query-target {
-    margin-bottom: 12px;
-  }
-
   .sql-input :deep(textarea) {
     font-family: Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
@@ -897,8 +889,18 @@ export default {
     font-weight: 700;
     margin-bottom: 10px;
   }
+}
 
-  .query-sql-help {
+.readonly-query-dialog {
+  .query-target {
+    color: var(--tianshu-text-secondary);
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+
+  .query-sql-help,
+  .field-help {
+    flex-basis: 100%;
     color: var(--tianshu-text-tertiary);
     font-size: 12px;
     line-height: 1.5;
@@ -910,7 +912,8 @@ export default {
     align-items: center;
     gap: 10px;
     color: var(--tianshu-text-primary);
-    padding: 0 0 14px 90px;
+    flex-wrap: wrap;
+    padding-bottom: 14px;
 
     span {
       color: var(--tianshu-text-tertiary);
@@ -919,11 +922,11 @@ export default {
   }
 
   .query-params {
-    border: 1px solid #dbeafe;
-    background: #f8fbff;
+    border: 1px solid var(--tianshu-border-subtle);
+    background: var(--tianshu-bg-soft);
     border-radius: 4px;
     padding: 8px 12px;
-    margin: 0 0 14px 90px;
+    margin-bottom: 14px;
   }
 
   .query-param-row {
@@ -942,7 +945,7 @@ export default {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    color: #334155;
+    color: var(--tianshu-text-primary);
 
     span {
       color: var(--tianshu-text-disabled);
@@ -960,7 +963,7 @@ export default {
     align-items: center;
     padding: 0 10px;
     color: var(--tianshu-text-tertiary);
-    background: #f1f5f9;
+    background: var(--tianshu-bg-muted);
     border: 1px dashed var(--tianshu-border);
     border-radius: 4px;
   }
@@ -971,7 +974,7 @@ export default {
     border: 1px dashed var(--tianshu-border);
     border-radius: 4px;
     padding: 12px 14px;
-    margin: 0 0 14px 90px;
+    margin-bottom: 14px;
   }
 
   .query-result-state {
@@ -990,31 +993,28 @@ export default {
     }
 
     &.is-running {
-      border-color: #93c5fd;
-      background: #eff6ff;
-      color: #1d4ed8;
+      border-color: var(--tianshu-info-border);
+      background: var(--tianshu-info-bg);
+      color: var(--tianshu-info-text);
     }
 
     &.is-success,
     &.is-empty {
-      border-color: #86efac;
-      background: #f0fdf4;
-      color: #15803d;
+      border-color: var(--tianshu-success-border);
+      background: var(--tianshu-success-bg);
+      color: var(--tianshu-success-text);
     }
 
     &.is-error {
-      border-color: #fecaca;
-      background: #fef2f2;
-      color: #b91c1c;
+      border-color: var(--tianshu-danger-border);
+      background: var(--tianshu-danger-bg);
+      color: var(--tianshu-danger-text);
     }
   }
 
-  @media (max-width: 1200px) {
-    .query-placeholder-summary,
-    .query-params,
-    .query-no-params {
-      margin-left: 0;
-      padding-left: 12px;
+  @container workspace-dialog (max-width: 520px) {
+    .query-param-row {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 }
