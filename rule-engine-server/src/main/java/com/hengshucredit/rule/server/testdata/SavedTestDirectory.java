@@ -42,15 +42,20 @@ class SavedTestDirectory {
         List<String> sources = new ArrayList<>();
         for (TestResource type : TestResource.values()) {
             if (filter != null && filter != type) continue;
-            sources.add(source(includeSample,type, "CASE", "c.id", type == TestResource.RULE ? "c.scenario_name" : "c.case_name",
+            if (type.cases != null) sources.add(source(includeSample,type, "CASE", "c.id", type == TestResource.RULE ? "c.scenario_name" : "c.case_name",
                     "JOIN "+type.cases+" c ON c."+type.owner+"=r.id", "1=1"));
             String defaults = switch (type) {
+                case FUNCTION -> "JSON_CONTAINS_PATH(IF(JSON_VALID(r.params_json),r.params_json,NULL),'one','$[*].example')";
                 case RULE -> "1=1";
                 case VARIABLE -> "r.var_source IN ('API','DB','SFTP','LIST','DERIVED')";
                 case MODEL -> "NOT COALESCE(("+hasSample("r.model_config","testParams")+"),FALSE)";
                 case API -> "r.test_sample_params IS NULL OR JSON_TYPE(r.test_sample_params)<>'OBJECT'";
             };
-            sources.add(source(includeSample,type,"DEFAULT","r.id","'默认测试输入'","",defaults));
+            if (type == TestResource.FUNCTION) {
+                sources.add(source(includeSample,type,"FUNCTION_SAMPLE","r.id","'函数参数样例'","",defaults));
+            } else {
+                sources.add(source(includeSample,type,"DEFAULT","r.id","'默认测试输入'","",defaults));
+            }
             switch (type) {
                 case MODEL -> {
                     sources.add(source(includeSample,type,"MODEL_SAMPLE","r.id","'模型测试参数'","",hasSample("r.model_config","testParams")));
@@ -77,7 +82,7 @@ class SavedTestDirectory {
             }
         }
         List<String> drafts = new ArrayList<>();
-        for (TestResource type : List.of(TestResource.API,TestResource.MODEL)) {
+        for (TestResource type : List.of(TestResource.API,TestResource.MODEL,TestResource.FUNCTION)) {
             if ((filter == null || filter == type) && useWorkspace(type)) drafts.add(workspace(type));
         }
         String with = drafts.isEmpty() ? "" : "WITH "+String.join(",",drafts)+" ";
@@ -85,16 +90,25 @@ class SavedTestDirectory {
     }
 
     private boolean useWorkspace(TestResource type) {
-        if (type != TestResource.API && type != TestResource.MODEL) return false;
+        String permission = switch (type) {
+            case API -> "datasource:edit";
+            case MODEL -> "model:edit";
+            case FUNCTION -> "function:edit";
+            default -> null;
+        };
+        if (permission == null) return false;
         var scope = projects.current();
-        return scope != null && scope.userId() != null && scope.can(type == TestResource.API ? "datasource:edit" : "model:edit");
+        return scope != null && scope.userId() != null && scope.can(permission);
     }
 
     // 与模块编辑入口一致：只合并当前账户有权编辑的活动草稿，已提交/历史版本按生效记录展示。
     private String workspace(TestResource type) {
-        String projection = type == TestResource.API
-                ? "r.datasource_id,r.api_name,r.api_code,"+draftField("execution_config","executionConfig")+","+draftField("test_sample_params","testSampleParams")
-                : "r.scope,r.project_id,r.model_name,r.model_code,"+draftField("model_config","modelConfig");
+        String projection = switch (type) {
+            case API -> "r.datasource_id,r.api_name,r.api_code,"+draftField("execution_config","executionConfig")+","+draftField("test_sample_params","testSampleParams");
+            case MODEL -> "r.scope,r.project_id,r.model_name,r.model_code,"+draftField("model_config","modelConfig");
+            case FUNCTION -> "r.scope,r.project_id,r.func_name,r.func_code,"+draftField("params_json","paramsJson");
+            default -> throw new IllegalArgumentException("资源不支持工作区样例");
+        };
         return "workspace_"+type+" AS (SELECT r.id,r.status,"+projection+" FROM "+type.table+" r "
                 +"LEFT JOIN governance_approval_request g ON g.active_resource_key=CONCAT('"+type.accessType+":',r.id)"
                 +" AND g.status='EDITING' AND g.actor_user_id="+projects.current().userId()

@@ -1330,6 +1330,18 @@ describe('RuleDetail — 测试弹窗', () => {
     expect(JSON.parse(wrapper.vm.testJsonStr)).toEqual({ bankcard: { bank_card_no: '6222' } })
   })
 
+  test('未编译工作区仍从用例目录共用的规则输入读取精确 JSON', async () => {
+    await wrapper.setData({ lifecycleRevisionId: null, revisions: [] })
+    const source = wrapper.vm.selectedTestExecutionSource
+    expect(source.sourceType).toBe('WORKSPACE')
+    definitionApi.getRuleTestSchema.mockRejectedValueOnce(new Error('当前工作区未编译'))
+      .mockResolvedValueOnce({ data: { savedDefault: true, sampleParams: {}, sampleParamsJson: '{"amount":9007199254740993}' } })
+    await wrapper.vm.openTestDialog()
+    expect(wrapper.vm.testMode).toBe('json')
+    expect(wrapper.vm.testJsonStr).toBe('{"amount":9007199254740993}')
+    expect(wrapper.vm.testExecutionSource).toEqual(source)
+  })
+
   test('testMode 默认为 manual', () => {
     expect(wrapper.vm.testMode).toBe('manual')
   })

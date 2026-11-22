@@ -76,6 +76,7 @@ public class TestDataCatalog {
         return "(" + policy.predicate(kind.table,"r") + ")";
     }
     Map<String,Object> page(TestResource kind, boolean cases, String keyword, int page) {
+        if (cases && kind.cases == null) throw new IllegalArgumentException("该资源使用原配置保存样例");
         String owner = kind == TestResource.API ? "ds" : "r";
         String from = " FROM " + kind.table + " r" + (kind == TestResource.API ? " JOIN rule_external_datasource ds ON ds.id=r.datasource_id" : "")
                 + " LEFT JOIN rule_project p ON p.id="+owner+".project_id";
@@ -97,7 +98,7 @@ public class TestDataCatalog {
     }
     public record ResourceCase(String name,String code,String paramsJson,String expectedJson,Long contextDefinitionId) { }
     private void caseAccess(TestResource kind,long owner,String action) {
-        if (kind == TestResource.RULE) throw new IllegalArgumentException("请选择变量、模型或外数接口");
+        if (kind == TestResource.RULE || kind.cases == null) throw new IllegalArgumentException("请选择变量、模型或外数接口");
         access.require(kind.accessType,owner,action);
     }
     ResourceCase detail(TestResource kind,long owner,long id) {

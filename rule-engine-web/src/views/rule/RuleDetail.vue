@@ -1247,6 +1247,8 @@
 
       <template v-slot:footer>
         <div>
+          <save-rule-test-input :definition-id="rule.id" :project-id="rule.projectId" :disabled="!testReady || testExecuting"
+            :read-input="() => testMode === 'json' ? testJsonStr : JSON.stringify(buildNestedTestParams(testFields, testParams))" />
           <el-button size="small" @click="testVisible = false">关闭</el-button>
         </div>
       </template>
@@ -1454,6 +1456,7 @@ import {
   schemaFieldsToTestFields,
   flattenSchemaSample,
 } from '@/utils/testSchema'
+import SaveRuleTestInput from '@/components/test/SaveRuleTestInput.vue'
 import ApiScenarioPanel from '@/components/rule/ApiScenarioPanel'
 import RuleVersionDiff from '@/components/rule/versionDiff/RuleVersionDiff.vue'
 import RuleLifecyclePanel from '@/components/rule/RuleLifecyclePanel.vue'
@@ -1678,7 +1681,7 @@ export default {
     }
   },
   components: { DismissibleGuidance, VersionSnapshotPanel,
-    ApiScenarioPanel,
+    SaveRuleTestInput, ApiScenarioPanel,
     RuleVersionDiff,
     RuleLifecyclePanel,
     RegressionReportDrawer,
@@ -3477,6 +3480,10 @@ export default {
           this.testSourceError = e.message || '所选版本的测试字段读取失败'
           return
         }
+        // 未编译的旧工作区仍可维护规则输入，执行时继续使用选定的来源。
+        try {
+          schema = normalizeTestSchema(await api.getRuleTestSchema({ targetType: 'RULE', targetId: definitionId }))
+        } catch { schema = null }
       }
       if (!current()) return
       const hasSchema = Boolean(schema)
@@ -3502,7 +3509,8 @@ export default {
       const nestedParams = hasSchema
         ? schema.sampleParams
         : this.buildNestedTestParams(testFields, testParams)
-      const testJsonStr = JSON.stringify(nestedParams, null, 2)
+      const testJsonStr = schema?.sampleParamsJson || JSON.stringify(nestedParams, null, 2)
+      if (schema?.savedDefault) this.testMode = 'json'
 
       this.testFields = testFields
       this.testParams = testParams

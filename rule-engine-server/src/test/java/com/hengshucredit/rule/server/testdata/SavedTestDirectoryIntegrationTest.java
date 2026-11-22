@@ -62,6 +62,21 @@ public class SavedTestDirectoryIntegrationTest {
             assertEquals(42,MockRule.parse(workspace.sample(TestResource.API,"API_NAMED",1,"draft")).get("count").intValue());
             db.update("UPDATE governance_approval_request SET actor_user_id=10");
             assertEquals(0L,workspace.list(TestResource.API,"草稿样例",1,"PROJECT",22L).get("total"));
+            db.execute("CREATE TABLE rule_function(id BIGINT,func_name VARCHAR(128),func_code VARCHAR(64),status INT,scope VARCHAR(8),project_id BIGINT,params_json JSON)");
+            db.update("INSERT INTO rule_function VALUES(2,'计算金额','Amount',1,'PROJECT',22,?),"
+                    +"(3,'尚无样例','Empty',1,'PROJECT',22,'[]'),(8,'不可见','Hidden',1,'PROJECT',22,?)",
+                    "[{\"name\":\"amount\",\"example\":0}]", "[{\"name\":\"amount\",\"example\":99}]");
+            assertEquals(1L,directory.list(TestResource.FUNCTION,"",1,"PROJECT",22L).get("total"));
+            var functionEditor = new ConsoleProjectAccess() {
+                @Override public Scope current() { return new Scope(7L,java.util.Set.of(22L),java.util.Set.of("function:edit")); }
+            };
+            var functionDirectory = new SavedTestDirectory(db,permissions,functionEditor);
+            db.update("INSERT INTO governance_approval_request VALUES (2,'FUNCTION:3','EDITING',7,JSON_OBJECT('paramsJson',?))",
+                    "[{\"name\":\"x\",\"example\":null}]");
+            assertEquals(2L,functionDirectory.list(TestResource.FUNCTION,"",1,null,null).get("total"));
+            assertEquals(0L,directory.list(TestResource.FUNCTION,"Empty",1,null,null).get("total"));
+            db.update("UPDATE governance_approval_request SET draft_snapshot_json=JSON_OBJECT('paramsJson','[]') WHERE id=2");
+            assertEquals(0L,functionDirectory.list(TestResource.FUNCTION,"Empty",1,null,null).get("total"));
             db.execute("CREATE TABLE rule_mock_rule(id BIGINT AUTO_INCREMENT PRIMARY KEY,project_id BIGINT,seed_key VARCHAR(32),name VARCHAR(128),value_type VARCHAR(24),match_names VARCHAR(512),generator VARCHAR(24),config_json JSON)");
             var catalog = new TestDataCatalog(db,permissions,null,projects);
             catalog.saveRule(null,new MockRule(null,"全局金额","NUMBER","amount","FIXED","10",false));

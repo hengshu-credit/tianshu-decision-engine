@@ -356,7 +356,12 @@
       model-type="SCORE"
       :model-json-provider="serializeDesignerDraft"
       :params-template="testParamsTemplate"
-    />
+      :saved-sample="model.testParams"
+    >
+      <template #save-sample="{ text, disabled }">
+        <el-button v-if="canEditDraft" size="small" :disabled="disabled || designerBusy" @click="saveTestParams(text)">保存评分卡样例</el-button>
+      </template>
+    </designer-test-dialog>
   </div>
 </template>
 
@@ -833,12 +838,7 @@ export default {
     },
     async openTestDialog() {
       if (!this.ensureDesignerReadyForTest()) return
-      const saved = this.model.testParams
-      if (saved && saved !== '{}') {
-        this.testParamsTemplate = saved
-      } else {
-        this.testParamsTemplate = this.buildTestParamsTemplate()
-      }
+      this.testParamsTemplate = this.buildTestParamsTemplate()
       this.testVisible = true
     },
     buildTestParamsTemplate() {
@@ -870,20 +870,12 @@ export default {
       this.testResult = null
       this.jsonError = ''
     },
-    async saveTestParams() {
-      // 将当前编辑的 JSON 保存到 model.testParams，下次打开时自动填充
-      if (!this.testParamsJson || this.testParamsJson === '{}') {
-        this.$message.warning('请先填写有效的测试参数')
-        return
-      }
-      // 验证 JSON 格式
+    async saveTestParams(text) {
       try {
-        JSON.parse(this.testParamsJson)
-      } catch (e) {
-        this.$message.error('JSON 格式错误: ' + e.message)
-        return
-      }
-      this.model.testParams = this.testParamsJson
+        const value = JSON.parse(text)
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('输入参数必须是 JSON 对象')
+      } catch (error) { this.$message.error(error.message); return }
+      this.model.testParams = text
       const result = await this.handleSave()
       if (result) this.$message.success('测试样例已保存')
     },

@@ -347,6 +347,7 @@ export default {
       draftVisible: false,
       requestMode: 'FORM',
       scenarios: [],
+      scenariosSuspended: false,
       scenariosRequestId: 0,
       draftSessionId: 0,
       schemaRequestId: 0,
@@ -422,6 +423,13 @@ export default {
     draftVisible(visible) {
       if (!visible) this.invalidateDraft()
     },
+  },
+  deactivated() { this.scenariosSuspended = true },
+  activated() {
+    if (this.scenariosSuspended) {
+      this.scenariosSuspended = false
+      this.loadScenarios()
+    }
   },
   beforeUnmount() {
     this.invalidateDraft()

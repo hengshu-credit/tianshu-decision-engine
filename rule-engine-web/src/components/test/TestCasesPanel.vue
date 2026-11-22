@@ -20,7 +20,7 @@
         <p>{{ sampleRow.resourceName }} · {{ sampleRow.name }}</p>
         <el-input type="textarea" :rows="10" :readonly="!sampleEditable" v-model="sampleJson" aria-label="样例输入 JSON" />
       </template>
-      <template #footer><el-button @click="inspecting=false">关闭</el-button><el-button v-if="sampleRow?.type !== 'VARIABLE' && !(sampleRow?.type === 'RULE' && sampleRow.source === 'DEFAULT')" @click="openSource(sampleRow)">打开原配置</el-button>
+      <template #footer><el-button @click="inspecting=false">关闭</el-button><el-button v-if="sampleRow?.type !== 'VARIABLE' && (sampleRow?.type !== 'FUNCTION' || editableRow(sampleRow))" @click="openSource(sampleRow)">打开原配置</el-button>
         <el-button v-if="sampleEditable" type="primary" :loading="saving" @click="saveSample">保存</el-button></template>
     </el-dialog>
     <el-dialog v-model="visible" :title="dialogTitle" width="min(920px, 95vw)" append-to-body @closed="load">
@@ -50,7 +50,7 @@
   </test-directory-table>
 </template>
 <script setup>
-import { computed, ref, onMounted, onActivated, onDeactivated } from 'vue'
+import { computed, ref, onMounted, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { listTestCases, testCatalog, getResourceCase, saveResourceCase, deleteResourceCase } from '@/api/testData'
@@ -60,10 +60,10 @@ import { readCatalogSample, writeCatalogSample } from './catalogSample'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ApiScenarioPanel from '@/components/rule/ApiScenarioPanel.vue'
 const emit = defineEmits(['apply','default-saved'])
-const kinds = { RULE: '规则', VARIABLE: '变量', MODEL: '模型', API: '外数接口' }
+const kinds = { RULE: '规则', VARIABLE: '变量', MODEL: '模型', API: '外数接口', FUNCTION: '函数' }
 const router = useRouter()
 const inspecting = ref(false), sampleRow = ref(null), sampleJson = ref('')
-const sources = { DEFAULT: '默认输入', CASE: '固定用例', DESIGN: '设计器', REVISION: '设计修订', MODEL_SAMPLE: '测试参数', MODEL_VERSION: '版本参数', API_SAMPLE: '接口样例', API_NAMED: '具名样例' }
+const sources = { DEFAULT: '默认输入', CASE: '固定用例', DESIGN: '设计器', REVISION: '设计修订', MODEL_SAMPLE: '测试参数', MODEL_VERSION: '版本参数', API_SAMPLE: '接口样例', API_NAMED: '具名样例', FUNCTION_SAMPLE: '参数样例' }
 const initialFilters = () => ({ scope: '', projectId: null, type: '', keyword: '' })
 const filters = ref(initialFilters()), applied = ref(initialFilters())
 const columns = [
@@ -76,10 +76,10 @@ const type = ref('RULE'), rows = ref([]), page = ref(1), total = ref(0), loading
 const originalSample = ref(null)
 const sampleEditable = computed(() => sampleRow.value && editableRow(sampleRow.value) && !originalSample.value?.readonly
   && (!originalSample.value?.revision || originalSample.value.revision.state === 'DRAFT'))
-const modules = { RULE: 'rule', VARIABLE: 'field', MODEL: 'model', API: 'datasource' }
+const modules = { RULE: 'rule', VARIABLE: 'field', MODEL: 'model', API: 'datasource', FUNCTION: 'function' }
 const editableRow = row => hasPermission(modules[row.type] + ':edit',row)
 const visible = ref(false), editing = ref(null), selected = ref(null), ownerId = ref(null), draft = ref({}), saving = ref(false)
-const editableKinds = computed(() => Object.keys(kinds).filter(key => hasPermission(modules[key]+':edit')))
+const editableKinds = computed(() => Object.keys(kinds).filter(key => key !== 'FUNCTION' && hasPermission(modules[key]+':edit')))
 const canEdit = computed(() => selected.value && editableRow({ ...selected.value, type: type.value }))
 const dialogTitle = computed(() => selected.value ? selected.value.resourceName + ' · 测试用例' : '新增测试用例')
 let revision = 0
@@ -139,6 +139,9 @@ async function saveSample() {
   } catch (e) { ElMessage.error(e.message || '保存样例失败') } finally { saving.value = false }
 }
 function openSource(row) {
+  inspecting.value = false
+  if (row.type === 'FUNCTION') return router.push({ path: '/function', query: { testId: row.ownerId } })
+  if (row.type === 'RULE' && row.source === 'DEFAULT') return router.push('/rule/' + row.ownerId)
   if (row.type === 'API') return router.push({ path: '/datasource/api/'+row.ownerId, query: { tab: 'test', sampleId: row.source === 'API_NAMED' ? row.id : undefined } })
   if (row.type === 'MODEL') return router.push({ path: '/model/'+row.ownerId, query: { testVersion: row.source === 'MODEL_VERSION' ? row.id : 'current' } })
   return router.push({ path: '/designer/score/'+row.ownerId, query: row.source === 'REVISION' ? { sourceType: 'REVISION', sourceId: row.id } : {} })
@@ -169,7 +172,14 @@ let suspended = false
 onDeactivated(() => { suspended = true; detailRequest++ })
 onActivated(() => { if (suspended) { suspended = false; load() } })
 defineExpose({ refresh: load })
-onMounted(load)
+function refreshVisibleDirectory() {
+  if (!document.hidden && !suspended && !inspecting.value && !visible.value) load()
+}
+onMounted(() => {
+  load()
+  document.addEventListener('visibilitychange', refreshVisibleDirectory)
+})
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', refreshVisibleDirectory))
 </script>
 <style scoped>
 .el-pagination { margin-block-start: 12px; }

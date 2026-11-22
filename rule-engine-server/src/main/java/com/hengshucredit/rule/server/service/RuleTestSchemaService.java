@@ -59,7 +59,9 @@ public class RuleTestSchemaService {
 
     private RuleTestSchema withDefaultOrExamples(RuleTestSchema schema, RuleTestSchemaRequest request,
             com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot, Long projectId) {
-        String json = defaults == null || request.getTargetId() == null || request.getModelJson() != null
+        boolean rulePreview = "RULE".equalsIgnoreCase(request.getTargetType());
+        String json = defaults == null || request.getTargetId() == null || request.getTargetId() <= 0
+                || (request.getModelJson() != null && !rulePreview)
                 ? null : defaults.read(request.getTargetType(),request.getTargetId());
         if (json != null) {
             schema.setSavedDefault(true);

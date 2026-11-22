@@ -200,7 +200,7 @@
             data-action="execute"
             size="small"
             type="success"
-            @click="handleTestFunction(row)"
+            @click="openSavedFunctionTest(row.id)"
             >测试</el-button
           >
           <resource-version-manager v-if="row.id" data-action="version" resource-type="FUNCTION" :resource-id="row.id" has-legacy @legacy="openVersionDialog(row)" />
@@ -458,6 +458,9 @@
           <el-button size="small" @click="functionTestVisible = false"
             >关闭</el-button
           >
+          <el-button v-if="!testingCurrentScript && !functionSampleReadonly && functionTestTarget.id"
+            v-permission="{ code: 'function:edit', projectId: functionTestTarget.projectId, scope: functionTestTarget.scope }"
+            size="small" :loading="functionSampleSaving" @click="saveTestSample">保存参数样例</el-button>
           <el-button v-permission="'function:edit'"
             size="small"
             type="primary"
@@ -596,7 +599,8 @@ import {
   restorePageState,
   savePageState,
 } from '@/utils/pageStateCache'
-import { sampleValueForVarType } from '@/utils/testParamTemplate'
+import { functionSampleText } from '@/utils/functionTestSample'
+import { readFunctionSample, saveFunctionSample } from '@/api/functionTestSample'
 import { parseFunctionParameters, validatedFunctionParameters, explicitFunctionSignature, FUNCTION_JAVA_TYPES } from '@/utils/functionParameters'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
@@ -680,6 +684,10 @@ export default {
       functionTestVisible: false,
       functionTesting: false,
       functionTestTarget: {},
+      functionSampleReadonly: true,
+      functionSampleOriginal: '',
+      functionSampleSaving: false,
+      functionSampleRequest: 0,
       testingCurrentScript: false,
       functionTestParamsText: '{}',
       functionTestResultText: '',
@@ -745,10 +753,13 @@ export default {
     this.loadFunctions()
   },
   watch: {
+    '$route.query.testId': { immediate: true, handler(id) {
+      if (this.$route.path === '/function' && /^[1-9]\d*$/.test(id || '')) this.openSavedFunctionTest(id)
+    } },
     dialogVisible(visible) { if (!visible) { this.cancelMethodLookup(); this.editSessionId++ } },
     '$route.query.projectId'() { this.handleProjectContextChange() },
   },
-  beforeUnmount() { this.cancelMethodLookup(); this.editSessionId++ },
+  beforeUnmount() { this.functionSampleRequest++; this.cancelMethodLookup(); this.editSessionId++ },
   methods: {
     parameterCodeError(name) {
       if (this.originalBuiltinCode === this.editForm.funcCode && this.editForm.scope === 'GLOBAL' && this.originalBuiltinParams.includes(name)) return ''
@@ -1058,7 +1069,7 @@ export default {
     handleTestFunction(row) {
       this.testingCurrentScript = false
       this.functionTestTarget = row || {}
-      this.functionTestParamsText = this.buildFunctionTestParamsTemplate(row)
+      this.functionTestParamsText = functionSampleText(row || {})
       this.functionTestResultText = ''
       this.functionTestVisible = true
     },
@@ -1070,24 +1081,28 @@ export default {
         this.testingCurrentScript = true
       } catch (error) { this.$message.error(error.message) }
     },
-    buildFunctionTestParamsTemplate(row) {
-      const params = this.parseParams(row && row.paramsJson)
-      const sample = {}
-      params.forEach((item) => {
-        if (item && item.name)
-          sample[item.name] = this.sampleValueForFunctionParam(item)
-      })
-      return JSON.stringify(sample, null, 2)
+    async openSavedFunctionTest(id) {
+      const ticket = ++this.functionSampleRequest
+      const path = this.$route.fullPath
+      try {
+        const sample = await readFunctionSample(id, true)
+        if (ticket !== this.functionSampleRequest || this.$route.fullPath !== path) return
+        this.handleTestFunction(sample.config)
+        this.functionSampleReadonly = sample.readonly
+        this.functionSampleOriginal = sample.text
+      } catch (error) { if (ticket === this.functionSampleRequest) this.$message.error(error.message || '读取函数样例失败') }
     },
-    sampleValueForFunctionParam(item) {
-      if (item && Object.prototype.hasOwnProperty.call(item, 'example')) {
-        try {
-          return JSON.parse(JSON.stringify(item.example))
-        } catch (e) {
-          return item.example
-        }
-      }
-      return sampleValueForVarType(item && item.type)
+    async saveTestSample() {
+      if (this.functionSampleSaving) return
+      this.functionSampleSaving = true
+      const text = this.functionTestParamsText
+      const ticket = this.functionSampleRequest
+      try {
+        const saved = await saveFunctionSample(this.functionTestTarget.id, this.functionSampleOriginal, text)
+        if (ticket === this.functionSampleRequest) this.functionSampleOriginal = saved
+        this.$message.success('函数样例草稿已保存，审批后生效')
+      } catch (error) { this.$message.error(error.message || '保存函数样例失败') }
+      finally { this.functionSampleSaving = false }
     },
     normalizeFunctionTestParams(params) {
       const code = this.functionTestTarget && this.functionTestTarget.funcCode

@@ -1,6 +1,7 @@
 import { getRuleTestSchema, getContent, getRuleRevision, saveDesignerDraft } from '@/api/definition'
 import { getApiConfig, updateApiConfig } from '@/api/datasource'
 import { editableResource } from '@/api/governance'
+import { readFunctionSample, saveFunctionSample } from '@/api/functionTestSample'
 import { getModel, getModelVersionTestContext, saveTestParams } from '@/api/model'
 import { getSavedSample, saveDefaultInput } from '@/api/testData'
 import { apiDefaultInput } from '@/utils/testParamTemplate'
@@ -21,6 +22,7 @@ function namedSample(config, id) {
   return { spec, sample }
 }
 export async function readCatalogSample(row, editable) {
+  if (row.type === 'FUNCTION') return readFunctionSample(row.ownerId, editable)
   if (row.type === 'API') {
     const config = await apiConfig(row, editable)
     if (row.source === 'API_NAMED') return { text: jsonText(namedSample(config,row.id).sample.params) }
@@ -50,6 +52,10 @@ export async function readCatalogSample(row, editable) {
 }
 
 export async function writeCatalogSample(row, original, text) {
+  if (row.type === 'FUNCTION') {
+    await saveFunctionSample(row.ownerId, original.text, text)
+    return '函数样例草稿已保存，审批后生效'
+  }
   const params = parseExactJson(text)
   if (!params || typeof params !== 'object' || Array.isArray(params) || isExactNumber(params)) throw new Error('输入参数必须是 JSON 对象')
   if (row.type === 'API') {

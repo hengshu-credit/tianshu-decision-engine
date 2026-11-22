@@ -32,7 +32,7 @@ export default {
     outcome: { default: null, type: [Object, String] }
   },
   emits: ['apply', 'context'],
-  data() { return { cases: [], selectedId: null, saving: false, error: false, loadId: 0 } },
+  data() { return { cases: [], selectedId: null, saving: false, error: false, loadId: 0, suspended: false } },
   computed: {
     editable() { return hasPermission(({ VARIABLE: 'field', MODEL: 'model', API: 'datasource' })[this.kind]+':edit',this.owner) },
     selected() { return this.cases.find(item => (item.id || item.code) === this.selectedId) },
@@ -46,7 +46,10 @@ export default {
     }
   },
   watch: { endpoint: { immediate: true, handler: 'load' } },
-  activated() { this.load() },
+  deactivated() { this.suspended = true; this.loadId++ },
+  activated() {
+    if (this.suspended) { this.suspended = false; this.load(true) }
+  },
   methods: {
     async saveInput() {
       const row = this.selected
@@ -66,13 +69,28 @@ export default {
       if (check.op === 'between') return '应在 ' + check.value.join(' 至 ') + ' 之间（含边界）'
       return '应等于 ' + JSON.stringify(check.value)
     },
-    async load() {
+    async load(resume = false) {
       const id = ++this.loadId
-      this.cases = []; this.selectedId = null; this.error = false
+      const previous = resume === true ? this.selected : null
+      this.error = false
+      if (!previous) { this.cases = []; this.selectedId = null }
       if (!this.endpoint) return
       try {
         const res = await request.get(this.endpoint)
-        if (id === this.loadId) this.cases = res.data.map(row => ({ ...row, expected: JSON.parse(row.expectedJson) }))
+        if (id !== this.loadId) return
+        this.cases = res.data.map(row => ({ ...row, expected: JSON.parse(row.expectedJson) }))
+        if (!previous || previous.id !== this.selectedId) return
+        if (!this.selected) {
+          this.selectedId = null
+          this.$emit('context', null)
+        } else if (this.selected.paramsJson !== previous.paramsJson || this.selected.contextDefinitionId !== previous.contextDefinitionId) {
+          if (this.params === stringifyExactJson(parseExactJson(previous.paramsJson), 2)) this.apply()
+          else {
+            this.selectedId = null
+            this.$emit('context', null)
+            this.$message.warning('固定用例已更新，当前输入已保留。重新选择用例可载入最新值。')
+          }
+        }
       } catch { if (id === this.loadId) this.error = true }
     },
     apply() { this.$emit('context', this.selected?.contextDefinitionId ?? null); if (this.selected) this.$emit('apply', stringifyExactJson(parseExactJson(this.selected.paramsJson),2)) }

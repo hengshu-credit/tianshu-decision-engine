@@ -62,6 +62,8 @@ function createOperationsApiData() {
     ],
     total: 1
   })
+  routes.set('/api/rule/function/51', routes.get('/api/rule/function/list').records[0])
+  routes.set('/api/rule/governance/workspaces/FUNCTION/51', null)
   routes.set('POST /api/rule/function/51/test', {
     success: true,
     result: 20,
