@@ -4,11 +4,11 @@ export default {
   data: () => ({ workspaceEditSequence: 0 }),
   beforeUnmount() { this.workspaceEditSequence++ },
   methods: {
-    async editWorkspace(type, row, open) {
+    async editWorkspace(type, row, open, loadEffective) {
       const sequence = ++this.workspaceEditSequence
       const path = this.$route.fullPath
       try {
-        const draft = await editableResource(type, row.id, row)
+        const draft = await editableResource(type, row.id, loadEffective || row)
         if (sequence !== this.workspaceEditSequence || this.$route.fullPath !== path) return
         open(draft)
       } catch (error) {

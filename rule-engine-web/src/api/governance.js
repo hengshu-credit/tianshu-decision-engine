@@ -18,7 +18,8 @@ export function getWorkspaceDraft(type, id) {
 export async function editableResource(type, id, fallback) {
   const response = await getWorkspaceDraft(type, id)
   const json = response?.data?.draftSnapshotJson
-  return json ? parseMetadataResponse(json) : fallback
+  if (json) return parseMetadataResponse(json)
+  return typeof fallback === 'function' ? fallback(id) : fallback
 }
 
 export function getGovernanceSummary(params) {

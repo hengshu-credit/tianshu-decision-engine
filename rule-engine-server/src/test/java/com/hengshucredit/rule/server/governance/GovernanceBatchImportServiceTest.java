@@ -24,6 +24,23 @@ import java.util.Map;
 public class GovernanceBatchImportServiceTest {
 
     @Test
+    public void inputVariableImportPreservesFalseAndRejectsDuplicateKeysBeforeDrafting() {
+        TestService service = new TestService();
+        ReflectionTestUtils.setField(service, "jsonSchemaParser", new JsonSchemaParser());
+        var invalid = service.importInputVariablesFromJson(null,"GLOBAL","{\"flag\":true,\"flag\":false}","tester");
+        Assert.assertEquals(false, invalid.get("success"));
+        Assert.assertTrue(service.drafts.isEmpty());
+        var result = service.importInputVariablesFromJson(null,"GLOBAL","{\"Flag_ID\":false}","tester");
+        Assert.assertEquals(1, result.get("inputVariableCount"));
+        var row = JSON.parseObject(service.drafts.get(0).getSnapshotJson());
+        Assert.assertEquals("Flag_ID", row.getString("varCode"));
+        Assert.assertEquals("INPUT", row.getString("varSource"));
+        Assert.assertEquals("FIXED", row.getString("exampleMode"));
+        Assert.assertEquals("false", row.getString("exampleValue"));
+        Assert.assertNull(row.get("defaultValue"));
+    }
+
+    @Test
     public void allFiveImportEntrypointsCreateReviewableDraftsFromRealParsers() {
         TestService service = new TestService();
         ReflectionTestUtils.setField(service, "jsonSchemaParser", new JsonSchemaParser());

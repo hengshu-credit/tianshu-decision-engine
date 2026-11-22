@@ -92,6 +92,9 @@ public record MockRule(Long id, String name, String valueType, String matchNames
         if (!valid) throw new IllegalArgumentException("生成方式或 JSON 参数与字段类型不匹配");
     }
     private boolean compatible(JsonNode node) {
+        return compatible(valueType,node);
+    }
+    static boolean compatible(String valueType, JsonNode node) {
         if (node == null || node.isMissingNode()) return false;
         return switch (valueType) {
             case "OBJECT" -> node.isObject();

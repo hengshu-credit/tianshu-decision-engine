@@ -23,7 +23,56 @@ public class TestDataCatalog {
                 .contains(MockRule.group(type));
     }
 
-    public boolean validExample(String mode, Long ruleId, String type, Long projectId) {
+    private String exampleSource(TestResource kind, boolean includeInput) {
+        if (kind.cases == null) throw new IllegalArgumentException("该资源没有固定测试用例");
+        String owner = kind == TestResource.API ? "ds" : "r";
+        String input = kind == TestResource.RULE ? "JSON_EXTRACT(c.request_json,'$.params')" : "c.params_json";
+        return "SELECT '"+kind+"' AS type,CAST(c.id AS CHAR) AS id,r."+kind.label+" COLLATE utf8mb4_unicode_ci AS resourceName,"
+                +(kind == TestResource.RULE ? "c.scenario_name" : "c.case_name")+" COLLATE utf8mb4_unicode_ci AS name,"
+                +owner+".scope COLLATE utf8mb4_unicode_ci AS scope,"+owner+".project_id AS projectId"
+                +(includeInput ? ",CAST("+input+" AS CHAR CHARACTER SET utf8mb4) AS paramsJson" : "")
+                +" FROM "+kind.table+" r JOIN "+kind.cases+" c ON c."+kind.owner+"=r.id"
+                +(kind == TestResource.API ? " JOIN rule_external_datasource ds ON ds.id=r.datasource_id AND ds.status>=0" : "")
+                +" WHERE r.status>=0 AND "+visible(kind)+(kind == TestResource.RULE ? " AND c.status=1" : "");
+    }
+
+    private static final String EXAMPLE_SCOPE = "(scope='GLOBAL' OR (scope='PROJECT' AND projectId=? AND projectId>0))";
+
+    Map<String,Object> exampleCases(Long projectId, String keyword, int page) {
+        var sources = Arrays.stream(TestResource.values()).filter(kind -> kind.cases != null)
+                .map(kind -> exampleSource(kind,false)).toList();
+        String from = " FROM ("+String.join(" UNION ALL ",sources)+") cases_ WHERE "+EXAMPLE_SCOPE
+                +" AND (name LIKE ? OR resourceName LIKE ?)";
+        String search = "%"+keyword.trim()+"%";
+        long offset = 20L*(Math.max(1,page)-1);
+        return Map.of("total",Objects.requireNonNullElse(jdbc.queryForObject("SELECT COUNT(*)"+from,Long.class,projectId,search,search),0L),
+                "records",jdbc.queryForList("SELECT type,id,resourceName,name"+from+" ORDER BY type,name,id LIMIT 20 OFFSET ?",
+                        projectId,search,search,offset));
+    }
+
+    Map<String,Object> exampleCase(TestResource kind, long id, Long projectId) {
+        var rows = jdbc.queryForList("SELECT name,resourceName,paramsJson FROM ("+exampleSource(kind,true)
+                +") cases_ WHERE id=? AND "+EXAMPLE_SCOPE,Long.toString(id),projectId);
+        if (rows.size()!=1) throw new IllegalArgumentException("绑定的测试用例已停用、删除或不在可访问范围内");
+        return rows.get(0);
+    }
+
+    com.fasterxml.jackson.databind.JsonNode caseValue(String binding, String type, Long projectId) {
+        var ref = MockRule.parse(binding);
+        if (!ref.path("pointer").isTextual() || !ref.path("id").asText().matches("[1-9][0-9]*"))
+            throw new IllegalArgumentException("请选择固定测试用例及输入字段");
+        var row = exampleCase(TestResource.valueOf(ref.path("type").asText()),Long.parseLong(ref.get("id").asText()),projectId);
+        var value = MockRule.parse((String) row.get("paramsJson")).at(ref.get("pointer").textValue());
+        if (!MockRule.compatible(MockRule.group(type),value)) throw new IllegalArgumentException("用例输入路径不存在或类型不匹配");
+        return MockRule.checked(type,value);
+    }
+
+    public boolean validExample(String mode, Long ruleId, String type, Long projectId, String caseBinding) {
+        if ("CASE".equals(mode)) {
+            if (ruleId != null || caseBinding == null) return false;
+            try { caseValue(caseBinding,type,projectId); return true; }
+            catch (IllegalArgumentException invalid) { return false; }
+        }
         if (mode == null) return compatible(ruleId,type,projectId);
         return switch (mode) {
             case "RULE" -> ruleId != null && compatible(ruleId,type,projectId);

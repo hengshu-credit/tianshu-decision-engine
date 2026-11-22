@@ -74,6 +74,20 @@ public class TestDataController {
         defaults.save(type,owner,body.get("paramsJson")); return ApiResponse.ok();
     }
 
+    @GetMapping("/example-cases")
+    @RequirePermission("field:view")
+    public ApiResponse<Map<String,Object>> exampleCases(@RequestParam(defaultValue="0") Long projectId,
+            @RequestParam(defaultValue="") String keyword,@RequestParam(defaultValue="1") int page) {
+        return ApiResponse.ok(catalog.exampleCases(projectId,keyword,page));
+    }
+
+    @GetMapping("/example-cases/{type}/{id}")
+    @RequirePermission("field:view")
+    public ApiResponse<Map<String,Object>> exampleCase(@PathVariable TestResource type,@PathVariable long id,
+            @RequestParam(defaultValue="0") Long projectId) {
+        return ApiResponse.ok(catalog.exampleCase(type,id,projectId));
+    }
+
     @GetMapping("/cases")
     @RequirePermission("rule:view")
     public ApiResponse<Map<String,Object>> cases(@RequestParam(required=false) TestResource type,

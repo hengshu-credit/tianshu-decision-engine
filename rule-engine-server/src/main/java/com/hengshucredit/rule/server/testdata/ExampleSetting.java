@@ -5,7 +5,8 @@ import com.fasterxml.jackson.databind.node.MissingNode;
 import com.hengshucredit.rule.server.service.RuleTestSchemaService;
 import java.util.List;
 
-record ExampleSetting(String mode, String fixed, Long method) {
+record ExampleSetting(String mode, String fixed, Long method, java.util.function.Supplier<JsonNode> caseValue) {
+    ExampleSetting(String mode, String fixed, Long method) { this(mode, fixed, method, null); }
     static final ExampleSetting AUTO = new ExampleSetting("AUTO",null,null);
 
     static ExampleSetting resolve(String mode,String fixed,Long method,Long matched) {
@@ -18,6 +19,7 @@ record ExampleSetting(String mode, String fixed, Long method) {
     }
     JsonNode value(String type,String path,String label,String options,List<MockRule> rules,String defaultValue) {
         return switch (mode) {
+            case "CASE" -> caseValue.get().deepCopy();
             case "NONE" -> MissingNode.getInstance();
             case "FIXED" -> fixed(type);
             case "RULE" -> {
@@ -30,7 +32,18 @@ record ExampleSetting(String mode, String fixed, Long method) {
     }
     private JsonNode fixed(String type) {
         if (fixed == null || fixed.isEmpty()) return MissingNode.getInstance();
-        Object configured = RuleTestSchemaService.parseConfiguredValue(fixed, type == null ? "STRING" : type);
+        if (fixed.startsWith("\"") && fixed.endsWith("\"") && "STRING".equals(MockRule.group(type))) {
+            try { return MockRule.parse(fixed); }
+            catch (IllegalArgumentException ignored) { /* 兼容旧配置中的带引号文本 */ }
+        }
+        String inputType = switch (type == null ? "STRING" : type) {
+            case "SET", "COLLECTION" -> "LIST";
+            case "BYTE", "SHORT" -> "INTEGER";
+            case "BIGDECIMAL" -> "DECIMAL";
+            case "TIMESTAMP" -> "LONG";
+            default -> type == null ? "STRING" : type;
+        };
+        Object configured = RuleTestSchemaService.parseConfiguredValue(fixed, inputType);
         return MockRule.JSON.valueToTree(configured);
     }
 }

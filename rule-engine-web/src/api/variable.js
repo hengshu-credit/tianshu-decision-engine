@@ -18,7 +18,7 @@ export function listVariablesByProject(projectId) {
 }
 
 export function getVariable(id) {
-  return request({ url: `/rule/variable/${id}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/variable/${id}`, method: 'get' })
 }
 
 export function createVariable(data) {
@@ -143,4 +143,8 @@ export function importJavaConstants(javaSource, scope, projectId) {
 /** 从 JSON 顶层键值批量导入常量，支持基本类型、数组和对象 */
 export function importJsonConstants(jsonContent, scope, projectId) {
   return request({ url: '/rule/variable/import/constants/json', method: 'post', data: { jsonContent, scope, projectId } })
+}
+
+export function importJsonVariables(jsonContent, scope, projectId) {
+  return request({ url: '/rule/variable/import/inputs/json', method: 'post', data: { jsonContent, scope, projectId } })
 }

@@ -116,8 +116,8 @@ public class VariableGovernedResourceAdapter
         }
         RuleVariable variable = JSON.parseObject(
                 JSON.toJSONString(snapshot), RuleVariable.class);
-        if ((variable.getExampleMode() != null || variable.getMockRuleId() != null) && !mockCatalog.validExample(variable.getExampleMode(), variable.getMockRuleId(), variable.getVarType(), variable.getProjectId()))
-            issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "请选择与变量类型兼容的 Mock 规则", "VARIABLE", variable.getId(), "$.mockRuleId"));
+        if ((variable.getExampleMode() != null || variable.getMockRuleId() != null) && !mockCatalog.validExample(variable.getExampleMode(), variable.getMockRuleId(), variable.getVarType(), variable.getProjectId(), variable.getExampleCaseBinding()))
+            issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "请检查变量示例的规则、用例路径与数据类型", "VARIABLE", variable.getId(), "$.mockRuleId"));
         issues.addAll(sourceValidator.validate(variable));
     }
 

@@ -105,6 +105,15 @@ public class RuleVariableController {
         return ApiResponse.ok(result);
     }
 
+    @PostMapping("/import/inputs/json")
+    @RequirePermission("approval:submit")
+    public ApiResponse<Map<String, Object>> importInputsJson(@RequestBody Map<String, String> body) {
+        String id = body.get("projectId");
+        return ApiResponse.ok(governanceBatchImportService.importInputVariablesFromJson(
+                id == null || id.isEmpty() ? null : Long.valueOf(id), body.getOrDefault("scope", "PROJECT"),
+                body.get("jsonContent"), operatorResolver.resolve()));
+    }
+
     /** 从扁平 JSON 批量生成常量生命周期审批草稿。 */
     @PostMapping("/import/constants/json")
     @RequirePermission("approval:submit")

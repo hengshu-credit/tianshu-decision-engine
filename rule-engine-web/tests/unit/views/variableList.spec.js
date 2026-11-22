@@ -26,6 +26,7 @@ vi.mock('@/api/variable', () => ({
   previewVariableDraft: vi.fn(),
   importJavaConstants: vi.fn(),
   importJsonConstants: vi.fn(),
+  importJsonVariables: vi.fn(),
   listFieldValidations: vi.fn(),
   listAvailableFieldValidations: vi.fn(),
   createFieldValidationDraft: vi.fn(),
@@ -835,7 +836,7 @@ describe('VariableList — 变量操作', () => {
     const guardedHandlers = [
       'handleAddObjectField(node)',
       'handleDeleteObject(node.object)',
-      'handleEditObjectField(row, node)',
+      'editObjectFieldWorkspace(row, node)',
       'handleOptions(row, true)',
       'handleDeleteObjectField(row)',
       "editWorkspace('FIELD_VALIDATION', row, editFieldValidation)",
@@ -1204,8 +1205,9 @@ describe('VariableList — 变量操作', () => {
     ['ddl-table', 'doImportDdl', 'importDdlTable'],
     ['java-const', 'doImportJavaConst', 'importJavaConstants'],
     ['json-const', 'doImportJsonConst', 'importJsonConstants'],
+    ['json-variable', 'doImportJsonConst', 'importJsonVariables'],
   ])('%s 使用当前作用范围提交并展示审批草稿结果', async (mode, method, apiName) => {
-    const api = mode.endsWith('-const') ? variableApi[apiName] : dataObjectApi[apiName]
+    const api = apiName in variableApi ? variableApi[apiName] : dataObjectApi[apiName]
     api.mockResolvedValueOnce({ data: { success: true, requestIds: [88], requestCount: 1 } })
     wrapper.vm.handleImportCmd(mode)
     Object.assign(wrapper.vm.importForm, { scope: 'GLOBAL', objectCode: 'Mixed_Request', javaSource: 'class Request {}', jsonContent: '{"Age":18}', ddlSource: 'CREATE TABLE Request (Age int);' })

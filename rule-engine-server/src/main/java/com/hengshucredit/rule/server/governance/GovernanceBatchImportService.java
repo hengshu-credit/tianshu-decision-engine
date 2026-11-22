@@ -72,6 +72,15 @@ public class GovernanceBatchImportService {
     @Transactional
     public Map<String, Object> importConstantsFromJson(
             Long projectId, String scope, String jsonContent, String actor) {
+        return importJsonValues(projectId, scope, jsonContent, actor, false);
+    }
+
+    @Transactional
+    public Map<String, Object> importInputVariablesFromJson(Long projectId, String scope, String jsonContent, String actor) {
+        return importJsonValues(projectId, scope, jsonContent, actor, true);
+    }
+
+    private Map<String,Object> importJsonValues(Long projectId, String scope, String jsonContent, String actor, boolean inputs) {
         ParsedConstantGroup parsed;
         try {
             parsed = jsonSchemaParser.parseConstants(jsonContent);
@@ -82,7 +91,7 @@ public class GovernanceBatchImportService {
                 || parsed.getConstants().isEmpty()) {
             return failure("未能从 JSON 中解析出任何常量，请提供非空对象，值可为基本类型、数组或对象");
         }
-        return importConstants(projectId, scope, parsed, actor);
+        return importVariableDrafts(projectId, scope, parsed, actor, inputs);
     }
 
     @Transactional
@@ -140,6 +149,13 @@ public class GovernanceBatchImportService {
     Map<String, Object> importConstants(
             Long projectId, String scope, ParsedConstantGroup parsed,
             String actor) {
+        return importVariableDrafts(projectId, scope, parsed, actor, false);
+    }
+
+    private Map<String,Object> importVariableDrafts(Long projectId, String scope, ParsedConstantGroup parsed,
+                                                     String actor, boolean inputs) {
+        String source = inputs ? "INPUT" : "CONSTANT";
+        String kind = inputs ? "输入变量" : "常量";
         String normalizedScope = normalizeScope(scope, projectId);
         Long effectiveProjectId = effectiveProjectId(
                 normalizedScope, projectId);
@@ -149,7 +165,7 @@ public class GovernanceBatchImportService {
         for (ParsedConstant constant : parsed.getConstants()) {
             if (constant.getConstCode() == null
                     || constant.getConstCode().isBlank()) {
-                throw new IllegalArgumentException("导入常量的编码不能为空");
+                throw new IllegalArgumentException("导入" + kind + "的编码不能为空");
             }
             if (constant.getConstValue() == null) {
                 throw new IllegalArgumentException(
@@ -159,10 +175,10 @@ public class GovernanceBatchImportService {
                     effectiveProjectId, normalizedScope,
                     constant.getConstCode());
             if (!importedCodes.add(constant.getConstCode())) {
-                return failure("同一批次存在重复常量编码：" + constant.getConstCode());
+                return failure("同一批次存在重复" + kind + "编码：" + constant.getConstCode());
             }
-            if (existing != null && !"CONSTANT".equals(existing.getVarSource())) {
-                return failure("常量编码 [" + constant.getConstCode() + "] 已被普通变量占用，请调整编码后导入");
+            if (existing != null && !source.equals(existing.getVarSource())) {
+                return failure(kind + "编码 [" + constant.getConstCode() + (inputs ? "] 已被其他来源占用，请调整编码后导入" : "] 已被普通变量占用，请调整编码后导入"));
             }
             Map<String, Object> snapshot = existing == null
                     ? new LinkedHashMap<>()
@@ -176,9 +192,17 @@ public class GovernanceBatchImportService {
             snapshot.put("scriptName", firstNotBlank(
                     constant.getScriptName(), constant.getConstCode()));
             snapshot.put("varType", constant.getConstType());
-            snapshot.put("varSource", "CONSTANT");
-            snapshot.put("defaultValue", ConstantValueCodec.normalize(
-                    constant.getConstType(), constant.getConstValue()));
+            snapshot.put("varSource", source);
+            if (inputs) {
+                snapshot.put("exampleMode", "FIXED");
+                snapshot.put("exampleValue", "STRING".equals(constant.getConstType())
+                        ? JSON.toJSONString(constant.getConstValue()) : constant.getConstValue());
+                snapshot.put("mockRuleId", null);
+                snapshot.put("exampleCaseBinding", null);
+            } else {
+                snapshot.put("defaultValue", ConstantValueCodec.normalize(
+                        constant.getConstType(), constant.getConstValue()));
+            }
             snapshot.put("sortOrder", order++);
             snapshot.put("status", 1);
             snapshot.putIfAbsent("options", List.of());
@@ -195,12 +219,12 @@ public class GovernanceBatchImportService {
                             item.existing() == null
                                     ? null : item.existing().getStatus()),
                     item.snapshot(),
-                    "批量导入常量 "
+                    "批量导入" + kind + " "
                             + item.snapshot().get("varCode"));
             requestIds.add(createDraft(draft, actor).getId());
         }
         Map<String, Object> result = success(requestIds);
-        result.put("constantCount", pending.size());
+        result.put(inputs ? "inputVariableCount" : "constantCount", pending.size());
         result.put("groupCode", parsed.getGroupCode());
         return result;
     }
@@ -261,6 +285,10 @@ public class GovernanceBatchImportService {
                     parsed.getObjectLabel(), parsed.getObjectCode()));
             snapshot.put("scriptName", firstNotBlank(
                     parsed.getScriptName(), parsed.getObjectCode()));
+            if (existing == null && "JSON".equals(sourceType)) {
+                snapshot.put("exampleMode", "FIXED");
+                snapshot.put("exampleValue", sourceContent);
+            }
             snapshot.put("objectType", objectType);
             snapshot.put("sourceType", sourceType);
             snapshot.put("sourceContent", sourceContent);

@@ -21,7 +21,8 @@
         ></el-button>
         <template v-slot:dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="java-entity" :icon="ElIconDocument"
+            <el-dropdown-item command="json-variable" :icon="ElIconTickets">导入 JSON 输入变量</el-dropdown-item>
+            <el-dropdown-item divided command="java-entity" :icon="ElIconDocument"
               >导入 Java 实体类</el-dropdown-item
             >
             <el-dropdown-item command="json-object" :icon="ElIconTickets"

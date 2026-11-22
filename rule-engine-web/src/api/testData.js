@@ -25,3 +25,6 @@ export const setMockField = (id,type,ref,remove=false) => request({
 export const saveDefaultInput = (type, owner, paramsJson) => request.put(base + '/defaults/' + type + '/' + owner, { paramsJson })
 export const saveResourceCaseInput = (type, owner, id, paramsJson, originalJson) =>
   request.put(casesPath(type, owner) + '/' + id + '/input', { paramsJson, originalJson })
+
+export const listExampleCases = params => request.get(base + '/example-cases', { ...metadataResponse, params })
+export const getExampleCase = (type, id, projectId) => request.get(base + '/example-cases/' + type + '/' + id, { ...metadataResponse, params: { projectId } })

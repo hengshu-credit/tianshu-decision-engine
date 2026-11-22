@@ -85,6 +85,16 @@ public class SavedTestDirectoryIntegrationTest {
             assertEquals("项目金额",catalog.rulesForProject(22L).get(0).name());
             assertEquals(1,catalog.rulesForProject(23L).size());
             assertEquals(1,catalog.rulesForProject(null).size());
+            db.execute("ALTER TABLE rule_api_test_case ADD params_json JSON");
+            db.update("UPDATE rule_api_test_case SET params_json=? WHERE id=12","{\"profile\":{\"score\":9007199254740993}}");
+            String binding = "{\"type\":\"API\",\"id\":\"12\",\"pointer\":\"/profile/score\"}";
+            assertEquals(9007199254740993L,catalog.caseValue(binding,"LONG",22L).longValue());
+            assertFalse(catalog.validExample("CASE",null,"OBJECT",22L,binding));
+            assertFalse(catalog.validExample("CASE",null,"LONG",23L,binding));
+            db.update("UPDATE rule_api_test_case SET params_json=? WHERE id=12","{\"profile\":{\"score\":0}}");
+            assertEquals(0L,catalog.caseValue(binding,"LONG",22L).longValue());
+            db.update("DELETE FROM rule_api_test_case WHERE id=12");
+            assertFalse(catalog.validExample("CASE",null,"LONG",22L,binding));
             assertFalse(catalog.compatible(catalog.rulesForProject(22L).get(0).id(),"NUMBER",23L));
             assertThrows(IllegalArgumentException.class,() -> catalog.saveRule(catalog.rulesForProject(22L).get(0).id(),
                     new MockRule(null,"改为全局","NUMBER","amount","FIXED","42",false)));

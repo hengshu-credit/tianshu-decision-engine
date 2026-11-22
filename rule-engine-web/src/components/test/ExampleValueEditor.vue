@@ -4,26 +4,32 @@
       <el-option label="自动匹配" value="AUTO" />
       <el-option label="不生成 Mock" value="NONE" />
       <el-option label="固定值" value="FIXED" />
+      <el-option label="绑定测试用例" value="CASE" />
       <el-option label="指定 Mock 方法" value="RULE" />
     </el-select>
     <el-input v-if="selected==='FIXED'" :model-value="value" :type="structured ? 'textarea' : 'text'"
       :placeholder="structured ? '输入 JSON，可留空' : '输入固定示例，可留空'" aria-label="固定示例值" @update:model-value="$emit('update:value',$event)" />
+    <case-example-picker v-if="selected === 'CASE'" :binding="caseBinding" :project-id="projectId" :field-type="fieldType"
+      @change="$emit('update:caseBinding', $event)" />
     <mock-rule-select v-if="selected==='RULE'" :model-value="ruleId" :field-type="fieldType" :project-id="projectId"
       @update:model-value="$emit('update:ruleId',$event)" />
   </div>
 </template>
 <script setup>
 import { computed } from 'vue'
+import CaseExamplePicker from './CaseExamplePicker.vue'
+import { mockType } from '@/utils/mockTypes'
 import MockRuleSelect from './MockRuleSelect.vue'
-const props = defineProps({ projectId: { type: [String,Number], default: null },
+const props = defineProps({ caseBinding: { type: String, default: null }, projectId: { type: [String,Number], default: null },
   mode: { type: String, default: '' }, value: { type: String, default: '' },
   ruleId: { type: [String, Number], default: null }, fieldType: { type: String, required: true }
 })
-const emit = defineEmits(['update:mode','update:value','update:ruleId'])
+const emit = defineEmits(['update:mode','update:value','update:ruleId','update:caseBinding'])
 const selected = computed(() => props.mode || (props.ruleId ? 'RULE' : props.value ? 'FIXED' : 'AUTO'))
-const structured = computed(() => ['OBJECT','MAP','LIST','ARRAY'].includes(props.fieldType))
+const structured = computed(() => ['OBJECT','LIST'].includes(mockType(props.fieldType)))
 function change(mode) {
   emit('update:mode',mode)
+  if (mode !== 'CASE') emit('update:caseBinding', null)
   if (mode !== 'RULE') emit('update:ruleId',null)
   if (mode !== 'FIXED') emit('update:value','')
 }

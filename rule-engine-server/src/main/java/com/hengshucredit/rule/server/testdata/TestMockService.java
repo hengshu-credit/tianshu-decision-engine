@@ -74,9 +74,12 @@ public class TestMockService {
             if (!enumFields.isEmpty()) fieldEnums = optionsByOwner(fieldOptions.selectList(new LambdaQueryWrapper<RuleDataObjectFieldOption>()
                     .in(RuleDataObjectFieldOption::getFieldId,enumFields)),RuleDataObjectFieldOption::getFieldId,RuleDataObjectFieldOption::getOptionValue);
         }
-        var bindings = new Bindings(settings(MockFieldBindings.Target.VARIABLE,boundVars,RuleVariable::getId,RuleVariable::getExampleMode,RuleVariable::getExampleValue,RuleVariable::getMockRuleId),
-                settings(MockFieldBindings.Target.DATA_OBJECT_ROOT,boundRoots,RuleDataObject::getId,RuleDataObject::getExampleMode,RuleDataObject::getExampleValue,RuleDataObject::getMockRuleId),
-                settings(MockFieldBindings.Target.DATA_OBJECT,boundFields,RuleDataObjectField::getId,RuleDataObjectField::getExampleMode,RuleDataObjectField::getExampleValue,RuleDataObjectField::getMockRuleId),fieldEnums);
+        var bindings = new Bindings(settings(MockFieldBindings.Target.VARIABLE,boundVars,RuleVariable::getId,RuleVariable::getExampleMode,RuleVariable::getExampleValue,RuleVariable::getMockRuleId,
+                        row -> catalog.caseValue(row.getExampleCaseBinding(),row.getVarType(),row.getProjectId())),
+                settings(MockFieldBindings.Target.DATA_OBJECT_ROOT,boundRoots,RuleDataObject::getId,RuleDataObject::getExampleMode,RuleDataObject::getExampleValue,RuleDataObject::getMockRuleId,
+                        row -> catalog.caseValue(row.getExampleCaseBinding(),"OBJECT",row.getProjectId())),
+                settings(MockFieldBindings.Target.DATA_OBJECT,boundFields,RuleDataObjectField::getId,RuleDataObjectField::getExampleMode,RuleDataObjectField::getExampleValue,RuleDataObjectField::getMockRuleId,
+                        row -> catalog.caseValue(row.getExampleCaseBinding(),row.getVarType(),row.getProjectId())),fieldEnums);
         var rules = catalog.rulesForProject(projectId);
         var result = MockRule.JSON.createObjectNode();
         Map<Long,JsonNode> samples = new HashMap<>();
@@ -131,12 +134,16 @@ public class TestMockService {
                 Collectors.toList(),list -> MockRule.JSON.valueToTree(list).toString()))));
     }
     private <T> Map<Long,ExampleSetting> settings(MockFieldBindings.Target target,List<T> rows,Function<T,Long> id,
-            Function<T,String> mode,Function<T,String> fixed,Function<T,Long> method) {
+            Function<T,String> mode,Function<T,String> fixed,Function<T,Long> method,Function<T,JsonNode> caseValue) {
         var matches = methodBindings.matches(target,rows.stream().map(id).toList());
         Map<Long,ExampleSetting> settings = new HashMap<>();
         for (T row : rows) {
             Long key = id.apply(row);
-            var setting = ExampleSetting.resolve(mode.apply(row),fixed.apply(row),method.apply(row),matches.get(key));
+            String selectedMode = mode.apply(row);
+            if (target == MockFieldBindings.Target.DATA_OBJECT_ROOT && "FIXED".equals(selectedMode)
+                    && (fixed.apply(row) == null || fixed.apply(row).isBlank())) selectedMode = "AUTO";
+            var setting = "CASE".equals(selectedMode) ? new ExampleSetting("CASE",null,null,() -> caseValue.apply(row))
+                    : ExampleSetting.resolve(selectedMode,fixed.apply(row),method.apply(row),matches.get(key));
             if (setting.configured() || mode.apply(row) != null) settings.put(key,setting);
         }
         return settings;

@@ -1,6 +1,6 @@
 <template>
   <div class="uiue-list-page management-list-page">
-    <dismissible-guidance class="variable-intro" guide-id="variable.intro" label="变量管理提示">
+    <dismissible-guidance v-if="activeTab !== 'objects'" class="variable-intro" guide-id="variable.intro" label="变量管理提示">
       <el-icon><el-icon-info /></el-icon> 变量在规则设计时使用，<router-link
         to="/test"
         >规则测试</router-link
@@ -8,6 +8,7 @@
     </dismissible-guidance>
 
     <config-layer-guide
+      v-if="activeTab !== 'objects'"
       guide-id="variable.steps"
       title="变量配置步骤"
       test-id="variable-config-layers"
@@ -254,7 +255,7 @@
                   data-action="edit"
                   size="small"
                   type="warning"
-                  @click="editWorkspace('VARIABLE', row, handleEdit)"
+                  @click="editWorkspace('VARIABLE', row, handleEdit, loadCurrentVariable)"
                   >编辑</el-button
                 >
                 <el-button v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
@@ -389,7 +390,7 @@
           v-if="filteredObjectTree.length === 0 && !objLoading"
           class="tab-empty"
         >
-          暂无数据对象，点击「新建对象」或「批量导入」添加
+          暂无数据对象
         </div>
         <div class="management-table-region" v-else :aria-busy="objLoading">
           <el-table class="management-table data-object-table"
@@ -407,83 +408,40 @@
             <el-table-column type="expand" width="48">
               <template v-slot="{ row: node }">
                 <div v-if="node && node.object" class="object-field-expansion">
-                  <div class="object-field-expansion__heading">
-                    <div>
-                      <strong>{{ node.object.objectLabel || node.object.objectCode }} · 字段明细</strong>
-                      <span>共 {{ objectFieldTotal(node) }} 个字段；点击字段行展开层级，每页保留完整子树。</span>
-                    </div>
-                    <div class="object-field-expansion__actions">
-                    <el-button size="small" :disabled="!paginatedObjectFields(node).some(field => field.children?.length)" @click="setObjectFieldExpansion(node, true)">展开全部</el-button>
-                    <el-button size="small" :disabled="!objectFieldExpandedKeys(node).length" @click="setObjectFieldExpansion(node, false)">收起全部</el-button>
-                    <el-button
-                      v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
-                      link
-                      size="small"
-                      :icon="ElIconPlus"
-                      @click.stop="handleAddObjectField(node)"
-                      >添加字段</el-button
-                    >
-                    </div>
+                  <div v-if="paginatedObjectFields(node).some(field => field.children?.length)" class="object-field-expansion__actions">
+                    <el-button link size="small" @click="setObjectFieldExpansion(node, true)">展开全部</el-button>
+                    <el-button link size="small" :disabled="!objectFieldExpandedKeys(node).length" @click="setObjectFieldExpansion(node, false)">收起全部</el-button>
                   </div>
               <lazy-field-table show-overflow-tooltip
                 :data="paginatedObjectFields(node)"
                 :expanded-keys="objectFieldExpandedKeys(node)"
+                :show-header="false"
+                :aria-label="(node.object.objectLabel || node.object.objectCode) + '的字段'"
                 max-height="480"
                 @row-click="(item, column, event) => handleObjectFieldRowClick(node, item.field, event)"
                 size="small"
-                border
                 row-key="field.id"
                 style="width: 100%"
               >
-                <el-table-column
-                  prop="field.varCode"
-                  label="字段编码"
-                  min-width="140"
-                  show-overflow-tooltip
-                >
+                <el-table-column label="字段" min-width="280">
                   <template #default="{ row: item }">
-                    <span :style="{ paddingInlineStart: item.depth * 24 + 'px' }">
+                    <div class="object-field-identity" :style="{ paddingInlineStart: item.depth * 20 + 'px' }">
                       <button v-if="item.field.children?.length" type="button" class="object-field-toggle"
                         :aria-expanded="item.expanded"
                         :aria-label="'展开或收起 ' + item.field.varCode"
                         @click.stop="handleObjectFieldExpandChange(node, item.field, !item.expanded)"
                       >{{ item.expanded ? '▾' : '▸' }}</button>
-                      {{ item.field.varCode }}
-                    </span>
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  prop="field.varLabel"
-                  label="名称"
-                  min-width="120"
-                  show-overflow-tooltip
-                />
-                <el-table-column label="脚本名称" min-width="140">
-                  <template v-slot="{ row: { field: row } }">
-                    <code class="script-name-code">{{
-                      row.scriptName || '—'
-                    }}</code>
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  prop="field.varType"
-                  label="类型"
-                  min-width="80"
-                  align="center"
-                >
-                  <template v-slot="{ row: { field: row } }"
-                    ><el-tag size="small" :type="typeTagColor(row.varType)">{{
-                      typeLabel(row.varType)
-                    }}</el-tag></template
-                  >
-                </el-table-column>
-                <el-table-column label="引用变量" min-width="220" show-overflow-tooltip>
-                  <template v-slot="{ row: { field: row } }">
-                    <span v-if="row.refVariableId || row.refObjectId || row.refObjectCode" class="reference-variable-cell">
-                      <strong>{{ objectFieldReferenceLabel(row) }}</strong>
-                      <code>{{ objectFieldReferenceScriptName(row) }}</code>
-                    </span>
-                    <span v-else class="text-muted">—</span>
+                      <span v-else class="object-field-branch" aria-hidden="true"></span>
+                      <code>{{ item.field.varCode }}</code>
+                      <span v-if="item.field.varLabel !== item.field.varCode">{{ item.field.varLabel }}</span>
+                      <el-tag size="small" :type="typeTagColor(item.field.varType)">{{ typeLabel(item.field.varType) }}</el-tag>
+                      <code v-if="item.field.originalScriptName && item.field.originalScriptName !== item.field.varCode"
+                        class="text-muted" :title="'脚本名称 ' + item.field.scriptName">{{ item.field.originalScriptName }}</code>
+                      <span v-if="item.field.refVariableId || item.field.refObjectId || item.field.refObjectCode" class="reference-variable-cell" title="字段引用">
+                        <strong>→ {{ objectFieldReferenceLabel(item.field) }}</strong>
+                        <code>{{ objectFieldReferenceScriptName(item.field) }}</code>
+                      </span>
+                    </div>
                   </template>
                 </el-table-column>
                 <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '选项', '删除'])" align="center">
@@ -494,7 +452,7 @@
                       data-action="edit"
                       size="small"
                       type="warning"
-                      @click="handleEditObjectField(row, node)"
+                      @click="editObjectFieldWorkspace(row, node)"
                       >编辑</el-button
                     >
                     <el-button
@@ -617,7 +575,7 @@
                     data-action="edit"
                     size="small"
                     :icon="ElIconEdit"
-                    @click.stop="editWorkspace('DATA_OBJECT', node.object, handleEditObject)"
+                    @click.stop="editWorkspace('DATA_OBJECT', node.object, handleEditObject, loadCurrentObject)"
                     >编辑</el-button
                   >
                   <governance-publish-action v-if="node && node.object" resource-type="DATA_OBJECT" :resource-id="node.object.id" />
@@ -826,7 +784,7 @@
                 data-action="edit"
                 size="small"
                 type="warning"
-                @click="editWorkspace('VARIABLE', row, handleEdit)"
+                @click="editWorkspace('VARIABLE', row, handleEdit, loadCurrentVariable)"
                 >编辑</el-button
               >
               <governance-publish-action resource-type="VARIABLE" :resource-id="row.id" />
@@ -1256,7 +1214,7 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="isObjectField" label="示例值">
-          <example-value-editor :project-id="form.projectId" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
+          <example-value-editor :project-id="form.projectId" v-model:case-binding="form.exampleCaseBinding" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
         </el-form-item>
         <el-form-item v-if="isObjectField && objectHasExternalSource && !objectFieldApiId" label="来源路径">
           <el-input
@@ -1550,7 +1508,7 @@
             <el-input v-model="form.valueRange" placeholder="如：0~100、A/B/C" />
           </el-form-item>
           <el-form-item label="示例值">
-            <example-value-editor v-if="form.varSource === 'INPUT'" :project-id="form.projectId" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
+            <example-value-editor v-if="form.varSource !== 'CONSTANT'" :project-id="form.scope === 'GLOBAL' ? 0 : form.projectId" v-model:case-binding="form.exampleCaseBinding" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
             <el-input v-else v-model="form.exampleValue" placeholder="可留空" />
           </el-form-item>
           <el-form-item label="排序">
@@ -1720,7 +1678,7 @@
           />
         </el-form-item>
         <el-form-item label="整体示例值">
-          <example-value-editor :project-id="objectForm.projectId" v-model:mode="objectForm.exampleMode" v-model:value="objectForm.exampleValue" v-model:rule-id="objectForm.mockRuleId" field-type="OBJECT" />
+          <example-value-editor :project-id="objectForm.scope === 'GLOBAL' ? 0 : objectForm.projectId" v-model:case-binding="objectForm.exampleCaseBinding" v-model:mode="objectForm.exampleMode" v-model:value="objectForm.exampleValue" v-model:rule-id="objectForm.mockRuleId" field-type="OBJECT" />
         </el-form-item>
         <el-form-item label="对象类型" prop="objectType">
           <el-radio-group v-model="objectForm.objectType">
@@ -2272,7 +2230,7 @@
 
     <!-- JSON Constants Import Dialog -->
     <el-dialog
-      title="导入 JSON 常量"
+      :title="importForm.mode === 'json-variable' ? '导入 JSON 输入变量' : '导入 JSON 常量'"
       v-model="importJsonConstVisible"
       :before-close="done => closeConfigurationDialog('importJsonConstVisible', done)"
       width="700px"
@@ -2280,7 +2238,7 @@
       :show-close="!importing"
       :close-on-press-escape="!importing"
     >
-      <variable-import-help mode="json-const" :disabled="importing || !!importForm.jsonContent.trim()" @use-example="importForm.jsonContent = $event" />
+      <variable-import-help :mode="importForm.mode || 'json-const'" :disabled="importing || !!importForm.jsonContent.trim()" @use-example="importForm.jsonContent = $event" />
       <el-form :disabled="importing" size="small" label-width="100px">
         <el-form-item label="作用范围">
           <el-radio-group v-model="importForm.scope">
@@ -2346,6 +2304,7 @@
         <p v-if="importResult.success && importResult.constantCount != null">
           已生成 <b>{{ importResult.constantCount }}</b> 个常量审批草稿
         </p>
+        <p v-if="importResult.success && importResult.inputVariableCount != null">已生成 <b>{{ importResult.inputVariableCount }}</b> 个输入变量审批草稿</p>
         <p v-if="!importResult.success">{{ importResult.error }}</p>
         <p v-if="importResult.success">
           生效数据尚未改变，请前往审批管理完成血缘检查、提交与审批。
@@ -2400,6 +2359,7 @@ import {
 } from '@element-plus/icons-vue'
 import {
   listVariables,
+  getVariable,
   listVariablesByProject,
   createVariable,
   updateVariable,
@@ -2411,6 +2371,7 @@ import {
   saveVariableOptions,
   importJavaConstants,
   importJsonConstants,
+  importJsonVariables,
   listFieldValidations,
   createFieldValidationDraft,
   updateFieldValidationDraft,
@@ -2424,6 +2385,7 @@ import request from '@/api/request'
 import {
   importJavaEntity,
   listDataObjects,
+  getDataObject,
   validateDataObjectFieldReference,
   importJsonObject,
   importDdlTable,
@@ -2751,6 +2713,7 @@ export default {
           { required: true, message: '请选择所属项目', trigger: 'change' },
         ],
       },
+      refreshOnReturn: false,
       // Import
       importing: false,
       importForm: {
@@ -2848,7 +2811,15 @@ export default {
   },
   name: 'VariableList',
   beforeUnmount() { this.variableListController?.abort(); this.objectTreeRequestId++; this.sourceOptionsRequestId++; this.optionRequestId++ },
-  deactivated() { this.optionRequestId++ },
+  deactivated() { this.optionRequestId++; this.refreshOnReturn = true },
+  activated() {
+    if (!this.refreshOnReturn) return
+    this.refreshOnReturn = false
+    if (this.activeTab === 'objects') this.loadObjectTree()
+    else if (this.activeTab === 'constants') this.loadConstants()
+    else if (this.activeTab === 'validations') this.loadFieldValidations()
+    else this.loadData()
+  },
   created() {
     this.currentProjectId =
       routeProjectId(
@@ -4488,6 +4459,7 @@ export default {
         apiRequestOverrides: sourceConfig.requestOverrides || {},
         lazyLoadReferences: obj.lazyLoadReferences === true,
         exampleMode: obj.exampleMode || null,
+        exampleCaseBinding: obj.exampleCaseBinding ?? null,
         exampleValue: obj.exampleValue ?? null,
         mockRuleId: obj.mockRuleId ?? null,
         id: obj.id,
@@ -4649,6 +4621,22 @@ export default {
     /**
      * 编辑数据对象下的字段行。
      */
+    async loadCurrentVariable(id) {
+      const { data } = await getVariable(id)
+      if (!data) throw new Error('变量已移除')
+      return data
+    },
+    async loadCurrentObject(id) {
+      const { data } = await getDataObject(id)
+      return { ...data.object, fields: data.variables }
+    },
+    editObjectFieldWorkspace(row, node) {
+      return this.editWorkspace('DATA_OBJECT', node.object, draft => {
+        const field = draft.fields.find(item => String(item.id) === String(row.id))
+        if (!field) return this.$message.warning('该字段已从对象草稿中移除')
+        this.handleEditObjectField({ ...field, projectId: draft.projectId }, { ...node, object: draft })
+      }, this.loadCurrentObject)
+    },
     handleEditObjectField(row, node) {
       this.repairVarCode = Boolean(reservedCodeError(row.varCode))
       this.isObjectField = true
@@ -4664,6 +4652,7 @@ export default {
         varLabel: row.varLabel,
         scriptName: Object.prototype.hasOwnProperty.call(row, 'originalScriptName') ? row.originalScriptName : row.scriptName,
         exampleMode: row.exampleMode || null,
+        exampleCaseBinding: row.exampleCaseBinding ?? null,
         exampleValue: row.exampleValue ?? null,
         mockRuleId: row.mockRuleId ?? null,
         varType: row.varType || 'STRING',
@@ -5042,6 +5031,7 @@ export default {
             varLabel: this.form.varLabel,
             scriptName: this.form.scriptName,
             exampleMode: this.form.exampleMode || null,
+            exampleCaseBinding: this.form.exampleCaseBinding ?? null,
             exampleValue: this.form.exampleValue ?? null,
             mockRuleId: this.form.mockRuleId || null,
             varType: this.form.varType,
@@ -5586,6 +5576,7 @@ export default {
     // ── Import ──
     handleImportCmd(cmd) {
       this.importForm = {
+        mode: cmd,
         objectType: 'INPUT',
         javaSource: '',
         jsonContent: '',
@@ -5598,7 +5589,7 @@ export default {
       else if (cmd === 'json-object') this.importJsonObjectVisible = true
       else if (cmd === 'ddl-table') this.importDdlVisible = true
       else if (cmd === 'java-const') this.importJavaConstVisible = true
-      else if (cmd === 'json-const') this.importJsonConstVisible = true
+      else if (cmd === 'json-const' || cmd === 'json-variable') this.importJsonConstVisible = true
     },
     handleJavaFileSelect(file) {
       const reader = new FileReader()
@@ -5746,7 +5737,8 @@ export default {
       try {
         const projectId =
           this.importForm.scope === 'GLOBAL' ? null : this.importForm.projectId
-        const res = await importJsonConstants(
+        const importValues = this.importForm.mode === 'json-variable' ? importJsonVariables : importJsonConstants
+        const res = await importValues(
           this.importForm.jsonContent,
           this.importForm.scope,
           projectId
@@ -5938,7 +5930,8 @@ export default {
   left: 0;
   width: calc(100cqw - 2px);
   box-sizing: border-box;
-  padding: 12px 16px 16px;
+  padding: 0 0 0 24px;
+  border-left: 2px solid var(--tianshu-border-subtle);
   background: var(--tianshu-bg-soft);
 }
 .data-object-table {
@@ -5947,26 +5940,22 @@ export default {
 .data-object-table :deep(.el-table__expanded-cell) {
   padding: 0;
 }
-.object-field-expansion__heading {
+.object-field-expansion__actions {
+  justify-content: flex-end;
+  padding: 2px 12px;
+}
+.object-field-identity {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
 }
-.object-field-expansion__heading strong,
-.object-field-expansion__heading span {
-  display: block;
-}
-.object-field-expansion__heading strong {
-  color: var(--tianshu-text-primary);
-  font-size: 13px;
-  font-weight: 600;
-}
-.object-field-expansion__heading span {
-  margin-top: 4px;
-  color: var(--tianshu-text-tertiary);
-  font-size: 12px;
+.object-field-branch, .object-field-toggle { flex: 0 0 16px; }
+.object-field-branch {
+  height: 10px;
+  border-inline-start: 1px solid var(--el-border-color);
+  border-bottom: 1px solid var(--el-border-color);
+  transform: translateY(-4px);
 }
 .reference-variable-cell {
   display: inline-flex;

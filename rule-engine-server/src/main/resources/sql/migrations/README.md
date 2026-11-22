@@ -112,3 +112,5 @@ docker compose --project-name tianshu-server --env-file config/.env.server \
 - `2026-11-21-test-examples.sql` 补齐示例方式、对象示例及方法关联表，移除旧版内置方法的出厂字段匹配。
 
 - `2026-11-22-test-scope.sql` 增加 Mock 规则的所属项目、规则和变量的默认测试输入。既有 Mock 规则继续全局可用。
+
+- `2026-11-23-example-case-binding.sql` 在测试示例迁移后执行，支持变量、对象和子字段绑定固定用例，并扩大变量固定示例的容量。

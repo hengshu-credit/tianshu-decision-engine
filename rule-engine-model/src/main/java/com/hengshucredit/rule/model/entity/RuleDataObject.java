@@ -23,6 +23,8 @@ public class RuleDataObject {
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String exampleMode;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String exampleCaseBinding;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String exampleValue;
     /** 仅引用型叶子字段可按需取值；默认关闭。 */
     private Boolean lazyLoadReferences;

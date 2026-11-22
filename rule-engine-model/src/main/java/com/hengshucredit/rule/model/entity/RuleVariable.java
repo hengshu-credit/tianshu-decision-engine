@@ -22,6 +22,8 @@ public class RuleVariable {
     private Long mockRuleId;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String exampleMode;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String exampleCaseBinding;
     private String varSource;
     /** 由系统初始化脚本标记；业务写入不能修改此身份。 */
     @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)

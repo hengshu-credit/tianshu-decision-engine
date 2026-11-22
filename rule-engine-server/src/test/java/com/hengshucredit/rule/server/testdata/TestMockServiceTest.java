@@ -6,6 +6,27 @@ import java.util.*;
 import static org.junit.Assert.*;
 
 public class TestMockServiceTest {
+    @Test public void fixedCollectionAndDecimalAliasesKeepJsonTypes() {
+        var list = ExampleSetting.resolve("FIXED","[0,false]",null,null);
+        assertEquals(MockRule.parse("[0,false]"),list.value("SET","choices","集合",null,List.of()));
+        var decimal = ExampleSetting.resolve("FIXED","9007199254740993.01",null,null);
+        assertEquals(new java.math.BigDecimal("9007199254740993.01"),decimal.value("BIGDECIMAL","amount","金额",null,List.of()).decimalValue());
+    }
+
+    @Test public void objectWithoutAnExampleUsesChildTypesAndLiveCaseOverrides() {
+        RuleDataObject root = new RuleDataObject();
+        root.setId(2L); root.setObjectCode("Applicant");
+        RuleDataObjectField field = new RuleDataObjectField();
+        field.setId(9L); field.setObjectId(2L); field.setVarCode("score"); field.setVarType("INTEGER");
+        var auto = new TestMockService.Bindings(Map.of(),Map.of(),Map.of(),Map.of());
+        var result = TestMockService.objectSample(root,List.of(field),Map.of(2L,root),Map.of(9L,field),Map.of(),List.of(),auto);
+        assertTrue(result.path("score").isIntegralNumber());
+        var binding = new ExampleSetting("CASE",null,null,() -> MockRule.parse("{\"score\":40,\"active\":false}"));
+        var overrides = new TestMockService.Bindings(Map.of(),Map.of(2L,binding),Map.of(9L,new ExampleSetting("FIXED","0",null)),Map.of());
+        result = TestMockService.objectSample(root,List.of(field),Map.of(2L,root),Map.of(9L,field),Map.of(),List.of(),overrides);
+        assertEquals(MockRule.parse("{\"score\":0,\"active\":false}"),result);
+    }
+
     @Test public void objectAndNestedChildBindingsKeepSiblingsAndUseTypedIds() {
         RuleDataObject root = new RuleDataObject();
         root.setId(7L); root.setObjectCode("Applicant"); root.setMockRuleId(1L);
