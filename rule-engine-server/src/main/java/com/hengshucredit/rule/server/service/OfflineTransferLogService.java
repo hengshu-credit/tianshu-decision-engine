@@ -66,9 +66,25 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
     }
 
     public IPage<OfflineTransferLog> page(int pageNum, int pageSize, String operationType) {
+        return page(pageNum, pageSize, operationType, null, null, false);
+    }
+
+    public IPage<OfflineTransferLog> page(int pageNum, int pageSize, String operationType,
+                                          String status, String keyword, boolean summaryOnly) {
         LambdaQueryWrapper<OfflineTransferLog> query = new LambdaQueryWrapper<>();
+        if (summaryOnly) {
+            query.select(OfflineTransferLog::getId, OfflineTransferLog::getOperationType, OfflineTransferLog::getStatus,
+                    OfflineTransferLog::getOperator, OfflineTransferLog::getPackageDigest, OfflineTransferLog::getResourceCount,
+                    OfflineTransferLog::getCreateTime, OfflineTransferLog::getErrorMessage);
+        }
+        if (status != null && !status.isBlank()) query.eq(OfflineTransferLog::getStatus, status);
+        if (keyword != null && !keyword.isBlank()) {
+            // 按原文查找，资源编码中的下划线、百分号等字符也按字面匹配。
+            query.apply("(INSTR(operator, {0}) > 0 OR INSTR(package_digest, {0}) > 0 OR INSTR(roots_json, {0}) > 0 "
+                    + "OR INSTR(content_json, {0}) > 0 OR INSTR(error_message, {0}) > 0)", keyword.strip());
+        }
         if (operationType != null && !operationType.isBlank()) query.eq(OfflineTransferLog::getOperationType, operationType);
-        query.orderByDesc(OfflineTransferLog::getCreateTime);
+        query.orderByDesc(OfflineTransferLog::getCreateTime, OfflineTransferLog::getId);
         return page(new Page<>(pageNum, pageSize), query);
     }
 

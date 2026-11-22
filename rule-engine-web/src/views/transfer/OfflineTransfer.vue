@@ -227,14 +227,35 @@
       </el-tab-pane>
       <el-tab-pane lazy label="迁移日志" name="logs">
         <section class="transfer-card transfer-log-card">
-          <div class="card-heading">
-            <div>
-              <span class="card-kicker">AUDIT LOG</span>
-              <h2>迁移日志</h2>
-            </div>
-            <el-button size="small" @click="loadLogs">刷新</el-button>
+          <div class="uiue-search-container uiue-filter-toolbar">
+            <el-form inline size="small" @submit.prevent @keyup.enter="searchLogs">
+              <el-form-item label="操作类型">
+                <el-select v-model="logFilters.operationType" clearable placeholder="全部操作">
+                  <el-option label="导入" value="IMPORT" /><el-option label="导出" value="EXPORT" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="状态">
+                <el-select v-model="logFilters.status" clearable placeholder="全部状态">
+                  <el-option label="成功" value="SUCCESS" /><el-option label="失败" value="FAILED" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="关键词" class="log-keyword">
+                <remote-filter-select v-model:value="logFilters.keyword" allow-free-input
+                  :fetch-options="fetchLogOptions" :option-fields="['operator', 'packageDigest', 'errorMessage']"
+                  placeholder="操作人、包摘要、资源或日志内容" />
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="searchLogs">查询</el-button>
+                <el-button @click="resetLogFilters">重置</el-button>
+              </el-form-item>
+            </el-form>
+            <div class="uiue-btn-bar"><div class="btn-right">
+              <el-button size="small" :loading="logsLoading" @click="loadLogs">刷新</el-button>
+            </div></div>
           </div>
-          <el-table :aria-busy="logsLoading" :data="logs" size="small" class="transfer-table">
+          <el-alert v-if="logLoadError" :title="logLoadError" type="error" :closable="false" show-icon />
+          <el-table :aria-busy="logsLoading" :data="logs" size="small" class="transfer-table"
+            :empty-text="logLoadError || (logsLoading ? '正在加载…' : '暂无匹配的迁移日志')">
             <el-table-column prop="operationType" label="操作" width="100">
               <template #default="{ row }">{{ row.operationType === 'EXPORT' ? '导出' : '导入' }}</template>
             </el-table-column>
@@ -249,7 +270,7 @@
               <template #default="{ row }"><el-button link type="primary" size="small" @click="openLogDetail(row)">查看</el-button></template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="logPageNum" v-model:page-size="logPageSize" :total="logTotal" size="small" layout="total, prev, pager, next" @current-change="loadLogs" />
+          <el-pagination :current-page="logPageNum" :page-size="logPageSize" :total="logTotal" size="small" layout="total, prev, pager, next" @current-change="changeLogPage" />
         </section>
       </el-tab-pane>
     </el-tabs>
@@ -261,7 +282,7 @@
       <pre class="result-json">{{ JSON.stringify(importResult, null, 2) }}</pre>
     </el-dialog>
     <el-dialog v-model="logDetailVisible" title="迁移日志详情" width="900px">
-      <el-alert v-if="logDetail" :type="logDetail.status === 'SUCCESS' ? 'success' : 'warning'" :closable="false" :title="`${logDetail.operationType === 'EXPORT' ? '导出' : '导入'} · ${logDetail.status}`" />
+      <el-alert v-if="logDetail" :description="logDetail.errorMessage || undefined" :type="logDetail.status === 'SUCCESS' ? 'success' : 'warning'" :closable="false" :title="`${logDetail.operationType === 'EXPORT' ? '导出' : '导入'} · ${logDetail.status}`" />
       <pre v-if="logDetail" class="result-json">{{ logDetail.contentJson || '{}' }}</pre>
       <section class="log-lineage-section">
         <div class="inline-lineage-toolbar"><strong>本次迁移血缘</strong><span v-if="!logLineageLoading && !logLineage?.nodes?.length">日志中没有可用血缘，缺失内容已跳过。</span></div>
@@ -303,6 +324,8 @@ const RESOURCE_TYPES = [
   { value: 'EXPERIMENT', label: '分流实验' }
 ]
 
+const emptyLogFilters = () => ({ operationType: '', status: '', keyword: '' })
+
 const LINEAGE_TYPES = { DATABASE: 'DB', SFTP: 'SFTP', EXTERNAL_DATASOURCE: 'DATASOURCE', EXTERNAL_API: 'API', LIST_LIBRARY: 'LIST' }
 
 const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', versionSelection: { versionMode: 'LATEST', versionId: null }, versionLabel: '最新版（当前生产）', loadError: '', requestId: 0, fetchOptions: params => fetch(key, params) })
@@ -332,6 +355,7 @@ export default {
       resultVisible: false,
       activeTab: 'transfer',
       logs: [], logsLoading: false, logTotal: 0, logPageNum: 1, logPageSize: 20,
+      logFilters: emptyLogFilters(), appliedLogFilters: {}, logRequestId: 0, logLoadError: '',
       logDetail: null,
       logDetailVisible: false,
       logLineage: null,
@@ -412,21 +436,50 @@ export default {
   watch: {
     options: { deep: true, flush: 'sync', handler() { this.invalidatePreview() } }
   },
-  beforeUnmount() { this.invalidatePreview() },
+  beforeUnmount() { this.invalidatePreview(); this.logRequestId++ },
   methods: {
     reservedCodeError,
     onTabChange(tab) { if (tab === 'logs') this.loadLogs() },
+    logQuery(keyword) {
+      return {
+        operationType: this.logFilters.operationType || undefined,
+        status: this.logFilters.status || undefined,
+        keyword: keyword.trim() || undefined,
+      }
+    },
+    fetchLogOptions({ query, pageNum, pageSize }) {
+      return listTransferLogs({ ...this.logQuery(query), pageNum, pageSize, summaryOnly: true })
+    },
+    searchLogs() {
+      this.appliedLogFilters = this.logQuery(this.logFilters.keyword)
+      this.logPageNum = 1
+      return this.loadLogs()
+    },
+    resetLogFilters() {
+      this.logFilters = emptyLogFilters()
+      return this.searchLogs()
+    },
+    changeLogPage(page) {
+      if (page === this.logPageNum) return
+      this.logPageNum = page
+      return this.loadLogs()
+    },
     async loadLogs() {
+      const requestId = ++this.logRequestId
+      this.logLoadError = ''
       this.logsLoading = true
       try {
-        const response = await listTransferLogs({ pageNum: this.logPageNum, pageSize: this.logPageSize })
+        const response = await listTransferLogs({ ...this.appliedLogFilters, pageNum: this.logPageNum, pageSize: this.logPageSize, summaryOnly: true })
+        if (requestId !== this.logRequestId) return
         const data = response.data || {}
         this.logs = data.records || []
         this.logTotal = data.total || 0
       } catch (error) {
+        if (requestId !== this.logRequestId) return
+        this.logLoadError = error.message || '迁移日志加载失败，请刷新重试'
         this.logs = []
         this.logTotal = 0
-      } finally { this.logsLoading = false }
+      } finally { if (requestId === this.logRequestId) this.logsLoading = false }
     },
     async openLogDetail(row) {
       this.logDetailVisible = true
@@ -747,6 +800,13 @@ export default {
 .transfer-tabs { margin-top: 4px; }
 .transfer-tabs :deep(.el-tabs__content) { overflow: visible; }
 .transfer-log-card { margin-top: 12px; }
+.transfer-log-card .log-keyword { width: 320px; max-width: 100%; }
+.transfer-log-card .el-form-item :deep(.el-select) { width: 120px; }
+@media (max-width: 560px) {
+  .transfer-log-card .el-form-item { width: 100%; }
+  .transfer-log-card .el-form-item :deep(.el-select) { width: 100%; }
+  .transfer-log-card .el-form-item :deep(.el-form-item__label) { width: 5em; justify-content: flex-start; }
+}
 .transfer-log-card .el-pagination { display: flex; justify-content: flex-end; margin-top: 14px; }
 .card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .card-kicker { color: var(--el-color-primary); font-size: 11px; letter-spacing: .12em; font-weight: 700; }

@@ -177,8 +177,11 @@ public class OfflineResourceTransferController {
     public ApiResponse<com.baomidou.mybatisplus.core.metadata.IPage<OfflineTransferLog>> logs(
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "20") int pageSize,
-            @RequestParam(required = false) String operationType) {
-        return ApiResponse.ok(logService.page(pageNum, pageSize, operationType));
+            @RequestParam(required = false) String operationType,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "false") boolean summaryOnly) {
+        return ApiResponse.ok(logService.page(pageNum, pageSize, operationType, status, keyword, summaryOnly));
     }
 
     @GetMapping("/logs/{id}")

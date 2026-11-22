@@ -179,10 +179,61 @@ test('离线迁移页面展示导出、目标范围和冲突策略流程', async
   await expect(page.locator('.menu-label', { hasText: '离线迁移' })).toBeVisible()
   expect(logRequests).toHaveLength(0)
   await page.getByRole('tab', { name: '迁移日志', exact: true }).click()
-  await expect.poll(() => logRequests).toEqual([{ pageNum: '1', pageSize: '20' }])
+  await expect.poll(() => logRequests).toEqual([{ pageNum: '1', pageSize: '20', summaryOnly: 'true' }])
   await page.getByRole('tab', { name: '配置迁移', exact: true }).click()
   await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toBeVisible()
   await assertClean()
+})
+
+test('迁移日志按操作、状态与正文组合查询，跨页匹配并能重置', async ({ page }, testInfo) => {
+  const { assertClean } = await installTransferRoutes(page)
+  const logs = Array.from({ length: 21 }, (_, i) => ({
+    id: i + 1, operationType: i === 20 ? 'IMPORT' : 'EXPORT', status: i === 20 ? 'FAILED' : 'SUCCESS',
+    operator: i === 20 ? 'reviewer' : 'admin', packageDigest: 'digest-' + i, resourceCount: 1,
+    contentJson: i === 20 ? '{"resourceCode":"risk_%"}' : '{}', createTime: '2026-11-20 12:00:00',
+  }))
+  const queries = []
+  await page.route('**/api/rule/transfer/logs?*', async route => {
+    const params = Object.fromEntries(new URL(route.request().url()).searchParams)
+    queries.push(params)
+    const matched = logs.filter(row => (!params.operationType || row.operationType === params.operationType)
+      && (!params.status || row.status === params.status)
+      && (!params.keyword || [row.operator, row.packageDigest, row.contentJson].some(value => value.includes(params.keyword))))
+    const start = (Number(params.pageNum) - 1) * Number(params.pageSize)
+    const records = matched.slice(start, start + Number(params.pageSize)).map(row => ({ ...row, contentJson: undefined }))
+    await route.fulfill({ json: platformResponse({ records, total: matched.length }) })
+  })
+  await page.goto(`${baseUrl}#/transfer`)
+  await page.getByRole('tab', { name: '迁移日志', exact: true }).click()
+  const card = page.locator('.transfer-log-card')
+  await expect(card.getByRole('heading', { name: '迁移日志' })).toHaveCount(0)
+  await expect(card.getByText('AUDIT LOG')).toHaveCount(0)
+  await expect(card.locator('.el-table__body tr')).toHaveCount(20)
+  await card.locator('.btn-next').click()
+  await expect(card.getByRole('cell', { name: 'reviewer' })).toBeVisible()
+  for (const [label, choice] of [['操作类型', '导入'], ['状态', '失败']]) {
+    await card.locator('.el-select').filter({ has: page.getByRole('combobox', { name: label, exact: true }) }).click()
+    await page.getByRole('option', { name: choice, exact: true }).click()
+  }
+  const keyword = card.getByRole('textbox', { name: '关键词' })
+  await keyword.click()
+  await expect(page.getByRole('option', { name: 'reviewer' })).toBeVisible()
+  await keyword.fill('risk_%')
+  await keyword.press('Enter')
+  await expect.poll(() => queries.at(-1)).toMatchObject({ operationType: 'IMPORT', status: 'FAILED', keyword: 'risk_%', pageNum: '1' })
+  await expect(card).toContainText('共 1 条')
+  await expect(card.getByRole('cell', { name: 'digest-20' })).toBeVisible()
+  await card.getByRole('button', { name: '刷新' }).click()
+  await expect(card.getByRole('cell', { name: 'reviewer' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('transfer-log-search.png') })
+  await keyword.fill('没有这样的内容')
+  await card.getByRole('button', { name: '查询' }).click()
+  await expect(card.getByText('暂无匹配的迁移日志')).toBeVisible()
+  await card.getByRole('button', { name: '重置' }).click()
+  await expect(keyword).toHaveValue('')
+  await expect(card).toContainText('共 21 条')
+  await expect(card.locator('.el-table__body tr')).toHaveCount(20)
+  assertClean()
 })
 
 test('离线迁移从下载到绑定项目导入始终使用当前预检选项', async ({ page }, testInfo) => {

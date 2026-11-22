@@ -416,6 +416,26 @@ describe('OfflineTransfer', () => {
     wrapper.unmount()
   })
 
+  test('查询回到第一页，迟到的旧响应不能覆盖筛选结果，刷新沿用已提交条件', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    let finishOld
+    transferApi.listTransferLogs.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve }))
+    wrapper.vm.logPageNum = 3
+    const old = wrapper.vm.loadLogs()
+    wrapper.vm.logFilters = { keyword: '  资源A  ', operationType: 'IMPORT', status: 'FAILED' }
+    transferApi.listTransferLogs.mockResolvedValueOnce({ data: { total: 1, records: [{ id: 5 }] } })
+    await wrapper.vm.searchLogs()
+    finishOld({ data: { total: 50, records: [{ id: 7 }] } })
+    await old
+    expect(wrapper.vm.logPageNum).toBe(1)
+    expect(wrapper.vm.logs).toEqual([{ id: 5 }])
+    expect(wrapper.vm.logTotal).toBe(1)
+    wrapper.vm.logFilters.keyword = '尚未查询'
+    await wrapper.vm.loadLogs()
+    expect(transferApi.listTransferLogs).toHaveBeenLastCalledWith({ keyword: '资源A', operationType: 'IMPORT', status: 'FAILED', pageNum: 1, pageSize: 20, summaryOnly: true })
+    wrapper.unmount()
+  })
+
   test('查看迁移日志会同时请求实时血缘图', async () => {
     const wrapper = shallowMount(OfflineTransfer)
     transferApi.getTransferLog.mockResolvedValueOnce({ data: { id: 8, status: 'SUCCESS', contentJson: '{}' } })
