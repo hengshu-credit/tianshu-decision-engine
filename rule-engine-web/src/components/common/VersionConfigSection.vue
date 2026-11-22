@@ -5,10 +5,10 @@
     <template v-else>
       <div v-if="section.matrix" class="matrix-scroll" tabindex="0">
         <table class="result-matrix">
-          <thead><tr><th scope="col">行条件 / 列条件</th><th v-for="(label, i) in columnLabels" :key="i" scope="col">{{ label }}</th></tr></thead>
+          <thead><tr><th scope="col">行条件 / 列条件</th><th v-for="(label, i) in columnLabels" :key="i" scope="col"><span>{{ label }}</span></th></tr></thead>
           <tbody>
             <tr v-for="(label, i) in rowLabels" :key="i">
-              <th scope="row">{{ label }}</th>
+              <th scope="row"><span>{{ label }}</span></th>
               <td v-for="(_, j) in columnLabels" :key="j">
                 <operand-value-display :operand="section.matrix.cells[i]?.[j]" empty-text="—" compact />
               </td>
@@ -63,15 +63,27 @@ const rowLabels = computed(() => {
 })
 </script>
 <style scoped>
-.business-preview-card { container: version-panel / inline-size; min-width: 0; color: var(--tianshu-text-primary); overflow-wrap: anywhere; }
+.business-preview-card {
+  container: version-panel / inline-size;
+  min-width: 0;
+  color: var(--tianshu-text-primary);
+  overflow-wrap: anywhere;
+  max-height: var(--version-section-max-height);
+  overflow: auto;
+  align-self: start;
+}
 .business-preview-card > .snapshot-branch { overflow-x: auto; padding-block: 4px; }
 .business-preview-card > .source-summary-card { margin: 0; }
 .matrix-scroll { max-width: 100%; overflow: auto; }
+html[data-table-scroll-mode='fixed'] .matrix-scroll { max-height: calc(var(--version-section-max-height) - 2rem); }
+html[data-table-scroll-mode='fixed'] .result-matrix thead { position: sticky; top: 0; }
 .result-matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
 .result-matrix :is(th, td) { padding: 8px; border: 1px solid var(--tianshu-border); text-align: left; }
+.result-matrix th > span { display: block; }
+.result-matrix :is(th, td) > span, .business-preview-card :deep(.threshold-item) { max-height: var(--version-value-max-height); overflow: auto; }
 .result-matrix th { background: var(--tianshu-bg-soft); font-weight: 600; }
 .missing, .graph-details summary, .narrow-version-label { font-size: 12px; color: var(--tianshu-text-secondary); }
 .graph-details summary { padding: 10px 0; cursor: pointer; }
 .narrow-version-label { display: none; }
-@media (max-width: 640px) { .narrow-version-label { display: block; margin-bottom: 8px; font-weight: 600; } }
+@container version-preview (max-width: 640px) { .narrow-version-label { display: block; margin-bottom: 8px; font-weight: 600; } }
 </style>

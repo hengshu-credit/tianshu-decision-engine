@@ -735,13 +735,11 @@
       </div>
     </el-drawer>
 
-    <el-dialog
+    <resource-workspace-drawer
       title="分流实验版本管理"
       v-model="versionVisible"
-      width="min(1120px, 96vw)"
-      append-to-body
     >
-      <el-table show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
+      <el-table class="workspace-history-table" show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
         <el-table-column
           prop="displayVersion"
           label="版本"
@@ -787,11 +785,12 @@
         :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)" />
       <version-snapshot-panel v-else-if="versionPreview" historical resource-type="EXPERIMENT"
         :snapshot="versionPreview" :modified-label="versionDisplayLabel(versionPreview)" />
-    </el-dialog>
+    </resource-workspace-drawer>
   </div>
 </template>
 
 <script>
+import ResourceWorkspaceDrawer from '@/components/common/ResourceWorkspaceDrawer.vue'
 import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
@@ -907,7 +906,7 @@ export default {
     }
   },
   name: 'ExperimentDetail',
-  components: { GuidanceGroup, VersionSnapshotPanel,
+  components: { ResourceWorkspaceDrawer, GuidanceGroup, VersionSnapshotPanel,
     ConditionGroupEditor,
     OperandPicker,
     ProjectResourceSelect,

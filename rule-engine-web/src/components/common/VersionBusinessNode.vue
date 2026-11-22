@@ -1,5 +1,5 @@
 <template>
-  <condition-group-editor v-if="node.group" :group="node.group" read-only compact />
+  <condition-group-editor v-if="node.group" class="config-conditions" :group="node.group" read-only compact />
   <div v-else-if="assignment" class="assignment-summary">
       <span class="config-label">赋值</span>
       <operand-value-display :operand="assignment.target" compact />
@@ -63,7 +63,12 @@ export default {
       return { target: this.cell(this.node, 'targetOperand')?.operand, value: this.cell(this.node, 'valueOperand')?.operand }
     },
   },
-  watch: { node() { this.folded = false } },
+  watch: {
+    node: {
+      immediate: true,
+      handler(node) { this.folded = !!node.list && node.children?.length > 20 },
+    },
+  },
   methods: { cell(row, key) { return row.children.find(field => field.key === key) } },
 }
 </script>
@@ -80,4 +85,13 @@ export default {
 .assignment-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.6; }
 .config-code { min-width: 0; margin: 0; padding: 8px 12px; background: var(--tianshu-bg-soft); border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .config-table { min-width: 0; max-width: 100%; }
+.config-group-content, .config-value, .config-group-title, .assignment-summary, .config-conditions {
+  max-height: var(--version-value-max-height);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.config-group--bare > .config-group-content { max-height: min(24rem, 50vh); }
+html[data-table-scroll-mode='fixed'] .config-table :deep(> .el-table > .el-table__inner-wrapper > .el-table__body-wrapper > .el-scrollbar > .el-scrollbar__wrap) {
+  max-height: var(--version-value-max-height);
+}
 </style>

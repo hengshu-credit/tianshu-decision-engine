@@ -527,10 +527,9 @@
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog
+    <resource-workspace-drawer
       title="版本历史"
       v-model="versionVisible"
-      width="min(1120px, 96vw)"
       :close-on-click-modal="false"
     >
       <div class="version-compare-toolbar">
@@ -559,7 +558,7 @@
           >查看具体差异</el-button
         >
       </div>
-      <el-table show-overflow-tooltip
+      <el-table class="workspace-history-table" show-overflow-tooltip
         :data="versionList"
         border
         size="small"
@@ -607,7 +606,7 @@
         :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)" />
       <version-snapshot-panel v-else-if="versionPreview" historical resource-type="MODEL"
         :snapshot="versionPreview" :modified-label="versionDisplayLabel(versionPreview)" />
-    </el-dialog>
+    </resource-workspace-drawer>
 
     <!-- 模型测试对话框 -->
     <el-dialog
@@ -917,6 +916,7 @@
 </template>
 
 <script>
+import ResourceWorkspaceDrawer from '@/components/common/ResourceWorkspaceDrawer.vue'
 import { pageTabState } from '@/mixins/pageTabState'
 import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
@@ -1070,7 +1070,7 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: { ResourceTestCases, DismissibleGuidance, VersionSnapshotPanel,
+  components: { ResourceWorkspaceDrawer, ResourceTestCases, DismissibleGuidance, VersionSnapshotPanel,
     ResourceVersionManager,
     ResourcePicker,
     OperandPicker,

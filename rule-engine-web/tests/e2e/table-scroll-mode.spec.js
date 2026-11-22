@@ -45,6 +45,95 @@ async function expectFixedList(page) {
   return { table, pager }
 }
 
+async function resizeDrawer(page, drawer, delta) {
+  const handle = drawer.locator('.el-drawer__dragger')
+  await expect(handle).toBeVisible()
+  const rect = await handle.boundingBox()
+  const before = await drawer.boundingBox()
+  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(rect.x + rect.width / 2 - delta, rect.y + rect.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(async () => Math.round((await drawer.boundingBox()).width - before.width)).toBe(delta)
+}
+
+async function checkDrawerScroll(drawer, table, mode) {
+  const body = drawer.locator('.el-drawer__body')
+  const wrap = table.locator('.el-scrollbar__wrap').first()
+  const scrollRange = el => el.scrollHeight - el.clientHeight
+  await expect.poll(() => (mode === 'FIXED' ? wrap : body).evaluate(scrollRange)).toBeGreaterThan(50)
+  await expect.poll(() => (mode === 'FIXED' ? body : wrap).evaluate(scrollRange)).toBeLessThanOrEqual(1)
+  const scroll = mode === 'FIXED' ? wrap : body
+  await scroll.evaluate(el => { el.scrollTop = el.scrollHeight })
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBeGreaterThan(50)
+}
+
+for (const mode of ['FIXED', 'AUTO']) test(`版本与审批抽屉支持左侧调宽、长参数预览和 ${mode} 滚动`, async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const data = createDocsApiData()
+  const fn = data.get('/api/rule/function/list').records[0]
+  const vector = Array.from({ length: 512 }, (_, i) => i)
+  const parameters = [{ name: 'embeddings', type: 'LIST', example: [vector, vector] },
+    ...Array.from({ length: 30 }, (_, i) => ({ name: 'field_' + i, type: 'NUMBER', example: i }))]
+  const snapshot = { ...fn, paramsJson: JSON.stringify(parameters) }
+  const history = Array.from({ length: 40 }, (_, i) => ({
+    id: i + 1, versionNo: i + 1, revisionNo: 1, snapshotJson: JSON.stringify(i === 39 ? snapshot : fn),
+  }))
+  const api = `/api/rule/resource-versions/FUNCTION/${fn.id}`
+  data.set(api, { latestVersionId: 40, history, versions: history.map(row => ({ versionId: row.id, version: row.versionNo, revision: 1 })) })
+  data.set(api + '/events', history.map(row => ({ id: row.id, action: 'SAVE_DRAFT' })))
+  data.set(`/api/rule/function/versions/${fn.id}`, history.map(row => ({ version: row.versionNo, functionJson: row.snapshotJson })))
+  data.set('/api/rule/governance/workspaces', { total: 20, records: history.slice(0, 20).map(row => ({
+    id: row.id, status: 'EDITING', resourceType: 'FUNCTION', action: 'UPDATE', requestNo: '申请' + row.id,
+  })) })
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+  await page.setViewportSize({ width: 1440, height: 800 })
+  await page.goto(origin + '/#/function')
+  await chooseMode(page, mode)
+  await page.getByRole('button', { name: '版本', exact: true }).first().click()
+  const versions = page.getByRole('dialog', { name: '版本管理', exact: true })
+  const params = versions.locator('[data-section="paramsJson"]')
+  await expect(params).toContainText('embeddings')
+  await resizeDrawer(page, versions, 128)
+  const first = params.getByRole('button', { name: /第 1 项/ }).first()
+  await first.click()
+  const values = first.locator('..').locator(':scope > .config-group-content')
+  await expect(values.getByText('第 512 项', { exact: true })).toHaveCount(1)
+  expect((await values.boundingBox()).height).toBeLessThan(280)
+  await values.scrollIntoViewIfNeeded()
+  await values.evaluate(el => { el.scrollTop = el.scrollHeight })
+  await expect(values.getByText('第 512 项', { exact: true })).toBeInViewport()
+  const parameterScroll = mode === 'FIXED' ? params.locator('.el-scrollbar__wrap').first() : params.locator('.business-preview-card')
+  await parameterScroll.evaluate(el => { el.scrollTop = el.scrollHeight })
+  await expect.poll(() => parameterScroll.evaluate(el => el.scrollTop)).toBeGreaterThan(50)
+  await parameterScroll.scrollIntoViewIfNeeded()
+  await expect(params.getByText('field_29', { exact: true })).toBeInViewport()
+  await versions.locator('.version-comparison-toolbar .el-select').click()
+  await page.getByRole('option', { name: 'v1 · 修订 1', exact: true }).click()
+  await resizeDrawer(page, versions, -688)
+  const panels = params.locator('.business-preview-card')
+  await expect(panels).toHaveCount(2)
+  expect((await panels.last().boundingBox()).y).toBeGreaterThan((await panels.first().boundingBox()).y)
+  await resizeDrawer(page, versions, 688)
+  await versions.getByRole('tab', { name: '版本与修订' }).click()
+  await checkDrawerScroll(versions, versions.locator('.workspace-table:visible').first(), mode)
+  await versions.getByRole('tab', { name: '变更记录' }).click()
+  await checkDrawerScroll(versions, versions.locator('.workspace-table:visible'), mode)
+  await versions.getByRole('button', { name: '早期历史快照' }).click()
+  const historical = page.getByRole('dialog', { name: '函数版本管理' })
+  await checkDrawerScroll(historical, historical.locator('.workspace-history-table'), mode)
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '草稿与审批', exact: true }).click()
+  const drafts = page.getByRole('dialog', { name: '草稿与审批', exact: true })
+  await expect(drafts.locator('.workspace-table')).toContainText('申请20')
+  await resizeDrawer(page, drafts, -128)
+  await checkDrawerScroll(drafts, drafts.locator('.workspace-table'), mode)
+  await expect(drafts.locator('.el-pagination')).toBeInViewport()
+  await page.setViewportSize({ width: 390, height: 700 })
+  await expect.poll(() => drafts.locator('.el-drawer__body').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
+  harness.assertClean()
+})
+
 for (const [index, [route, api]] of listCases.entries()) {
   test(`${route} 50 行可在表格内滚动，表头分页固定并可恢复自动高度`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })

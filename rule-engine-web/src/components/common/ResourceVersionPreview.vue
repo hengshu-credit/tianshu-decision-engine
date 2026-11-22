@@ -115,7 +115,14 @@ const detailRows = computed(() => {
 })
 </script>
 <style scoped>
-.version-preview-summary { margin: 16px 0; color: var(--tianshu-text-primary); min-width: 0; }
+.version-preview-summary {
+  container: version-preview / inline-size;
+  --version-value-max-height: min(16rem, 36vh);
+  --version-section-max-height: min(36rem, 64vh);
+  margin: 16px 0;
+  color: var(--tianshu-text-primary);
+  min-width: 0;
+}
 .preview-title, .preview-section h4 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .preview-title { margin-bottom: 12px; font-size: 16px; }
 .preview-title .el-checkbox { margin-left: auto; }
@@ -140,8 +147,13 @@ const detailRows = computed(() => {
 .basic-field dt { color: var(--tianshu-text-secondary); }
 .basic-field dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .basic-field dt .el-tag { margin-left: 4px; }
+.basic-field dd, .basic-field dt, .business-preview-head p {
+  max-height: var(--version-value-max-height);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
 .narrow-version-label { display: none; }
-@media (max-width: 640px) {
+@container version-preview (max-width: 640px) {
   .is-comparing .pane-grid { grid-template-columns: minmax(0, 1fr); }
   .narrow-version-label { display: block; font-size: 12px; color: var(--tianshu-text-secondary); margin: 0 0 6px; }
   .is-comparing .basic-field { grid-template-columns: minmax(0, 1fr); gap: 8px; }

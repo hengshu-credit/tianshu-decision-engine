@@ -1,8 +1,8 @@
 <template>
   <span class="resource-version-entry">
     <el-button v-if="canView && showTrigger" link type="primary" data-action="version" size="small" @click.stop="open">版本</el-button>
-    <el-drawer v-if="drawerMounted" v-model="visible" :class="provider?.className" title="版本管理" size="min(1120px, 100vw)" append-to-body destroy-on-close :before-close="close">
-      <div class="resource-version-manager" :aria-busy="loading">
+    <resource-workspace-drawer v-if="drawerMounted" v-model="visible" :class="provider?.className" title="版本管理" :fit-tables="!editing && ['versions', 'events'].includes(tab)" destroy-on-close :before-close="close">
+      <div class="resource-version-manager workspace-table-region" :aria-busy="loading">
         <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-select v-model="selected" aria-label="查看版本" :disabled="loading || editing || busy" @change="comparison = ''">
@@ -35,7 +35,7 @@
           </el-form>
           <div class="version-actions uiue-action-group"><el-button :disabled="busy" @click="cancelEdit">取消编辑</el-button><el-button type="primary" :loading="busy" @click="save">保存草稿</el-button></div>
         </template>
-        <el-tabs v-else v-model="tab">
+        <el-tabs v-else class="workspace-table-region" v-model="tab">
           <el-tab-pane label="预览与对比" name="preview">
             <div class="version-comparison-toolbar">
               <label :for="'version-comparison-' + contextKey">对照基准</label>
@@ -64,8 +64,8 @@
               <el-button v-if="editableDraft && canSubmit" type="primary" :loading="busy" @click="publish">提交发布审批</el-button>
             </div>
           </el-tab-pane>
-          <el-tab-pane label="版本与修订" name="versions">
-            <el-table :data="workspace.versions || []" row-key="versionId">
+          <el-tab-pane label="版本与修订" name="versions" class="workspace-table-region">
+            <el-table class="workspace-table" :data="workspace.versions || []" row-key="versionId">
               <el-table-column label="版本" width="140"><template #default="{ row }">{{ label(row) }}</template></el-table-column>
               <el-table-column prop="revision" label="当前修订" width="100" />
               <el-table-column prop="changeSummary" label="变更说明" min-width="200" />
@@ -73,7 +73,7 @@
               <el-table-column prop="createTime" label="发布时间" min-width="170" />
               <el-table-column label="操作" :width="operationColumnWidth(provider ? ['预览'] : ['预览', '删除版本'])"><template #default="{ row }"><el-button link @click="previewVersion(row.versionId)">预览</el-button><el-button v-if="!provider && canEdit && !row.latest && !row.deleted" link type="danger" :disabled="busy" @click="remove(row)">删除版本</el-button></template></el-table-column>
             </el-table>
-            <el-table :data="workspace.history || []" row-key="id" class="version-history">
+            <el-table :data="workspace.history || []" row-key="id" class="version-history workspace-table">
               <el-table-column label="历史修订" width="170"><template #default="{ row }">v{{ row.versionNo }} · 修订 {{ row.revisionNo }}</template></el-table-column>
               <el-table-column prop="changeSummary" label="变更说明" />
               <el-table-column prop="createTime" label="时间" width="180" />
@@ -83,15 +83,16 @@
           <el-tab-pane v-if="!hasLegacy && ['RULE', 'MODEL', 'EXPERIMENT'].includes(resourceType)" label="早期历史快照" name="historical">
             <historical-version-browser v-if="visible && tab === 'historical'" ref="historical" :resource-type="resourceType" :resource-id="resourceId" :model-type="modelType" />
           </el-tab-pane>
-          <el-tab-pane label="变更记录" name="events">
-            <el-table :data="events" row-key="id"><el-table-column prop="createTime" label="时间" width="180" /><el-table-column prop="actor" label="操作人" width="120" /><el-table-column label="操作" width="130"><template #default="{ row }">{{ eventLabel(row.action) }}</template></el-table-column><el-table-column prop="comment" label="说明" /><el-table-column prop="requestId" label="审批单" width="100" /></el-table>
+          <el-tab-pane label="变更记录" name="events" class="workspace-table-region">
+            <el-table class="workspace-table" :data="events" row-key="id"><el-table-column prop="createTime" label="时间" width="180" /><el-table-column prop="actor" label="操作人" width="120" /><el-table-column label="操作" width="130"><template #default="{ row }">{{ eventLabel(row.action) }}</template></el-table-column><el-table-column prop="comment" label="说明" /><el-table-column prop="requestId" label="审批单" width="100" /></el-table>
           </el-tab-pane>
         </el-tabs>
       </div>
-    </el-drawer>
+    </resource-workspace-drawer>
   </span>
 </template>
 <script>
+import ResourceWorkspaceDrawer from './ResourceWorkspaceDrawer.vue'
 import { resourceCodeIssue } from '@/utils/reservedContentCode'
 import { getResourceVersions, getResourceVersionEvents, getVersionDeletionImpact, createVersionDraft, deleteResourceVersion } from '@/api/resourceVersions'
 import MonacoEditor from '@/components/MonacoEditor.vue'
@@ -118,7 +119,7 @@ const fields = [
 
 export default {
   name: 'ResourceVersionManager',
-  components: { VersionSnapshotPanel, MonacoEditor, HistoricalVersionBrowser },
+  components: { ResourceWorkspaceDrawer, VersionSnapshotPanel, MonacoEditor, HistoricalVersionBrowser },
   props: { modelType: { type: String, default: '' }, resourceType: { type: String, required: true }, resourceId: { type: [String, Number], required: true }, showTrigger: { type: Boolean, default: true }, hasLegacy: Boolean, provider: { type: Object, default: null } },
   emits: ['changed', 'legacy'],
   data: () => ({ drawerMounted: false, visible: false, loading: false, busy: false, sequence: 0, contextGeneration: 0, workspace: {}, events: [], error: '', selected: 'LATEST', tab: 'preview', comparison: '', editing: false, editJson: '', changeSummary: '', publishMode: 'NEW', targetVersionId: '' }),

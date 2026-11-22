@@ -1,7 +1,7 @@
 <template>
   <span v-if="canView" class="governance-workspace-entry">
     <el-button size="small" @click="open">草稿与审批</el-button>
-    <el-drawer v-model="visible" title="草稿与审批" size="min(960px, 100vw)" append-to-body>
+    <resource-workspace-drawer v-model="visible" title="草稿与审批" size="min(960px, 100vw)" fit-tables>
       <div class="uiue-search-container uiue-filter-toolbar">
         <el-form inline size="small" @submit.prevent="search">
           <el-form-item label="查看范围"><el-select v-model="viewScope" aria-label="查看范围" @change="search">
@@ -10,13 +10,13 @@
           <el-form-item label="审批状态"><el-select v-model="status" aria-label="审批状态" @change="search">
             <el-option label="全部状态" value="ALL" /><el-option v-for="item in statuses" :key="item.value" :label="item.label" :value="item.value" />
           </el-select></el-form-item>
-          <el-form-item><el-button :loading="loading" @click="load">刷新</el-button></el-form-item>
         </el-form>
+        <div class="uiue-action-group"><el-button size="small" :loading="loading" @click="load">刷新</el-button></div>
       </div>
       <p class="workspace-help">保存草稿后仍可编辑；发布审批通过后才生效。新增内容待审批时须先驳回才能删除。</p>
       <el-button v-if="lastSubmitted && canReview" link type="primary" @click="review(lastSubmitted)">查看「{{ title(lastSubmitted) }}」的发布审批</el-button>
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
-      <el-table :aria-busy="loading" :data="rows" empty-text="当前范围没有草稿或审批申请">
+      <el-table class="workspace-table" :aria-busy="loading" :data="rows" empty-text="当前范围没有草稿或审批申请">
         <el-table-column label="内容" min-width="200" show-overflow-tooltip><template #default="{ row }">{{ title(row) }}</template></el-table-column>
         <el-table-column label="变更" width="90"><template #default="{ row }">{{ actionLabel(row.action) }}</template></el-table-column>
         <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
@@ -31,11 +31,12 @@
           <span v-if="row.status === 'PENDING' && isNewContentRequest(row)" class="workspace-help">驳回后可删除</span>
         </template></el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="load" />
-    </el-drawer>
+      <el-pagination v-model:current-page="page" :page-size="20" :total="total" :pager-count="5" layout="total, prev, pager, next" @current-change="load" />
+    </resource-workspace-drawer>
   </span>
 </template>
 <script>
+import ResourceWorkspaceDrawer from './common/ResourceWorkspaceDrawer.vue'
 import { listWorkspaceDrafts, listGovernanceRequests, submitGovernanceRequest, cancelGovernanceRequest, deleteResource } from '@/api/governance'
 import { hasPermission } from '@/security/permissionState'
 import { resourceActionPermission, resourceViewPermission } from '@/security/pickerAccess'
@@ -47,6 +48,7 @@ import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operati
 const statuses = [{ value: 'EDITING', label: '草稿' }, { value: 'PENDING', label: '审批中' }, { value: 'APPROVED', label: '已通过' }, { value: 'REJECTED', label: '已驳回' }, { value: 'CONFLICT', label: '审批冲突' }, { value: 'CANCELLED', label: '已取消' }]
 export default {
   name: 'GovernanceWorkspaceToolbar',
+  components: { ResourceWorkspaceDrawer },
   props: { resourceType: { type: String, default: '' }, projectId: { type: [String, Number], default: null } },
   data: () => ({ visible: false, loading: false, busy: false, status: 'EDITING', viewScope: 'MINE', page: 1, total: 0, rows: [], lastSubmitted: null, error: '', sequence: 0, statuses }),
   computed: {

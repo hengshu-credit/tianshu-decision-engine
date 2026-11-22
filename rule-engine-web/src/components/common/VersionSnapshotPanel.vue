@@ -43,8 +43,8 @@ const rawPanels = ref([])
 watch(() => [props.resourceType, props.snapshot, props.original, props.comparing, props.modifiedLabel, props.originalLabel], () => { rawPanels.value = [] })
 </script>
 <style scoped>
-.version-snapshot-panel { min-width: 0; }
+.version-snapshot-panel { container: version-snapshot / inline-size; min-width: 0; }
 .version-raw-collapse { margin: 16px 0; }
-.version-detail-scroll { max-width: 100%; overflow-x: auto; }
+.version-detail-scroll { max-width: 100%; max-height: min(36rem, 64vh); overflow: auto; }
 .version-preview { max-height: 420px; overflow: auto; margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tianshu-text-primary); background: var(--tianshu-bg-soft); }
 </style>

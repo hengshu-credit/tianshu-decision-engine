@@ -1254,20 +1254,17 @@
       </template>
     </el-dialog>
 
-    <el-dialog
+    <resource-workspace-drawer
       title="版本历史"
       v-model="versionVisible"
-      width="96%"
-      top="4vh"
-      custom-class="version-history-dialog"
+      size="96vw"
       :close-on-click-modal="false"
     >
-      <el-table show-overflow-tooltip
+      <el-table class="workspace-history-table" show-overflow-tooltip
         :data="versions"
         border
         size="small"
         :aria-busy="versionLoading"
-        max-height="240"
       >
         <el-table-column prop="version" label="版本" width="140" align="center">
           <template v-slot="{ row }">{{ versionDisplayLabel(row) }}</template>
@@ -1395,7 +1392,7 @@
           >
         </div>
       </template>
-    </el-dialog>
+    </resource-workspace-drawer>
     <artifact-deployment-dialog
       v-if="importedArtifact.artifactId"
       v-model="deploymentVisible"
@@ -1408,6 +1405,7 @@
 </template>
 
 <script>
+import ResourceWorkspaceDrawer from '@/components/common/ResourceWorkspaceDrawer.vue'
 import { pageTabState } from '@/mixins/pageTabState'
 import { declaredContentType } from '@/constants/varTypes'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
@@ -1680,7 +1678,7 @@ export default {
       ElIconSetting: markRaw(ElIconSetting),
     }
   },
-  components: { DismissibleGuidance, VersionSnapshotPanel,
+  components: { ResourceWorkspaceDrawer, DismissibleGuidance, VersionSnapshotPanel,
     SaveRuleTestInput, ApiScenarioPanel,
     RuleVersionDiff,
     RuleLifecyclePanel,
@@ -3868,14 +3866,6 @@ export default {
 }
 .btn-delete {
   color: var(--tianshu-danger-text);
-}
-:deep(.version-history-dialog) {
-  min-width: 1040px;
-}
-:deep(.version-history-dialog .el-dialog__body) {
-  max-height: 82vh;
-  overflow: auto;
-  padding-top: 16px;
 }
 .version-compare-toolbar {
   position: sticky;

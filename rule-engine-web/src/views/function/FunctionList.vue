@@ -472,11 +472,9 @@
       </template>
     </el-dialog>
 
-    <el-dialog
+    <resource-workspace-drawer
       title="函数版本管理"
       v-model="versionVisible"
-      width="min(1120px, 96vw)"
-      append-to-body
     >
       <div class="version-compare-toolbar">
         <el-select v-model="versionCompareLeft" @change="viewVersion(null)" size="small" placeholder="选择左侧版本">
@@ -504,7 +502,7 @@
           >查看具体差异</el-button
         >
       </div>
-      <el-table show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
+      <el-table class="workspace-history-table" show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
         <el-table-column
           prop="displayVersion"
           label="版本"
@@ -553,11 +551,12 @@
         :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)" />
       <version-snapshot-panel v-else-if="versionPreview" historical resource-type="FUNCTION"
         :snapshot="versionPreview" :modified-label="versionDisplayLabel(versionPreview)" />
-    </el-dialog>
+    </resource-workspace-drawer>
   </div>
 </template>
 
 <script>
+import ResourceWorkspaceDrawer from '@/components/common/ResourceWorkspaceDrawer.vue'
 import { reservedCodeError, isManagedFunction } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
@@ -703,7 +702,7 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: { DismissibleGuidance, VersionSnapshotPanel, FunctionImpactPanel, ProjectResourceSelect, ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { ResourceWorkspaceDrawer, DismissibleGuidance, VersionSnapshotPanel, FunctionImpactPanel, ProjectResourceSelect, ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     MonacoEditor,

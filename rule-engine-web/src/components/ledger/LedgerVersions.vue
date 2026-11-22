@@ -43,7 +43,8 @@ export default {
 <style scoped>
 .ledger-version-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
 .ledger-version-preview { min-width: 0; overflow-wrap: anywhere; }
+.ledger-version-preview .ledger-markdown { max-height: min(36rem, 64vh); overflow: auto; }
 .ledger-version-columns > section { padding: 16px; border: 1px solid var(--tianshu-border); border-radius: 8px; }
 .ledger-version-preview > p { font-size: 13px; color: var(--tianshu-text-secondary); }
-@media (max-width: 640px) { .ledger-version-columns { grid-template-columns: minmax(0, 1fr); } }
+@container version-snapshot (max-width: 640px) { .ledger-version-columns { grid-template-columns: minmax(0, 1fr); } }
 </style>
