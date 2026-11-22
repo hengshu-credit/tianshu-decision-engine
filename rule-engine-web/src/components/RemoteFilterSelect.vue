@@ -215,9 +215,8 @@ export default {
     },
     onSuggestionFocus(event) {
       this.resumeSuggestions()
-      const toolbar = event.target.closest('.uiue-filter-toolbar')
-      const form = event.target.closest('form')
-      if (!toolbar || !form) return
+      const form = event.target.closest('.uiue-filter-toolbar form, .tab-filter-fields')
+      if (!form) return
       // 换行的筛选表单仍需留出下一行查询和重置按钮。
       const extra = form.getBoundingClientRect().bottom - event.target.getBoundingClientRect().bottom
       this.suggestionPopperOptions = extra > 20 ? {

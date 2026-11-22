@@ -302,7 +302,7 @@ $login-muted: var(--tianshu-text-tertiary);
   --el-input-border-color: var(--tianshu-border);
   --el-input-hover-border-color: var(--el-color-primary-light-3);
   --el-input-focus-border-color: var(--el-color-primary);
-  --el-input-placeholder-color: var(--tianshu-text-tertiary);
+  --el-input-placeholder-color: var(--tianshu-input-hint);
   --el-input-icon-color: var(--tianshu-text-tertiary);
 }
 :deep(.login-form .el-input__wrapper) {

@@ -293,14 +293,29 @@ $info-color: #475569;
   background: transparent;
 }
 
+input::placeholder,
+textarea::placeholder,
 .el-input__inner::placeholder,
 .el-textarea__inner::placeholder,
 .el-range-input::placeholder {
-  color: var(--tianshu-text-tertiary);
+  color: var(--tianshu-input-hint);
   opacity: 1;
 }
 
-.el-select__placeholder,
+.el-input__inner:not(:disabled),
+.el-textarea__inner:not(:disabled),
+.el-range-input:not(:disabled),
+.el-select__wrapper:not(.is-disabled) .el-select__placeholder:not(.is-transparent) {
+  color: var(--tianshu-text-primary);
+}
+.el-select__placeholder.is-transparent { color: var(--tianshu-input-hint); }
+input[data-selected-hint]::placeholder,
+textarea[data-selected-hint]::placeholder,
+.el-select__placeholder[data-selected-hint] > span {
+  color: var(--tianshu-selection-foreground);
+  background-color: var(--tianshu-selection-bg);
+}
+
 .el-date-editor .el-range-separator {
   color: var(--tianshu-text-tertiary);
 }

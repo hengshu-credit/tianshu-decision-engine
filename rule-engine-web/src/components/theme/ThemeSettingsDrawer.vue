@@ -277,7 +277,7 @@
         <h3 id="content-layout-title">内容区域</h3>
         <div class="setting-row">
           <span>内容区宽度</span>
-          <div class="segmented-control tianshu-segmented" aria-label="内容区宽度">
+          <div class="joined-switch tianshu-segmented" role="group" aria-label="内容区宽度">
             <button
               v-for="option in contentWidthOptions"
               :key="option.value"
@@ -297,7 +297,7 @@
         <h3 id="table-scroll-title">列表表格</h3>
         <div class="setting-row">
           <span>滚动方式</span>
-          <div class="segmented-control tianshu-segmented" aria-label="列表表格滚动方式">
+          <div class="joined-switch tianshu-segmented" role="group" aria-label="列表表格滚动方式">
             <button
               v-for="option in tableScrollOptions"
               :key="option.value"
@@ -917,6 +917,14 @@ export default {
 }
 
 .setting-row + .section-hint { margin-top: 8px; }
+
+.joined-switch {
+  display: inline-flex;
+  button { border-radius: 0; white-space: nowrap; cursor: pointer; }
+  button:first-child { border-radius: 4px 0 0 4px; }
+  button:last-child { margin-inline-start: -1px; border-radius: 0 4px 4px 0; }
+  button:is(.is-active, :focus-visible) { position: relative; z-index: 1; }
+}
 
 .setting-row + .setting-row {
   margin-top: 8px;

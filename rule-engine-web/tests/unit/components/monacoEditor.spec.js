@@ -67,7 +67,7 @@ describe('MonacoEditor', () => {
       continuation.getBoundingClientRect = () => ({ left: 100, right: 110, top: 30, bottom: 50, width: 10 })
       line.append(continuation)
     }
-    wrapper.element.append(line)
+    wrapper.get('.monaco-editor-container').element.append(line)
     await wrapper.vm.normalizeReferenceCaret({ button: 0, target: code, clientX: x, clientY: 20 })
     if (end == null) expect(editor.setSelection).not.toHaveBeenCalled()
     else expect(editor.setSelection).toHaveBeenCalledWith({ selectionStartLineNumber: 1, selectionStartColumn: anchor, positionLineNumber: 1, positionColumn: end })

@@ -284,6 +284,7 @@
         <el-form-item label="函数编码" required :error="functionCodeError">
           <el-input
             v-model="editForm.funcCode"
+            @input="scheduleMethodLookup"
             maxlength="128"
             show-word-limit
             placeholder="如 calcTax（QLExpress 脚本中的调用名）"
@@ -325,14 +326,14 @@
         <template v-if="isNativeFunction">
           <el-form-item :label="editForm.implType === 'JAVA' ? 'Java类名' : 'Bean名称'" required>
             <div class="function-method-target">
-              <el-input v-if="editForm.implType === 'JAVA'" v-model="editForm.implClass" placeholder="已部署的 Java 类全名" @change="inspectConfiguredTarget" />
-              <el-input v-else v-model="editForm.implBeanName" placeholder="已部署的 Spring Bean 名称" @change="inspectConfiguredTarget" />
-              <el-button :loading="methodLoading" @click="loadFunctionMethods">读取方法</el-button>
+              <el-input v-if="editForm.implType === 'JAVA'" v-model="editForm.implClass" placeholder="已部署的 Java 类全名" @input="scheduleMethodLookup" />
+              <el-input v-else v-model="editForm.implBeanName" placeholder="已部署的 Spring Bean 名称" @input="scheduleMethodLookup" />
+              <el-button :loading="methodLoading" :disabled="!canInspectMethods" @click="loadFunctionMethods">重新读取</el-button>
             </div>
           </el-form-item>
           <el-form-item label="实际方法">
             <div class="function-method-selection">
-              <el-select v-if="!nativeManual" :model-value="selectedNativeSignature" :loading="methodLoading" filterable style="width: 100%" placeholder="选择实际方法签名" data-testid="function-method-select" @change="selectFunctionMethod">
+              <el-select v-if="!nativeManual" :model-value="selectedNativeSignature" :loading="methodLoading" filterable style="width: 100%" placeholder="选择实际方法签名" data-testid="function-method-select" @visible-change="onMethodListOpen" @change="selectFunctionMethod">
                 <el-option v-for="method in nativeMethodChoices" :key="method.signature" :value="method.signature" :label="method.displaySignature" :disabled="!method.available" :title="method.unavailableReason || method.displaySignature" />
               </el-select>
               <el-input v-else v-model="editForm.implMethod" placeholder="实际方法名（不包含括号和参数）" data-testid="function-method-name" />
@@ -346,7 +347,7 @@
           </el-form-item>
         </template>
         <el-form-item label="参数列表">
-          <div class="function-form-help">脚本按参数顺序传值。<span v-if="isNativeFunction && !nativeManual && editParams.some((_, i) => !methodParameterType(i))">点击上方“读取方法”，可查看每个参数的 Java 类型。</span></div>
+          <div class="function-form-help">脚本按参数顺序传值。<span v-if="isNativeFunction && !nativeManual && editParams.some((_, i) => !methodParameterType(i))">选择实际方法后可查看每个参数的 Java 类型。</span></div>
           <el-alert v-if="parameterConfigError" :title="parameterConfigError" type="error" :closable="false" show-icon>
             <el-button link @click="resetFunctionParameters">重新配置参数</el-button>
           </el-alert>
@@ -668,6 +669,7 @@ export default {
       methodCatalogTargetKey: '',
       methodLoading: false,
       methodRequestId: 0,
+      methodLookupTimer: null,
       editSessionId: 0,
       originalBindingKey: '',
       originalBuiltinCode: null,
@@ -709,6 +711,10 @@ export default {
     },
     canManageNative() { return hasPermission('function:native') },
     isNativeFunction() { return ['JAVA', 'BEAN'].includes(this.editForm.implType) },
+    canInspectMethods() {
+      const target = this.editForm.implType === 'JAVA' ? this.editForm.implClass : this.editForm.implBeanName
+      return this.dialogVisible && this.canManageNative && this.isNativeFunction && !!target?.trim() && !this.parameterConfigError
+    },
     nativeBindingKey() { return this.functionBindingKey() },
     nativeTargetKey() { return JSON.stringify([this.editForm.implType, this.editForm.implClass, this.editForm.implBeanName]) },
     currentMethodCatalog() { return this.methodCatalogKey === this.nativeBindingKey ? this.methodCatalog : null },
@@ -739,10 +745,10 @@ export default {
     this.loadFunctions()
   },
   watch: {
-    dialogVisible(visible) { if (!visible) { this.methodRequestId++; this.editSessionId++; this.methodLoading = false } },
+    dialogVisible(visible) { if (!visible) { this.cancelMethodLookup(); this.editSessionId++ } },
     '$route.query.projectId'() { this.handleProjectContextChange() },
   },
-  beforeUnmount() { this.methodRequestId++; this.editSessionId++ },
+  beforeUnmount() { this.cancelMethodLookup(); this.editSessionId++ },
   methods: {
     parameterCodeError(name) {
       if (this.originalBuiltinCode === this.editForm.funcCode && this.editForm.scope === 'GLOBAL' && this.originalBuiltinParams.includes(name)) return ''
@@ -770,13 +776,26 @@ export default {
       return JSON.stringify([this.nativeTargetKey, this.editForm.implMethod?.trim() || this.editForm.funcCode,
         this.editParams.map(param => [param.type, param.javaType])])
     },
+    cancelMethodLookup() {
+      clearTimeout(this.methodLookupTimer)
+      this.methodRequestId++
+      this.methodLoading = false
+    },
+    clearMethodLookup() {
+      this.cancelMethodLookup()
+      this.methodCatalog = null
+      this.methodCatalogKey = ''
+      this.methodCatalogTargetKey = ''
+    },
     resetMethodEditor() {
-      this.editSessionId++; this.methodRequestId++; this.methodLoading = false
-      this.methodCatalog = null; this.methodCatalogKey = ''; this.methodCatalogTargetKey = ''; this.nativeManual = false
+      this.clearMethodLookup()
+      this.editSessionId++
+      this.nativeManual = false
       this.parameterConfigError = ''; this.functionSaving = false
     },
     onImplementationChange(type) {
-      this.methodRequestId++; this.methodLoading = false; this.methodCatalog = null; this.methodCatalogKey = ''; this.nativeManual = false
+      this.clearMethodLookup()
+      this.nativeManual = false
       if (type === 'SCRIPT') this.editParams = this.editParams.map(param => {
         const copy = { ...param }; delete copy.javaType; return copy
       })
@@ -784,22 +803,30 @@ export default {
         && this.editParams[0].type === 'STRING' && Object.keys(this.editParams[0]).every(key => ['name', 'type', 'label'].includes(key))) {
         this.editParams = []
       }
+      this.loadFunctionMethods()
     },
     resetFunctionParameters() {
       this.editParams = []; this.parameterConfigError = ''
       this.methodCatalog = null; this.methodCatalogKey = ''
+      this.loadFunctionMethods()
     },
-    inspectConfiguredTarget() {
-      const target = this.editForm.implType === 'JAVA' ? this.editForm.implClass : this.editForm.implBeanName
-      if (this.isNativeFunction && target?.trim() && !this.parameterConfigError) return this.loadFunctionMethods()
+    scheduleMethodLookup() {
+      if (!this.isNativeFunction) return
+      this.clearMethodLookup()
+      if (this.canInspectMethods) this.methodLookupTimer = setTimeout(() => this.loadFunctionMethods(), 350)
+    },
+    onMethodListOpen(open) {
+      if (open && !this.methodLoading && this.methodCatalogTargetKey !== this.nativeTargetKey) this.loadFunctionMethods()
     },
     async loadFunctionMethods() {
+      clearTimeout(this.methodLookupTimer)
+      if (!this.canInspectMethods) return
       const requestId = ++this.methodRequestId
       const session = this.editSessionId
       const key = this.nativeBindingKey
       const targetKey = this.nativeTargetKey
       const payload = { ...this.editForm, paramsJson: JSON.stringify(this.editParams) }
-      this.methodLoading = true; this.methodCatalog = null; this.methodCatalogKey = ''
+      this.methodLoading = true; this.methodCatalog = null; this.methodCatalogKey = ''; this.methodCatalogTargetKey = ''
       try {
         const response = await inspectFunctionMethods(payload)
         if (requestId !== this.methodRequestId || session !== this.editSessionId || targetKey !== this.nativeTargetKey || !this.dialogVisible) return
@@ -1026,7 +1053,7 @@ export default {
         this.editParams = [{ name: '', type: 'STRING', label: '' }]
       this.originalBindingKey = this.functionDeclarationKey()
       this.dialogVisible = true
-      return this.inspectConfiguredTarget()
+      return this.loadFunctionMethods()
     },
     handleTestFunction(row) {
       this.testingCurrentScript = false
@@ -1155,6 +1182,7 @@ export default {
           const unchangedLegacyBinding = this.editForm.id && this.functionDeclarationKey() === this.originalBindingKey
           if (!unchangedLegacyBinding && (!payload.implMethod?.trim() || params.some(param => !param.javaType)))
             throw new Error('请选择实际方法，或明确填写方法名及每个参数的实际方法类型')
+          this.cancelMethodLookup()
           const inspected = await inspectFunctionMethods(payload)
           if (session !== this.editSessionId || !this.dialogVisible) return
           if (snapshotKey !== JSON.stringify([this.editForm, this.editParams])) {

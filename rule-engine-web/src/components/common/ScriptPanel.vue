@@ -92,25 +92,8 @@
           />
         </div>
 
-        <div
-          class="sp-resizer"
-          role="separator"
-          tabindex="0"
-          aria-label="调整代码面板高度"
-          aria-orientation="horizontal"
-          :aria-valuemin="heightLimits.min"
-          :aria-valuemax="heightLimits.max"
-          :aria-valuenow="editorHeight"
-          title="拖动或用上下方向键调整高度，双击恢复默认"
-          @pointerdown="startResize"
-          @pointermove="resize"
-          @lostpointercapture="drag = null"
-          @keydown.up.prevent="setHeight(editorHeight - 32)"
-          @keydown.down.prevent="setHeight(editorHeight + 32)"
-          @keydown.home.prevent="setHeight(heightLimits.min)"
-          @keydown.end.prevent="setHeight(heightLimits.max)"
-          @dblclick="setHeight(heightLimits.initial)"
-        />
+        <editor-height-handle v-model="editorHeight" label="调整代码面板高度"
+          :initial="heightLimits.initial" :min="heightLimits.min" :max="heightLimits.max" />
         <div class="sp-footer">
           <span class="sp-footer-tip">
             <el-icon><el-icon-info /></el-icon>
@@ -127,6 +110,7 @@
 
 <script>
 import { markRaw } from 'vue'
+import EditorHeightHandle from './EditorHeightHandle.vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import {
   Promotion as ElIconSPromotion,
@@ -143,6 +127,7 @@ export default {
   name: 'ScriptPanel',
   components: {
     MonacoEditor,
+    EditorHeightHandle,
     ElIconSPromotion,
     ElIconCloseCircle,
     ElIconInfo,
@@ -167,7 +152,6 @@ export default {
       showReferences: false,
       editorHeight: heightLimits.initial,
       heightLimits,
-      drag: null,
       editorOptions: {
         readOnly: true,
         minimap: { enabled: false },
@@ -201,17 +185,6 @@ export default {
     },
   },
   methods: {
-    setHeight(height) {
-      this.editorHeight = Math.min(heightLimits.max, Math.max(heightLimits.min, Math.round(height)))
-    },
-    startResize(event) {
-      if (event.button !== 0 || !event.isPrimary) return
-      event.currentTarget.setPointerCapture(event.pointerId)
-      this.drag = { id: event.pointerId, top: event.clientY, height: this.editorHeight }
-    },
-    resize(event) {
-      if (this.drag?.id === event.pointerId) this.setHeight(this.drag.height + event.clientY - this.drag.top)
-    },
     toggleExpand() {
       this.expanded = !this.expanded
     },
@@ -345,29 +318,6 @@ export default {
 .sp-editor-container {
   display: flex;
   overflow: hidden;
-}
-
-.sp-resizer {
-  display: grid;
-  height: 12px;
-  place-items: center;
-  cursor: row-resize;
-  touch-action: none;
-  user-select: none;
-  background: var(--tianshu-bg-muted);
-
-  &::after {
-    content: '';
-    width: 40px;
-    height: 3px;
-    border-radius: 2px;
-    background: var(--tianshu-text-tertiary);
-  }
-
-  &:hover::after,
-  &:focus-visible::after {
-    background: var(--el-color-primary);
-  }
 }
 
 .sp-line-numbers {

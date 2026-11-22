@@ -2,6 +2,7 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
+const { DEFAULT_THEME_CONFIG } = require('../../src/theme/themeConfig.js')
 
 for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 函数方法选择保留精确类型并在宽窄切换后保持可操作`, async ({ page }) => {
   await page.addInitScript(scheme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({ schemaVersion: 1, colorScheme: scheme, accentPreset: 'LIQUID_PURPLE', sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false })), colorScheme)
@@ -21,7 +22,6 @@ for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 函数方法�
   await page.goto('http://tianshu.local/index.html#/function')
   await page.getByRole('row').filter({ hasText: 'e2eMath' }).getByRole('button', { name: '编辑', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '编辑函数', exact: true })
-  await dialog.getByRole('button', { name: '读取方法', exact: true }).click()
   await expect(dialog).toContainText('方法已核对')
   await dialog.getByTestId('function-method-select').click()
   await page.getByRole('option', { name: 'min(int, int) → int', exact: true }).click()
@@ -45,6 +45,111 @@ for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 函数方法�
   expect(harness.requests.filter(request => request.method === 'POST' && /\/governance\/requests\/\d+\/submit$/.test(new URL(request.url).pathname))).toEqual([])
   const snapshot = JSON.parse(submitted.snapshotJson)
   expect(snapshot.implMethod).toBe('max'); expect(JSON.parse(snapshot.paramsJson)).toEqual(params)
+  harness.assertClean()
+})
+
+for (const scheme of ['LIGHT','DARK']) test(`${scheme} 空输入框的提示可复制，输入和复制实际值仍使用原字段`, async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const theme = { ...DEFAULT_THEME_CONFIG, colorScheme: scheme }
+  await page.addInitScript(value => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(value)), theme)
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: new Map([
+    ['/api/auth/console/preferences/theme', theme],
+    ['/api/rule/function/list', { records: [], total: 0 }],
+  ]) })
+  await page.goto(`${origin}/#/function`)
+  await expect(page.locator('html')).toHaveAttribute('data-theme', scheme.toLowerCase())
+  await page.getByRole('button', { name: '新建函数', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '新建函数', exact: true })
+  const code = dialog.getByPlaceholder('如 calcTax（QLExpress 脚本中的调用名）')
+  const description = dialog.getByPlaceholder('函数功能说明')
+  const name = dialog.getByPlaceholder('中文名称，如 计算税额')
+  const colors = await code.evaluate(el => [getComputedStyle(el).color, getComputedStyle(el, '::placeholder').color])
+  expect(colors[0]).not.toBe(colors[1])
+  await code.dblclick()
+  await expect(code).toHaveAttribute('data-selected-hint', '')
+  await page.keyboard.press('Control+c')
+  await expect(code).toHaveValue('')
+  await name.click()
+  await page.keyboard.press('Control+v')
+  await expect(name).toHaveValue(await code.getAttribute('placeholder'))
+  const box = await code.boundingBox()
+  await page.mouse.move(box.x + 10, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 90, box.y + box.height / 2, { steps: 4 })
+  await page.mouse.up()
+  await expect(code).toHaveAttribute('data-selected-hint', '')
+  await code.press('Control+c')
+  await description.click()
+  await description.press('Control+v')
+  await expect(description).toHaveValue(await code.getAttribute('placeholder'))
+  await description.fill('')
+  await description.click()
+  await page.keyboard.press('Control+a')
+  await page.keyboard.press('Control+c')
+  await expect(description).toHaveValue('')
+  await name.fill('')
+  await name.press('Control+v')
+  await expect(name).toHaveValue('函数功能说明')
+  await code.click()
+  await code.press('Control+a')
+  await page.keyboard.insertText('realValue')
+  await expect(code).toHaveValue('realValue')
+  await code.press('End')
+  for (let i = 0; i < 5; i++) await code.press('Shift+ArrowLeft')
+  await code.press('Control+c')
+  await description.click()
+  await description.press('Control+v')
+  await expect(description).toHaveValue('Value')
+  harness.assertClean()
+})
+
+test('函数脚本可单独调高，Java 类和 Bean 输入后自动读取实际方法', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const targets = []
+  const apiData = new Map([
+    ['/api/rule/function/list', { records: [], total: 0 }],
+    ['POST /api/rule/function/methods', ({ request }) => {
+      const form = request.postDataJSON()
+      targets.push(form.implType === 'JAVA' ? form.implClass : form.implBeanName)
+      return { status: 'AVAILABLE', valid: false, message: '请选择实际方法', methods: [
+        { name: 'score', signature: 'score()', displaySignature: 'score() → int', available: true, returnJavaType: 'int', parameters: [] },
+      ] }
+    }],
+  ])
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+  await page.goto(`${origin}/#/function`)
+  await page.getByRole('button', { name: '新建函数', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '新建函数', exact: true })
+  const editor = dialog.locator('.monaco-editor-container')
+  await editor.locator('.view-lines').click()
+  await page.keyboard.insertText('return 42;')
+  const handle = dialog.getByRole('separator', { name: '调整脚本编辑器高度' })
+  await handle.scrollIntoViewIfNeeded()
+  const initialHeight = (await editor.boundingBox()).height
+  const grip = await handle.boundingBox()
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 + 80, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(async () => (await editor.boundingBox()).height).toBeGreaterThanOrEqual(initialHeight + 78)
+  await handle.dblclick()
+  await expect.poll(async () => (await editor.boundingBox()).height).toBe(initialHeight)
+  await expect(editor.locator('.view-lines')).toContainText('return 42;')
+
+  await dialog.getByText('Java 类', { exact: true }).click()
+  const javaClass = dialog.getByPlaceholder('已部署的 Java 类全名')
+  await javaClass.fill('example.Score')
+  await expect.poll(() => targets).toEqual(['example.Score'])
+  await expect(javaClass).toBeFocused()
+  await dialog.getByTestId('function-method-select').click()
+  await page.getByRole('option', { name: 'score() → int' }).click()
+  await dialog.getByText('Spring Bean', { exact: true }).click()
+  const bean = dialog.getByPlaceholder('已部署的 Spring Bean 名称')
+  await bean.fill('scoreBean')
+  await expect.poll(() => targets).toEqual(['example.Score', 'scoreBean'])
+  await expect(bean).toBeFocused()
+  await dialog.getByText('Java 类', { exact: true }).click()
+  await expect.poll(() => targets).toEqual(['example.Score', 'scoreBean', 'example.Score'])
   harness.assertClean()
 })
 
