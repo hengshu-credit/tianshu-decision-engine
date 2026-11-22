@@ -24,6 +24,19 @@ async function expectLoader(locator) {
   await expect(locator.locator('svg:visible')).toHaveCount(0)
 }
 
+async function expectSquareButtonSpinner(spinner) {
+  const geometry = await spinner.evaluate(element => {
+    const arc = getComputedStyle(element, '::before'), dot = getComputedStyle(element, '::after')
+    return { width: parseFloat(arc.width), height: parseFloat(arc.height), diameter: element.offsetWidth,
+      dotWidth: dot.width, dotHeight: dot.height, gap: arc.borderLeftColor, stroke: arc.borderBottomColor, color: arc.color }
+  })
+  expect(geometry.width).toBe(geometry.height)
+  expect(geometry.width).toBe(geometry.diameter)
+  expect(geometry.width).toBeGreaterThanOrEqual(16)
+  expect(geometry.dotWidth).toBe(geometry.dotHeight)
+  expect(geometry.gap).toBe('rgba(0, 0, 0, 0)')
+  expect(geometry.stroke).toBe(geometry.color)
+}
 async function centeredPanel(panel, loader) {
   const box = await panel.boundingBox()
   const icon = await loader.boundingBox()
@@ -146,6 +159,7 @@ test('登录按钮显示旋转圆圈，提交期间保持禁用状态和文字�
     expect(arc.animation).not.toBe('none')
     expect(arc.count).toBe('infinite')
     expect(arc.stroke).toBe(textColor)
+    await expectSquareButtonSpinner(spinner)
     await expect(button).toHaveAccessibleName('登录中…')
     await expect(button).toBeDisabled()
     await expect(button).toHaveCSS('color', textColor)
@@ -188,6 +202,7 @@ test('规则选项加载与列表使用相同面板，执行期间按钮显示�
     await expect(spinner.locator('svg')).toBeHidden()
     expect(await spinner.evaluate(el => getComputedStyle(el, '::before').animationName)).toBe('button-spin')
     expect(await spinner.evaluate(el => getComputedStyle(el, '::after').backgroundColor)).toBe(await spinner.evaluate(el => getComputedStyle(el).color))
+    await expectSquareButtonSpinner(spinner)
     const result = page.locator('.result-loading')
     await expectLoader(result.locator('.tianshu-loading'))
     await centeredPanel(result, result.locator('.tianshu-loading'))

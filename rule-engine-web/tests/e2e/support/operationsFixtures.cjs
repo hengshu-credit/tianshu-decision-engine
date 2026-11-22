@@ -168,7 +168,8 @@ function createOperationsApiData() {
       diagnostics: []
     }
   }))
-  routes.set('/api/rule/definition/101/api-scenarios', [])
+  routes.set('/api/rule/test-data/cases', { records: [], total: 0 })
+  routes.set('/api/rule/definition/101/api-scenarios', [{ id: 71, status: 1, scenarioName: '成年申请', requestJson: '{"params":{"age":24}}' }])
   routes.set('POST /api/rule/definition/execute', withTestExecutionIdentity({
     success: true,
     result: { approved: true, score: 88 },

@@ -160,8 +160,7 @@ test('规则测试长表单可滚动到底并点击执行，窄屏底部也可�
   await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
   await page.getByRole('option', { name: /age_rule/ }).click()
   await expect(page.getByText('测试输入已就绪', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '输入工具', exact: true }).click()
-  await page.getByRole('button', { name: '生成模拟输入', exact: true }).click()
+  await page.getByRole('button', { name: '加载MOCK数据', exact: true }).click()
   await expect(page.locator('.param-value input').first()).toHaveValue('36')
   for (let i = 0; i < 18; i++) await page.getByRole('button', { name: '添加参数' }).click()
   await expect(page.locator('.param-row')).toHaveCount(19)
@@ -183,8 +182,7 @@ test('规则测试长表单可滚动到底并点击执行，窄屏底部也可�
   await execute.click()
   await expectNoRootOverflow(page)
   await page.setViewportSize({ width: 1440, height: 1400 })
-  await page.getByRole('button', { name: '输入工具', exact: true }).click()
-  await page.getByRole('button', { name: '载入默认样例', exact: true }).click()
+  await page.getByRole('button', { name: '载入样例', exact: true }).click()
   const shortLayout = await page.locator('.test-actions').evaluate(element => ({
     top: element.getBoundingClientRect().top,
     previousBottom: element.previousElementSibling.getBoundingClientRect().bottom,
@@ -234,13 +232,12 @@ test('规则测试在表单与 JSON 间同步输入、生成样例并校验执�
   await expect(editor.getByRole('alert')).toHaveText('输入参数必须是 JSON 对象')
   await page.getByRole('button', { name: '执行测试', exact: true }).click()
   expect(submitted).toBeNull()
-  await page.getByRole('button', { name: '输入工具', exact: true }).click()
-  await page.getByRole('button', { name: '载入默认样例', exact: true }).click()
+  await page.getByRole('button', { name: '载入样例', exact: true }).click()
   await expect(editor.getByRole('alert')).toHaveCount(0)
-  await expect(editor.locator('.view-lines')).toContainText('18')
+  await expect(editor.locator('.view-lines')).toContainText('24')
   await page.getByRole('button', { name: '执行测试', exact: true }).click()
   await expect(page.getByText('执行成功', { exact: true })).toBeVisible()
-  expect(JSON.parse(submitted.requestJson).params).toEqual({ age: 18 })
+  expect(JSON.parse(submitted.requestJson).params).toEqual({ age: 24 })
   await page.screenshot({ path: testInfo.outputPath('rule-test-json.png') })
   assertClean()
 })
@@ -1043,7 +1040,7 @@ test('夜间模式下审批与修订字段区域使用主题表面色', async ({
   assertClean()
 })
 
-test('固定用例标题与三项操作在桌面和窄屏内完整可见', async ({ page }) => {
+test('输入参数的两组操作在桌面和窄屏内完整可见', async ({ page }) => {
   const fixtures = createOperationsApiData()
   fixtures.set('/api/rule/definition/101/api-scenarios', [{ id: 71, scenarioName: '标题布局用例', requestJson: '{"params":{"age":18}}', responseJson: '{}', expectationJson: '{"version":1,"mode":"NONE"}' }])
   const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
@@ -1051,20 +1048,18 @@ test('固定用例标题与三项操作在桌面和窄屏内完整可见', async
   await page.goto('http://tianshu.local/index.html#/test')
   await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
   await page.getByRole('option', { name: /age_rule/ }).click()
-  await page.locator('.fixed-case-row').getByRole('button', { name: '载入', exact: true }).click()
-  await expect(page.getByRole('button', { name: '保存当前用例', exact: true })).toBeVisible()
-  for (const width of [1440, 768]) {
+  const card = page.locator('.input-parameters-card')
+  await expect(page.locator('.test-left .fixed-cases-card')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '回归报告', exact: true })).toHaveCount(0)
+  for (const width of [1440, 768, 390]) {
     await page.setViewportSize({ width, height: 1000 })
-    const title = page.locator('.fixed-cases-title > span').first()
-    await expect.poll(() => title.evaluate(element => {
-      const range = document.createRange(); range.selectNodeContents(element)
-      return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size
-    })).toBe(1)
-    const card = await page.locator('.fixed-cases-card').boundingBox()
-    for (const name of ['保存为新用例', '保存当前用例', '批量执行']) {
-      const box = await page.getByRole('button', { name, exact: true }).boundingBox()
-      expect(box.x).toBeGreaterThanOrEqual(card.x)
-      expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width)
+    await expect(card.locator('.input-parameters-title button')).toHaveText(['重新加载字段', '加载MOCK数据'])
+    await expect(card.locator('.input-mode-toolbar button')).toHaveText(['载入样例', ' 添加参数'])
+    const bounds = await card.boundingBox()
+    for (const name of ['重新加载字段', '加载MOCK数据', '载入样例', '添加参数']) {
+      const box = await card.getByRole('button', { name, exact: true }).boundingBox()
+      expect(box.x).toBeGreaterThanOrEqual(bounds.x)
+      expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width)
     }
   }
   assertClean()

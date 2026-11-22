@@ -1,3 +1,4 @@
+const { openRuleCaseTools, returnToRuleTest } = require('./support/ruleCaseTools.cjs')
 const { existsSync } = require('node:fs')
 const path = require('node:path')
 const { expect, test } = require('@playwright/test')
@@ -59,6 +60,7 @@ test('真实规则测试收藏保留执行快照并完整恢复输入', async ({
   await expect(page.getByTestId('test-validation-result')).toContainText('未设置预期')
 
   try {
+    await openRuleCaseTools(page)
     await page.getByRole('button', { name: '保存为新用例', exact: true }).click()
     const prompt = page.locator('.el-message-box')
     await expect(prompt.getByText('收藏测试用例', { exact: true })).toBeVisible()
@@ -73,15 +75,20 @@ test('真实规则测试收藏保留执行快照并完整恢复输入', async ({
     const fixedCase = page.locator('.fixed-case-row').filter({ hasText: caseName })
     await expect(fixedCase).toBeVisible()
 
+    await returnToRuleTest(page)
     await snapshotRow.locator('.param-value input').fill('changed')
+    await openRuleCaseTools(page)
     await page.getByRole('button', { name: '保存为新用例', exact: true }).click()
     await expect(page.getByText('输入参数已修改，请重新执行后再收藏输入与结果', { exact: true })).toBeVisible()
     await expect(page.locator('.el-message-box')).not.toBeVisible()
+    await returnToRuleTest(page)
     await page.getByRole('button', { name: '添加参数', exact: true }).click()
     const temporaryRow = page.locator('.param-row').last()
     await temporaryRow.locator('.param-key input').fill('uiTemporaryField')
     await temporaryRow.locator('.param-value input').fill('remove-me')
+    await openRuleCaseTools(page)
     await fixedCase.getByRole('button', { name: '载入', exact: true }).click()
+    await returnToRuleTest(page)
     await expect(page.locator('.param-row')).toHaveCount(savedParamCount)
     const loadedKeys = await page.locator('.param-key input').evaluateAll(inputs => inputs.map(input => input.value))
     expect(loadedKeys).not.toContain('uiTemporaryField')

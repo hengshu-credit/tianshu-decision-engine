@@ -189,13 +189,16 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     const selector = panel.getByTestId('field-revision-select')
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 })
-      if (width === 390) {
+      if (width === 1280) {
         const grip = await page.getByRole('button', { name: '调整侧边栏宽度' }).boundingBox()
         await page.mouse.move(grip.x + grip.width / 2, grip.y + 100)
         await page.mouse.down()
         await page.mouse.move(64, grip.y + 100, { steps: 8 })
         await page.mouse.up()
         await expect(page.locator('.layout-sidebar')).toHaveClass(/is-compact/)
+      } else {
+        await expect(page.locator('.layout-sidebar')).toBeHidden()
+        await expect(page.getByRole('button', { name: '展开侧边栏' })).toHaveAttribute('aria-expanded', 'false')
       }
       await expect(selector).toBeVisible()
       await expect(selector).toContainText('修订 2 · 已发布')
@@ -329,8 +332,8 @@ test('名单详情加载记录和变更日志且内容可复制', async ({ page 
 test('名单变更日志窄屏日期范围与操作均完整可见', async ({ page }) => {
   const errors = await openDetailPage(page, '/list/9')
   await page.setViewportSize({ width: 560, height: 900 })
-  const expand = page.getByRole('button', { name: '展开侧边栏', exact: true })
-  if (await expand.isVisible()) await expand.click()
+  await expect(page.getByRole('button', { name: '展开侧边栏', exact: true })).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.locator('.layout-sidebar')).toBeHidden()
   await page.getByRole('tab', { name: '变更日志', exact: true }).click()
   const toolbar = page.getByTestId('log-filter-toolbar')
   const frame = await toolbar.boundingBox()

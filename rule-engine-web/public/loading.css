@@ -45,33 +45,37 @@
 }
 .el-loading-mask.is-fullscreen .el-loading-spinner { margin: 0; }
 
+.el-button.is-loading > span > .el-icon:first-child { display: none; }
+
 /* 按钮复用登录反馈，中心点静止，仅旋转外侧两段圆弧。 */
 :is(.login-spinner, .el-button > .el-icon.is-loading) {
-  display: inline-grid;
-  place-items: center;
+  position: relative;
+  display: inline-block;
   width: 1em;
   height: 1em;
+  min-width: 16px;
+  min-height: 16px;
   flex: none;
   background: none;
 }
 :is(.login-spinner, .el-button > .el-icon.is-loading)::before,
 :is(.login-spinner, .el-button > .el-icon.is-loading)::after {
   content: '';
-  grid-area: 1 / 1;
+  position: absolute;
   border-radius: 50%;
 }
 :is(.login-spinner, .el-button > .el-icon.is-loading)::before {
-  width: 100%;
-  height: 100%;
+  inset: 0;
   box-sizing: border-box;
-  border: 2px solid currentColor;
-  background: color-mix(in srgb, currentColor 8%, transparent);
-  clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 50%, 50% 50%, 50% 100%, 0 100%, 0 50%);
+  border: 2px solid transparent;
+  border-block-color: currentColor;
   animation: button-spin 1.35s linear infinite;
 }
 :is(.login-spinner, .el-button > .el-icon.is-loading)::after {
-  width: .22em;
-  height: .22em;
+  width: 24%;
+  height: 24%;
+  inset: 0;
+  margin: auto;
   background: currentColor;
 }
 @keyframes button-spin { to { transform: rotate(360deg); } }

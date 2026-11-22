@@ -1,3 +1,4 @@
+const { openRuleCaseTools, returnToRuleTest } = require('./support/ruleCaseTools.cjs')
 const { test, expect } = require('@playwright/test')
 
 const baseUrl = process.env.E2E_BASE_URL
@@ -34,7 +35,7 @@ async function selectTestRule(page, code) {
   await expect(page.getByTestId('rule-test-source')).toContainText(/草稿\s*1/)
 }
 async function checkRegression(page, assertion) {
-  await page.getByRole('button', { name: '回归报告', exact: true }).click()
+  await page.getByRole('button', { name: '查看回归结果', exact: true }).click()
   const response = page.waitForResponse(item => item.url().endsWith('/reports/check') && item.request().method() === 'POST')
   await page.getByRole('button', { name: '复核当前修订', exact: true }).click()
   const body = await (await response).json()
@@ -180,12 +181,15 @@ test('隔离环境通过 UI 新建项目、提交审批、生效并测试数据�
   await execution.getByRole('button', { name: '关闭', exact: true }).click()
   const designerUrl = page.url()
   await selectTestRule(page, `Rule_${suffix}`)
+  await openRuleCaseTools(page)
   await checkRegression(page, gate => { expect(gate.allowed).toBe(true); expect(gate.requiredCount).toBe(0) })
+  await returnToRuleTest(page)
   await page.getByRole('button', { name: '执行测试', exact: true }).click()
   await expect(page.getByText('执行成功', { exact: true }).first()).toBeVisible()
   await page.locator('.expected-output-editor summary').click()
   await page.getByTestId('expectation-mode').getByText('JSON 快照', { exact: true }).click()
   await page.getByTestId('expectation-use-actual').click()
+  await openRuleCaseTools(page)
   await page.getByRole('button', { name: '保存为新用例', exact: true }).click()
   const favorite = page.getByRole('dialog', { name: '收藏测试用例', exact: true })
   await favorite.getByRole('textbox').fill(`固定42_${suffix}`)
@@ -197,7 +201,8 @@ test('隔离环境通过 UI 新建项目、提交审批、生效并测试数据�
   await page.locator('[data-action="confirm-publish"]').click()
   await expect(page.getByText(/固定用例回归未全部通过/).first()).toBeVisible()
   await selectTestRule(page, `Rule_${suffix}`)
-  await page.getByText(`固定42_${suffix}`, { exact: true }).click()
+  await openRuleCaseTools(page)
+  await page.locator('.fixed-case-list').getByText(`固定42_${suffix}`, { exact: true }).click()
   await page.getByRole('button', { name: '批量执行', exact: true }).click()
   await expect(page.locator('.batch-result-table')).toContainText('校验通过', { timeout: 30000 })
   await checkRegression(page, gate => { expect(gate.allowed).toBe(true); expect(gate.passedCount).toBe(1) })

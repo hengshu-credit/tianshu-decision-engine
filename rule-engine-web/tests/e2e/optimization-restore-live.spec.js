@@ -1,3 +1,4 @@
+const { openRuleCaseTools } = require('./support/ruleCaseTools.cjs')
 const { test, expect } = require('@playwright/test')
 const fs = require('node:fs')
 const ui = require('./support/optimizationLive.cjs')
@@ -52,7 +53,8 @@ test('隔离备份恢复后从生产 dist 登录，规则结果和持久化回�
   expect(executionResponse.code).toBe('000000')
   const execution = JSON.parse(executionResponse.data.responseJson).data
   expect(execution.success).toBe(true); expect(execution.result).toBe(45)
-  await page.getByRole('button', { name: '回归报告', exact: true }).click()
+  await openRuleCaseTools(page)
+  await page.getByRole('button', { name: '查看回归结果', exact: true }).click()
   const reports = page.getByRole('dialog', { name: '回归报告', exact: true })
   await expect(reports.getByText('校验通过', { exact: true }).first()).toBeVisible()
   const checked = page.waitForResponse(response => response.url().endsWith('/reports/check') && response.request().method() === 'POST')

@@ -22,6 +22,7 @@
       </el-form>
       <div class="uiue-btn-bar"><div class="btn-right">
         <table-column-settings v-model="order" :columns="columns" :storage-key="storageKey" />
+        <slot name="toolbar-actions" />
         <el-button size="small" :icon="Refresh" :loading="loading" @click="$emit('refresh')">刷新</el-button>
         <el-button v-if="createLabel" type="primary" size="small" :icon="Plus" @click="$emit('create')">{{ createLabel }}</el-button>
       </div></div>

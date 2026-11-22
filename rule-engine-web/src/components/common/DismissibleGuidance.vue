@@ -21,11 +21,13 @@ const props = defineProps({
   label: { type: String, required: true },
   heading: { type: String, default: '' },
 })
+const emit = defineEmits(['close'])
 const closed = ref(false)
 const visible = computed(() => props.guideId ? !isGuidanceHidden(props.guideId) : !closed.value)
 function close() {
   if (props.guideId) hideGuidance(props.guideId)
   else closed.value = true
+  emit('close')
 }
 const closeLabel = computed(() => '关闭' + props.label)
 </script>

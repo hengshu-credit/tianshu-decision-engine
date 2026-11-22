@@ -2,6 +2,7 @@
   <test-directory-table v-model:filters="filters" :columns="columns" :rows="rows" :loading="loading" :error="error" :suggestions="suggestions"
     storage-key="tianshu:table-columns:test-cases" placeholder="用例、资源名称或编码" empty-text="暂无测试用例" :action-width="170"
     :create-label="editableKinds.length ? '新增用例' : ''" @search="search" @reset="reset" @refresh="load" @create="create">
+    <template #toolbar-actions><slot name="toolbar-actions" /></template>
     <template #filters>
       <el-form-item label="用例类型"><el-select v-model="filters.type" clearable placeholder="全部" style="width: 115px">
         <el-option v-for="(label,key) in kinds" :key="key" :value="key" :label="label" />
@@ -167,6 +168,7 @@ async function remove(row) {
 let suspended = false
 onDeactivated(() => { suspended = true; detailRequest++ })
 onActivated(() => { if (suspended) { suspended = false; load() } })
+defineExpose({ refresh: load })
 onMounted(load)
 </script>
 <style scoped>
