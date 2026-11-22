@@ -61,8 +61,10 @@ export default {
     },
     resize(clientX, clientY) {
       if (!this.resizing || !this.dialog) return
-      const maxWidth = Math.max(0, window.innerWidth - 32)
-      const maxHeight = Math.max(0, window.innerHeight - 32)
+      const overlay = this.dialog.closest('.el-overlay-dialog')
+      const padding = overlay && getComputedStyle(overlay)
+      const maxWidth = Math.max(0, window.innerWidth - (padding ? parseFloat(padding.paddingLeft) + parseFloat(padding.paddingRight) : 32))
+      const maxHeight = Math.max(0, window.innerHeight - (padding ? parseFloat(padding.paddingTop) + parseFloat(padding.paddingBottom) : 32))
       // 弹窗保持居中，两侧同步伸缩，让右下角跟随指针。
       const width = Math.min(Math.max(this.startWidth + 2 * (clientX - this.startX), this.minWidth), maxWidth)
       const height = Math.min(Math.max(this.startHeight + 2 * (clientY - this.startY), this.minHeight), maxHeight)

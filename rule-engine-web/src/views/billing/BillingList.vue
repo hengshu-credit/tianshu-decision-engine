@@ -876,7 +876,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item v-if="configForm.id" label="状态">
+            <el-form-item v-if="configForm.id" label="状态" label-width="56px">
               <el-switch
                 v-model="configForm.status"
                 :active-value="1"

@@ -460,6 +460,16 @@ describe('统一审批详情', () => {
     })
   })
 
+  test('已生效的函数审批以函数 ID 打开血缘图', async () => {
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    await flushPromises()
+    wrapper.vm.detail = { ...wrapper.vm.detail, request: { ...wrapper.vm.detail.request, resourceType: 'FUNCTION', resourceId: 17, status: 'APPROVED' } }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.getComponent({ name: 'LineageGraph' }).props()).toMatchObject({
+      embedded: true, initialNodeType: 'FUNCTION', initialNodeId: 17,
+    })
+  })
+
   test('规则审批可直接打开对应冻结修订设计', async() => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [{

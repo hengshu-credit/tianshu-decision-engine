@@ -223,8 +223,8 @@
           </el-table-column>
           <el-table-column v-if="columnKey === 'fieldCount'" label="字段数" min-width="80" align="center">
             <template v-slot="{ row }"
-              >{{ row.inputFieldCount || 0 }}进 /
-              {{ row.outputFieldCount || 0 }}出</template
+              >{{ row.inputFieldCount ?? row.inputFields?.length ?? '—' }}进 /
+              {{ row.outputFieldCount ?? row.outputFields?.length ?? '—' }}出</template
             >
           </el-table-column>
           <el-table-column v-if="columnKey === 'currentVersion'"

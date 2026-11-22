@@ -526,8 +526,30 @@ public class RuleModelServiceTest {
         assertTrue(selectedColumns.get() != null && !selectedColumns.get().isEmpty());
         String normalized = selectedColumns.get().toLowerCase();
         assertFalse(normalized.contains("model_content") || normalized.contains("modelcontent"));
+        assertTrue(normalized.contains("count(*) from rule_model_input_field mi where mi.model_id = rule_model.id"));
+        assertTrue(normalized.contains("count(*) from rule_model_output_field mo where mo.model_id = rule_model.id"));
         assertTrue(excludesDeleted.get());
         assertEquals(null, result.getRecords().get(0).getModelContent());
+    }
+
+    @Test
+    public void listProjectionCountsFieldRowsForLegacyAndEmptyModels() throws Exception {
+        Configuration configuration = new Configuration();
+        configuration.setMapUnderscoreToCamelCase(true);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), RuleModel.class);
+        var ds = new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                "jdbc:h2:mem:counts" + java.util.UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        var db = new org.springframework.jdbc.core.JdbcTemplate(ds);
+        com.hengshucredit.rule.server.sql.TestSchemaTables.create(db, List.of("rule_model_input_field", "rule_model_output_field"));
+        db.update("INSERT INTO rule_model(id,model_code,model_name,model_type,model_format,input_field_count,output_field_count) "
+                + "VALUES (1,'scrfd','检测','NEURAL_NET','ONNX',NULL,NULL),(2,'empty','空模型','ML','PMML',9,8)");
+        db.update("INSERT INTO rule_model_input_field(model_id,field_name,field_label,field_type) VALUES "
+                + "(1,'image','原图','STRING'),(1,'scale','缩放','NUMBER')");
+        db.update("INSERT INTO rule_model_output_field(model_id,field_name,field_label,field_type) VALUES (1,'boxes','位置','LIST')");
+        LambdaQueryWrapper<RuleModel> projection = ReflectionTestUtils.invokeMethod(new RuleModelService(), "modelListProjection");
+        var counts = db.query("SELECT " + projection.getSqlSelect() + " FROM rule_model ORDER BY id",
+                (rs, i) -> List.of(rs.getInt("input_field_count"),rs.getInt("output_field_count")));
+        assertEquals(List.of(List.of(2,1), List.of(0,0)), counts);
     }
 
     @Test

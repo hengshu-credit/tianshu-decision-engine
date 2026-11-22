@@ -170,7 +170,7 @@
                 :precision="2"
                 size="small"
                 class="ratio-input"
-              />
+              ><template #suffix>%</template></el-input-number>
             </div>
           </div>
         </div>
@@ -325,7 +325,7 @@
                 :precision="2"
                 size="small"
                 class="ratio-input"
-              />
+              ><template #suffix>%</template></el-input-number>
             </div>
           </div>
         </div>
@@ -1815,6 +1815,7 @@ export default {
   }
 
   .ratio-config-panel {
+    container: ratio-panel / inline-size;
     margin-top: 12px;
     border: 1px solid var(--tianshu-info-border);
     border-radius: 4px;
@@ -1838,13 +1839,14 @@ export default {
 
   .ratio-config-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
     gap: 10px;
   }
 
   .ratio-config-item {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 122px;
+    grid-template-columns: minmax(0, 1fr) minmax(80px, 122px);
+    min-width: 0;
     align-items: center;
     gap: 10px;
     padding: 8px 10px;
@@ -1865,6 +1867,11 @@ export default {
       width: 100%;
       max-width: none;
     }
+  }
+
+  @container ratio-panel (max-width: 260px) {
+    .ratio-config-item { grid-template-columns: minmax(0, 1fr); }
+    .ratio-config-head, .ratio-group-meta { flex-wrap: wrap; }
   }
 
   .ratio-group-meta {
@@ -1891,7 +1898,9 @@ export default {
   }
 
   .ratio-input {
-    width: 144px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .ratio-input :deep(.el-input__inner) {

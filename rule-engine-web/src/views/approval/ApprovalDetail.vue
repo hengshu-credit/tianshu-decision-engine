@@ -237,15 +237,16 @@
               </div>
             </div>
             <lineage-graph
-              v-if="lineageNodeId && lineageNodeType"
+              v-if="hasLiveLineage"
               :key="`${lineageNodeType}-${lineageNodeId}`"
               embedded
               :initial-node-type="lineageNodeType"
               :initial-node-id="lineageNodeId"
               initial-direction="ALL"
             />
+            <lineage-graph v-else-if="approvalLineage" embedded :initial-graph="approvalLineage" />
             <div v-if="(detail.dependencies || []).length" class="dependency-details">
-              <div v-if="lineageNodeId && lineageNodeType" class="dependency-details-title">
+              <div v-if="hasLiveLineage || approvalLineage" class="dependency-details-title">
                 依赖明细
               </div>
               <el-table show-overflow-tooltip :data="detail.dependencies" size="small">
@@ -507,6 +508,28 @@ export default {
       return this.compareRightKey === 'CURRENT' &&
         (base ? this.compareLeftKey === `VERSION:${base.id}` : this.compareLeftKey === 'EMPTY')
     },
+    hasLiveLineage() {
+      return !!(this.lineageNodeType && this.lineageNodeId && hasPermission('lineage:view'))
+    },
+    approvalLineage() {
+      // 待创建资源没有生产 ID。仅展示本张审批单已返回的依赖，不向生产目录查询临时节点。
+      if (this.hasLiveLineage || !this.request || !this.detail.dependencies?.length) return null
+      const root = { id: 'APPROVAL:' + this.request.id, type: this.request.resourceType,
+        code: this.request.requestNo, label: this.resourceTitle }
+      const nodes = new Map([[root.id, root]])
+      const edges = []
+      for (const dep of this.detail.dependencies) {
+        if (!dep.targetResourceType || dep.targetResourceId == null) continue
+        const id = [dep.targetResourceType, dep.targetResourceId, dep.targetVersionId ?? ''].join(':')
+        if (nodes.has(id)) continue
+        nodes.set(id, { id, type: dep.displayResourceType || dep.targetResourceType, refId: dep.targetResourceId,
+          label: dep.resourceName || dep.fieldName || this.resourceTypeLabel(dep.targetResourceType),
+          code: dep.resourceCode || dep.fieldCode || String(dep.targetResourceId),
+          versionLabel: dep.targetVersionNo == null ? '' : 'v' + dep.targetVersionNo })
+        edges.push({ from: id, to: root.id, label: dep.relationType || '依赖' })
+      }
+      return edges.length ? { startNode: root, nodes: [...nodes.values()], edges } : null
+    },
     lineageNodeType() {
       const type = this.request && this.request.resourceType
       return {
@@ -515,6 +538,8 @@ export default {
         DATA_OBJECT: 'DATA_OBJECT',
         RULE: 'RULE',
         RULE_PROJECT_BINDING: 'RULE',
+        FUNCTION: 'FUNCTION',
+        SFTP: 'SFTP',
         MODEL: 'MODEL',
         EXTERNAL_API: 'API',
         DATABASE: 'DB',
@@ -1082,7 +1107,8 @@ export default {
 </script>
 
 <style scoped>
-.release-explanation { margin-top: 16px; }
+.release-explanation { margin-bottom: 16px; padding: 20px; }
+.release-explanation .section-heading { padding: 0; }
 .release-explanation-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .release-explanation-item { display: grid; min-height: 86px; gap: 5px; padding: 12px; background: var(--tianshu-bg-muted); border: 1px solid var(--tianshu-border-subtle); border-radius: 5px; }
 .release-explanation-item > span { color: var(--tianshu-text-tertiary); font-size: 12px; }
@@ -1138,6 +1164,7 @@ export default {
   font-size: 13px;
 }
 
+.detail-content > .el-alert { margin-bottom: 16px; }
 .detail-content {
   padding: 16px 0 32px;
 }

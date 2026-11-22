@@ -188,6 +188,18 @@ for (const pageCase of pages) {
       expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1)
     }).toPass()
 
+    const handle = dialog.getByRole('separator', { name: '拖拽调整弹窗大小' })
+    await expect(handle).toHaveCount(1)
+    const body = dialog.locator(':scope > .el-dialog__body')
+    expect(await body.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
+    expect(await body.evaluate(el => parseFloat(getComputedStyle(el).paddingTop))).toBeGreaterThanOrEqual(8)
+    const before = await dialog.boundingBox()
+    await handle.focus()
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowUp')
+    await expect.poll(async () => (await dialog.boundingBox()).width).toBeGreaterThan(before.width)
+    await expect.poll(async () => (await dialog.boundingBox()).height).toBeLessThan(before.height)
+
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
     expect(pageErrors).toEqual([])

@@ -146,7 +146,7 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
     await page.getByRole('button', { name: action, exact: true }).first().click()
     const dialog = page.locator('.el-dialog:visible').last()
     const form = dialog.locator('form').first()
-    const collapse = dialog.locator('.variable-advanced-collapse')
+    const collapse = dialog.locator('.variable-advanced-section')
     await expect(collapse).toBeVisible()
 
     const gaps = await Promise.all([
@@ -158,7 +158,7 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
     }))
     expect(Math.abs(gaps.left - gaps.right)).toBeLessThanOrEqual(1)
 
-    await collapse.locator('.el-collapse-item__header').click()
+    await expect(collapse.getByRole('button', { name: /更多说明与发布设置/ })).toHaveCount(0)
     await expect(collapse.locator('.el-input-number').first()).toBeVisible()
     await expect(collapse.locator('.el-input-number__decrease:visible')).toHaveCount(0)
     await expect(collapse.locator('.el-input-number__increase:visible')).toHaveCount(0)
@@ -179,7 +179,7 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
     expect(Math.abs(formBox.width - previewBox.width)).toBeLessThanOrEqual(2)
     await expect.poll(() => dialog.evaluate(element => {
       const preview = element.querySelector('.draft-preview-panel').getBoundingClientRect()
-      const advanced = element.querySelector('.variable-advanced-collapse').getBoundingClientRect()
+      const advanced = element.querySelector('.variable-advanced-section').getBoundingClientRect()
       return preview.top - advanced.bottom
     })).toBeGreaterThan(0)
 

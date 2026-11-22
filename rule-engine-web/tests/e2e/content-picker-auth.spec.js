@@ -273,7 +273,7 @@ test('数据库对象通过 SQL 参数选择器保存稳定引用', async ({ pag
   const dialog = page.locator('.el-dialog:visible').last()
   await dialog.getByPlaceholder('英文标识，如 TaxRequest').fill('CustomerReport')
   await dialog.getByPlaceholder('中文名称，如 税务请求').fill('客户报告')
-  await dialog.getByText('来源与加载设置', { exact: true }).click()
+  await expect(dialog.getByRole('region', { name: '来源与加载设置' })).toBeVisible()
   await dialog.locator('.el-form-item').filter({ hasText: /^来源类型/ }).locator('.el-select').click()
   await page.getByRole('option', { name: '数据库查询', exact: true }).click()
   await chooseReference(page, dialog.getByPlaceholder('选择数据库源', { exact: true }), 'risk_mysql')

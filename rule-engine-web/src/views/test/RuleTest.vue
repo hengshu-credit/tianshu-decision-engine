@@ -12,7 +12,7 @@
         { key: 'trace', label: '执行并查看追踪', detail: '核对结果、耗时和命中路径' },
       ]"
     />
-    <execution-impact-panel v-if="selectedRuleId" :runtime-nodes="testRuntimeNodes" :model="definitionModel" :model-type="inputExecutionIdentity?.modelType || selectedRule?.modelType || ''" :loaded="!!inputExecutionIdentity && !!definitionModel" />
+    <execution-impact-panel v-if="selectedRuleId" :key="selectedRuleId + '/' + selectedTestSourceValue" :runtime-nodes="testRuntimeNodes" :model="definitionModel" :model-type="inputExecutionIdentity?.modelType || selectedRule?.modelType || ''" :loaded="!!inputExecutionIdentity && !!definitionModel" />
     <dismissible-guidance v-else guide-id="rule-test.notice" label="测试调用与写入说明" heading="测试调用与写入说明">
       先选择版本来源，再核对执行模式和影响清单。本页单次、固定用例和批量测试均为真实联调。
     </dismissible-guidance>
@@ -153,7 +153,7 @@
               size="small"
               style="margin-left: 12px"
               @click="loadVariables"
-              v-if="selectedRule"
+              :disabled="!selectedRule"
             >
               <el-icon><el-icon-refresh /></el-icon> 重新加载字段
             </el-button>
@@ -162,7 +162,7 @@
               size="small"
               style="margin-left: 8px"
               @click="addParam"
-              v-if="inputMode === 'form'"
+              :disabled="inputMode !== 'form'"
             >
               <el-icon><el-icon-plus /></el-icon> 手动添加
             </el-button>
@@ -185,7 +185,7 @@
             <el-button link size="small" :disabled="inputSampleJson === null || inputLoadState === 'LOADING' || inputLoadState === 'ERROR'" @click="generateInputSample">生成样例</el-button>
           </div>
           <div
-            v-if="selectedRule && inputLoadState !== 'IDLE'"
+            v-if="selectedRule && inputLoadState !== 'IDLE' && dismissedInputState !== inputLoadState"
             class="input-load-state"
             :class="'is-' + inputLoadState.toLowerCase()"
           >
@@ -201,6 +201,7 @@
               @click="loadVariables"
               >重新加载</el-button
             >
+            <el-button link size="small" aria-label="关闭输入状态提示" @click="dismissedInputState = inputLoadState">关闭</el-button>
           </div>
           <ul v-if="inputLoadWarnings.length" class="input-load-warnings">
             <li v-for="warning in inputLoadWarnings" :key="warning">
@@ -671,6 +672,7 @@ export default {
       inputLoadSource: '',
       inputLoadWarnings: [],
       inputLoadRequestId: 0,
+      dismissedInputState: '',
       inputExecutionIdentity: null,
       testRuntimeNodes: [],
       ruleContextRequestId: 0,
@@ -1369,6 +1371,7 @@ export default {
         return
       }
       const ruleId = this.selectedRuleId
+      this.dismissedInputState = ''
       const requestId = ++this.inputLoadRequestId
       const source = this.selectedExecutionSource ? { ...this.selectedExecutionSource } : null
       const previousParams = this.params.map((param) => ({ ...param }))
@@ -2282,6 +2285,9 @@ export default {
   border-color: var(--tianshu-info-border);
   background: var(--tianshu-info-bg);
 }
+.input-load-state, .input-load-warnings + .el-form { margin-block-start: 12px; }
+.input-load-state { margin-bottom: 12px; }
+.input-load-state > div { flex: 1; min-width: 0; }
 .input-load-warnings,
 .context-load-warnings {
   margin: 8px 0 0;

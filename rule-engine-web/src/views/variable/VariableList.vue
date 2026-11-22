@@ -1541,42 +1541,34 @@
             <span v-if="objectFieldReferenceBlockedReason">{{ objectFieldReferenceBlockedReason }}</span>
           </div>
         </el-form-item>
-        <el-collapse
-          v-if="!isObjectField"
-          v-model="variableAdvancedSections"
-          class="variable-advanced-collapse"
-        >
-          <el-collapse-item name="advanced">
-            <template #title>
-              <div class="variable-advanced-title">
-                <strong>更多说明与发布设置</strong>
-                <span>取值范围、示例、排序、状态和备注</span>
-              </div>
-            </template>
-            <el-form-item label="取值范围">
-              <el-input v-model="form.valueRange" placeholder="如：0~100、A/B/C" />
-            </el-form-item>
-            <el-form-item label="示例值">
-              <example-value-editor v-if="form.varSource === 'INPUT'" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
-              <el-input v-else v-model="form.exampleValue" placeholder="可留空" />
-            </el-form-item>
-            <el-form-item label="排序">
-              <el-input-number v-model="form.sortOrder" :min="0" :max="9999" />
-            </el-form-item>
-            <el-form-item label="状态">
-              <el-switch
-                v-model="form.status"
-                :active-value="1"
-                :inactive-value="0"
-                active-text="启用"
-                inactive-text="停用"
-              />
-            </el-form-item>
-            <el-form-item label="说明">
-              <el-input v-model="form.description" type="textarea" :rows="2" />
-            </el-form-item>
-          </el-collapse-item>
-        </el-collapse>
+        <section v-if="!isObjectField" class="variable-advanced-section" aria-label="更多说明与发布设置">
+          <div class="variable-advanced-title">
+            <strong>更多说明与发布设置</strong>
+            <span>取值范围、示例、排序、状态和备注</span>
+          </div>
+          <el-form-item label="取值范围">
+            <el-input v-model="form.valueRange" placeholder="如：0~100、A/B/C" />
+          </el-form-item>
+          <el-form-item label="示例值">
+            <example-value-editor v-if="form.varSource === 'INPUT'" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
+            <el-input v-else v-model="form.exampleValue" placeholder="可留空" />
+          </el-form-item>
+          <el-form-item label="排序">
+            <el-input-number v-model="form.sortOrder" :min="0" :max="9999" />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-switch
+              v-model="form.status"
+              :active-value="1"
+              :inactive-value="0"
+              active-text="启用"
+              inactive-text="停用"
+            />
+          </el-form-item>
+          <el-form-item label="说明">
+            <el-input v-model="form.description" type="textarea" :rows="2" />
+          </el-form-item>
+        </section>
         <template v-else>
           <el-form-item label="排序">
             <el-input-number v-model="form.sortOrder" :min="0" :max="9999" />
@@ -1737,81 +1729,77 @@
             <el-radio value="INOUT">输入输出</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-collapse v-model="objectAdvancedSections" class="variable-advanced-collapse">
-          <el-collapse-item name="advanced">
-            <template #title>
-              <div class="variable-advanced-title">
-                <strong>来源与加载设置</strong>
-                <span>来源类型、懒加载和对象说明</span>
-              </div>
-            </template>
-            <el-form-item label="来源类型">
-              <el-select v-model="objectForm.sourceType" style="width: 100%" @change="onObjectSourceTypeChange">
-                <el-option label="Java 实体" value="JAVA" />
-                <el-option label="JSON" value="JSON" />
-                <el-option label="DDL" value="DDL" />
-                <el-option label="API 外数" value="API" />
-                <el-option label="数据库查询" value="DB" />
-                <el-option label="手动" value="MANUAL" />
-              </el-select>
+        <section class="variable-advanced-section" aria-label="来源与加载设置">
+          <div class="variable-advanced-title">
+            <strong>来源与加载设置</strong>
+            <span>来源类型、懒加载和对象说明</span>
+          </div>
+          <el-form-item label="来源类型">
+            <el-select v-model="objectForm.sourceType" style="width: 100%" @change="onObjectSourceTypeChange">
+              <el-option label="Java 实体" value="JAVA" />
+              <el-option label="JSON" value="JSON" />
+              <el-option label="DDL" value="DDL" />
+              <el-option label="API 外数" value="API" />
+              <el-option label="数据库查询" value="DB" />
+              <el-option label="手动" value="MANUAL" />
+            </el-select>
+          </el-form-item>
+          <template v-if="objectForm.sourceType === 'API'">
+            <el-form-item label="API 配置">
+              <resource-picker :value="objectForm.apiConfigId" :resources="apiConfigOptions" placeholder="选择 API 配置" @update:value="changeObjectApi" />
             </el-form-item>
-            <template v-if="objectForm.sourceType === 'API'">
-              <el-form-item label="API 配置">
-                <resource-picker :value="objectForm.apiConfigId" :resources="apiConfigOptions" placeholder="选择 API 配置" @update:value="changeObjectApi" />
-              </el-form-item>
-              <el-form-item label="绑定方式">
-                <el-radio-group v-model="objectForm.bindingMode">
-                  <el-radio value="OBJECT">整体结果</el-radio>
-                  <el-radio value="FIELDS">按字段路径</el-radio>
-                </el-radio-group>
-              </el-form-item>
-              <el-form-item class="api-source-form-item" label="API 取值配置">
-                <api-source-binding :api-id="objectForm.apiConfigId" v-model:value="objectForm.apiRequestOverrides" :result-path="objectForm.resultPath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="objectForm.resultPath = $event" />
-                <div class="field-help">整体结果模式从结果路径绑定对象；字段模式下各字段路径相对于此结果填写。</div>
-              </el-form-item>
-            </template>
-            <template v-if="objectForm.sourceType === 'DB'">
-              <el-form-item label="数据库源">
-                <resource-picker v-model:value="objectForm.dbDatasourceId" :resources="dbDatasourceOptions" category="database" placeholder="选择数据库源" />
-              </el-form-item>
-              <el-form-item label="查询 SQL">
-                <monaco-editor
-                  v-model:value="objectForm.sql"
-                  language="sql"
-                  height="130px"
-                  :options="{ minimap: { enabled: false }, wordWrap: 'on' }"
-                />
-                <div class="field-help">仅支持只读查询，例如 SELECT * FROM customer WHERE id = ?</div>
-              </el-form-item>
-              <el-form-item label="SQL 参数">
-                <sql-parameter-editor
-                  v-model:value="objectForm.params"
-                  :sql="objectForm.sql"
-                  :variables="listReferenceOptions"
-                />
-                <div class="field-help">按 SQL 中 ? 的顺序选择业务字段或填写固定值。</div>
-              </el-form-item>
-              <el-form-item label="绑定方式">
-                <el-radio-group v-model="objectForm.bindingMode">
-                  <el-radio value="OBJECT">整行结果</el-radio>
-                  <el-radio value="FIELDS">按字段列名/路径</el-radio>
-                </el-radio-group>
-              </el-form-item>
-            </template>
-            <el-form-item label="懒加载引用字段">
-              <el-switch v-model="objectForm.lazyLoadReferences" aria-label="懒加载引用字段" />
-              <div class="field-help">默认关闭：对象参与取值时补齐所需的缺失引用字段。开启后仅在读取引用型叶子时补取；普通字段、仅复用结构和已有值不触发调用。发布规则需重新发布以更新此配置。</div>
+            <el-form-item label="绑定方式">
+              <el-radio-group v-model="objectForm.bindingMode">
+                <el-radio value="OBJECT">整体结果</el-radio>
+                <el-radio value="FIELDS">按字段路径</el-radio>
+              </el-radio-group>
             </el-form-item>
-            <el-form-item label="说明">
-              <el-input
-                v-model="objectForm.description"
-                type="textarea"
-                :rows="2"
-                placeholder="对象说明"
+            <el-form-item class="api-source-form-item" label="API 取值配置">
+              <api-source-binding :api-id="objectForm.apiConfigId" v-model:value="objectForm.apiRequestOverrides" :result-path="objectForm.resultPath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="objectForm.resultPath = $event" />
+              <div class="field-help">整体结果模式从结果路径绑定对象；字段模式下各字段路径相对于此结果填写。</div>
+            </el-form-item>
+          </template>
+          <template v-if="objectForm.sourceType === 'DB'">
+            <el-form-item label="数据库源">
+              <resource-picker v-model:value="objectForm.dbDatasourceId" :resources="dbDatasourceOptions" category="database" placeholder="选择数据库源" />
+            </el-form-item>
+            <el-form-item label="查询 SQL">
+              <monaco-editor
+                v-model:value="objectForm.sql"
+                language="sql"
+                height="130px"
+                :options="{ minimap: { enabled: false }, wordWrap: 'on' }"
               />
+              <div class="field-help">仅支持只读查询，例如 SELECT * FROM customer WHERE id = ?</div>
             </el-form-item>
-          </el-collapse-item>
-        </el-collapse>
+            <el-form-item label="SQL 参数">
+              <sql-parameter-editor
+                v-model:value="objectForm.params"
+                :sql="objectForm.sql"
+                :variables="listReferenceOptions"
+              />
+              <div class="field-help">按 SQL 中 ? 的顺序选择业务字段或填写固定值。</div>
+            </el-form-item>
+            <el-form-item label="绑定方式">
+              <el-radio-group v-model="objectForm.bindingMode">
+                <el-radio value="OBJECT">整行结果</el-radio>
+                <el-radio value="FIELDS">按字段列名/路径</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </template>
+          <el-form-item label="懒加载引用字段">
+            <el-switch v-model="objectForm.lazyLoadReferences" aria-label="懒加载引用字段" />
+            <div class="field-help">默认关闭：对象参与取值时补齐所需的缺失引用字段。开启后仅在读取引用型叶子时补取；普通字段、仅复用结构和已有值不触发调用。发布规则需重新发布以更新此配置。</div>
+          </el-form-item>
+          <el-form-item label="说明">
+            <el-input
+              v-model="objectForm.description"
+              type="textarea"
+              :rows="2"
+              placeholder="对象说明"
+            />
+          </el-form-item>
+        </section>
       </el-form>
       <template v-slot:footer>
         <managed-dialog-footer
@@ -2643,7 +2631,7 @@ export default {
       draftPreviewError: '',
       draftPreviewing: false,
       draftPreviewRequestId: 0,
-      variableAdvancedSections: [],
+
       listItemTypeOptions: LIST_ITEM_TYPES,
       listCombinationModeOptions: LIST_COMBINATION_MODES,
       listMatchModeOptions: LIST_MATCH_MODES,
@@ -2723,7 +2711,7 @@ export default {
       // Data Object Dialog
       objectDialogVisible: false,
       objectSubmitting: false,
-      objectAdvancedSections: [],
+
       objectForm: {
         apiRequestOverrides: {},
 
@@ -4484,7 +4472,7 @@ export default {
         description: '',
       }
       this.loadObjectSourceOptions()
-      this.objectAdvancedSections = []
+
       this.objectDialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.objForm) this.$refs.objForm.clearValidate()
@@ -4519,7 +4507,7 @@ export default {
       }
       this.loadObjectSourceOptions()
       if (obj.sourceType === 'API') this.loadListExpressionOptions(true, this.objectForm)
-      this.objectAdvancedSections = []
+
       this.objectDialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.objForm) this.$refs.objForm.clearValidate()
@@ -4989,7 +4977,7 @@ export default {
       this.isObjectField = false
       this.objectFieldParentId = null
       this.form = this.initForm()
-      this.variableAdvancedSections = []
+
       if (this.currentProjectId) {
         this.form.scope = 'PROJECT'
         this.form.projectId = this.currentProjectId
@@ -5012,7 +5000,7 @@ export default {
         ...row,
         projectId: row.scope === 'GLOBAL' ? '' : this.normalizeProjectId(row.projectId),
       }
-      this.variableAdvancedSections = []
+
       this.form.scope = this.form.scope || 'PROJECT'
       this.applySourceConfigToForm()
       this.resetDraftPreview()
@@ -6153,7 +6141,9 @@ export default {
 .source-catalog-help {
   margin-top: 7px;
 }
-.variable-advanced-collapse {
+.variable-advanced-section {
+  padding: 12px;
+  background: var(--tianshu-info-bg);
   width: 100%;
   margin: 2px 0 16px;
   box-sizing: border-box;
@@ -6163,21 +6153,7 @@ export default {
 .api-source-form-item :deep(.el-form-item__content) {
   min-width: 0;
 }
-.variable-advanced-collapse :deep(.el-collapse-item__header) {
-  height: auto;
-  min-height: 48px;
-  padding: 0 12px;
-  border-bottom: 0;
-  border-radius: 7px;
-  background: var(--tianshu-info-bg) !important;
-}
-.variable-advanced-collapse :deep(.el-collapse-item__wrap) {
-  border-bottom: 0;
-  background: var(--tianshu-info-bg) !important;
-}
-.variable-advanced-collapse :deep(.el-collapse-item__content) {
-  padding: 4px 12px 4px 0;
-}
+.variable-advanced-title { margin-bottom: 12px; }
 .variable-advanced-title strong,
 .variable-advanced-title span {
   display: block;

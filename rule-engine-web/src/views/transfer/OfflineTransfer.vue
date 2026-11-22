@@ -6,7 +6,7 @@
         <h1>离线配置迁移</h1>
         <dismissible-guidance tag="p" guide-id="transfer.intro" label="离线配置迁移说明">按血缘导出配置，上传到其他环境后预检冲突并确认导入。名单记录、日志和账单不会进入配置包。</dismissible-guidance>
       </div>
-      <el-tag type="info" effect="plain">配置包即时生成</el-tag>
+
     </header>
 
     <el-tabs v-model="activeTab" class="transfer-tabs" @tab-change="onTabChange">
@@ -18,7 +18,10 @@
             <span class="card-kicker">EXPORT</span>
             <h2>导出配置</h2>
           </div>
-          <el-tag size="small" type="info">按血缘带出上游</el-tag>
+          <div class="export-badges">
+            <el-tag size="small" type="info" effect="plain">配置包即时生成</el-tag>
+            <el-tag size="small" type="info">按血缘带出上游</el-tag>
+          </div>
         </div>
         <p class="card-help">按名称或编码搜索要迁移的资源，可添加多个。系统会按血缘一并导出所依赖的配置。</p>
         <div v-for="(root, index) in roots" :key="root.key" class="root-row">
@@ -731,6 +734,8 @@ export default {
 </script>
 
 <style scoped>
+.export-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.transfer-page > .page-header { margin-bottom: 12px; }
 .transfer-page { padding-bottom: 36px; }
 .transfer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .transfer-card { background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color-light); border-radius: 14px; padding: 20px; box-shadow: 0 8px 28px rgba(15, 23, 42, .05); }

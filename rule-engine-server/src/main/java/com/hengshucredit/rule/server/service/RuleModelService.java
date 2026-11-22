@@ -3,6 +3,8 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -1140,7 +1142,7 @@ public class RuleModelService {
                 return new Page<>(pageNum, pageSize);
             }
         }
-        LambdaQueryWrapper<RuleModel> wrapper = withoutModelContent();
+        LambdaQueryWrapper<RuleModel> wrapper = modelListProjection();
         wrapper.ne(RuleModel::getStatus, -1);
 
         if (scope != null && !scope.isEmpty()) {
@@ -1205,6 +1207,8 @@ public class RuleModelService {
                         .eq(RuleModelOutputField::getModelId, modelId)
                         .orderByAsc(RuleModelOutputField::getSortOrder)));
 
+        model.setInputFieldCount(model.getInputFields().size());
+        model.setOutputFieldCount(model.getOutputFields().size());
         model.setModelContent(null);
         return model;
     }
@@ -1213,7 +1217,7 @@ public class RuleModelService {
      * 查询项目下所有模型（非分页，设计器使用）
      */
     public List<RuleModel> listByProject(Long projectId) {
-        LambdaQueryWrapper<RuleModel> wrapper = withoutModelContent();
+        LambdaQueryWrapper<RuleModel> wrapper = modelListProjection();
         if (projectId != null && projectId > 0) {
             wrapper.and(w -> w
                     .eq(RuleModel::getScope, SCOPE_GLOBAL)
@@ -1232,6 +1236,15 @@ public class RuleModelService {
         fillOutputFields(models);
         clearModelContent(models);
         return models;
+    }
+
+    // 列表与详情均统计已配置的字段行。历史导入的汇总列可能为空，也可能已过期。
+    private LambdaQueryWrapper<RuleModel> modelListProjection() {
+        String columns = TableInfoHelper.getTableInfo(RuleModel.class).chooseSelect(field ->
+                !Set.of("modelContent", "inputFieldCount", "outputFieldCount").contains(field.getProperty()));
+        return new QueryWrapper<RuleModel>().select(columns,
+                "(SELECT COUNT(*) FROM rule_model_input_field mi WHERE mi.model_id = rule_model.id) AS input_field_count",
+                "(SELECT COUNT(*) FROM rule_model_output_field mo WHERE mo.model_id = rule_model.id) AS output_field_count").lambda();
     }
 
     private LambdaQueryWrapper<RuleModel> withoutModelContent() {

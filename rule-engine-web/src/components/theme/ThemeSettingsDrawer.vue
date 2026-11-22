@@ -916,6 +916,8 @@ export default {
   color: var(--tianshu-text-secondary, #475569);
 }
 
+.setting-row + .section-hint { margin-top: 8px; }
+
 .setting-row + .setting-row {
   margin-top: 8px;
 }

@@ -297,6 +297,7 @@ export default {
         { label: '规则', value: 'RULE' },
         { label: '模型', value: 'MODEL' },
         { label: 'API', value: 'API' },
+        { label: '函数', value: 'FUNCTION' },
         { label: '数据库', value: 'DB' },
         { label: 'SFTP', value: 'SFTP' },
         { label: '名单', value: 'LIST' },

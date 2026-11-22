@@ -4,7 +4,7 @@
     <dismissible-guidance guide-id="api.request" label="请求组装说明">
       API 只组装请求和统一响应；变量与对象选择结果路径，并覆盖已开放的入参。
     </dismissible-guidance>
-    <div><el-button @click="configImportVisible = true">导入链路配置</el-button><span class="field-help">可导入经过检查的请求字段、步骤和响应配置，导入后仍需审批生效。</span></div>
+    <div class="api-config-import"><el-button @click="configImportVisible = true">导入链路配置</el-button><span class="field-help">可导入经过检查的请求字段、步骤和响应配置，导入后仍需审批生效。</span></div>
     <el-tabs v-model="tab" :class="{ 'embedded-tabs': embeddedTabs }">
       <el-tab-pane label="请求字段" name="request"><template v-if="tab === 'request'">
         <api-request-sample-editor v-model:value="config.requestSample" />
@@ -242,6 +242,15 @@ export default {
 </script>
 <style scoped>
 .api-execution-editor { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+.api-config-import { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.api-config-import .field-help { margin: 0; }
+.api-execution-editor :deep(.embedded-tabs > .el-tabs__content > .el-tab-pane) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+.api-execution-editor :deep(.embedded-tabs .el-tab-pane > .el-button) { align-self: flex-start; margin-left: 0; }
 .api-execution-editor > .el-tabs { min-width: 0; }
 .api-execution-editor :deep(.embedded-tabs .el-tabs__header) { display: none; }
 .api-execution-editor :deep(.el-card) { margin-top: 12px; border-color: var(--el-border-color); background: var(--el-bg-color); }
