@@ -4,6 +4,32 @@ const { createDetailApiData } = require('./support/detailFixtures.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
 const { createDesignerApiData } = require('./support/designerFixtures.cjs')
 
+test('接口测试的风险和鉴权提示与下一项保留间距', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const { assertClean } = await installDistRoutes(page, {
+    origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: createDetailApiData()
+  })
+  await page.goto(`${origin}/#/datasource/api/22?projectId=1`)
+  const panel = page.getByRole('tabpanel', { name: '接口测试', exact: true })
+  for (const mode of ['Bearer', 'Token接口']) {
+    await page.getByRole('tab', { name: '接口鉴权', exact: true }).click()
+    await page.locator('.el-select:visible').filter({ has: page.getByRole('combobox', { name: '接口鉴权', exact: true }) }).click()
+    await page.getByRole('option', { name: mode, exact: true }).click()
+    await page.getByRole('tab', { name: '接口测试', exact: true }).click()
+    const alerts = panel.getByRole('alert')
+    await expect(alerts).toHaveCount(mode === 'Bearer' ? 2 : 1)
+    for (const width of [1440, 680]) {
+      await page.setViewportSize({ width, height: 900 })
+      for (const alert of await alerts.all()) {
+        await expect(alert).toBeVisible()
+        const gap = await alert.evaluate(el => el.nextElementSibling.getBoundingClientRect().top - el.getBoundingClientRect().bottom)
+        expect(gap).toBeGreaterThanOrEqual(12)
+      }
+    }
+  }
+  assertClean()
+})
+
 async function chooseReference(page, input, keyword) {
   await input.click()
   const picker = page.locator('.fp-panel:visible')

@@ -1076,7 +1076,7 @@
           label="接口测试"
           name="test"
         >
-          <div class="tab-section">
+          <div class="tab-section api-test-section">
             <div class="section-toolbar">
               <div>
                 <div class="section-title">API 调用测试</div>
@@ -2681,6 +2681,9 @@ export default {
   }
   .tab-section {
     padding: 12px 0 4px;
+  }
+  .api-test-section > .el-alert {
+    margin-bottom: 12px;
   }
   .query-toolbar {
     margin-top: 18px;
