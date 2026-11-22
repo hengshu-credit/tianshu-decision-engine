@@ -84,7 +84,7 @@ describe.each(designers)('%s 条件节点分支属性', (name, component) => {
       editor.vm.updateProperty('priority', 30)
       await wrapper.vm.$nextTick()
       expect(wrapper.vm.activeElement.id).toBe('gateway')
-      expect(graph.edges[0]).toMatchObject({ type: 'bezier', text: '优质客户', properties: { conditionName: '优质客户', conditionExpr: 'score > 600', priority: 30 } })
+      expect(graph.edges[0]).toMatchObject({ type: 'bezier', text: '优质客户\nscore > 600', properties: { conditionName: '优质客户', conditionExpr: 'score > 600', priority: 30 } })
       expect(lf.changeEdgeType).toHaveBeenCalledWith('yes', 'bezier')
       expect(wrapper.findAll('.gateway-branch').map(card => card.attributes('data-edge-id'))).toEqual(['no', 'yes'])
 
@@ -97,6 +97,7 @@ describe.each(designers)('%s 条件节点分支属性', (name, component) => {
       wrapper.vm.selectNodeData({ id: 'gateway' })
       await wrapper.vm.$nextTick()
       expect(wrapper.get('[data-edge-id="yes"] .branch-title').text()).toContain('已复核')
+      expect(graph.edges[0].text).toBe('已复核\n(score > 600)')
       expect(graph.edges[1].properties.conditionName).toBe('未达标')
       wrapper.get('[data-edge-id="yes"]').getComponent(EdgePropertiesEditor).vm.updateProperty('edgeLineType', '')
       await wrapper.vm.$nextTick()

@@ -173,7 +173,7 @@
       >
         <async-state v-if="startNode && (canvasLoading || canvasError)" class="canvas-load-state" :loading="canvasLoading" :error="canvasError" loading-text="正在加载血缘图…" @retry="retryCanvas" />
         <div v-else-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
-        <div ref="graphContainer" class="graph-canvas" :class="{ 'is-hidden': !startNode }" aria-label="血缘关系图" />
+        <div ref="graphContainer" class="graph-canvas" :class="{ 'is-hidden': !startNode, 'dense-relations': visibleGraph.edges.length > 24 }" aria-label="血缘关系图" />
       </div>
     </div>
   </div>
@@ -266,6 +266,8 @@ export default {
       selectedNodeId: null,
       miniMapVisible: false,
       globalEdgeLineType: 'line',
+      explicitEdgeType: false,
+      minZoom: MIN_SCALE,
       zoomInput: '100%',
       zoomPresets: [50, 75, 100, 125, 150, 200],
       gridVisible: true,
@@ -336,6 +338,7 @@ export default {
       },
     },
     selectedNodeId() {
+      this.highlightSelectedRelations()
       this.$nextTick(() => {
         this.resizeCanvas()
       })
@@ -510,11 +513,12 @@ export default {
       )
       const minRow = Math.min(...points.map(point => point.row))
       const maxRow = Math.max(...points.map(point => point.row))
-      const contentHeight = CARD_H + (maxRow - minRow) * ROW_STEP
+      const rowStep = this.snapGridEnabled ? Math.ceil(ROW_STEP / this.gridSize) * this.gridSize : ROW_STEP
+      const contentHeight = CARD_H + (maxRow - minRow) * rowStep
       const height = Math.max(MIN_CANVAS_H, PADDING_Y * 2 + contentHeight)
       const position = point => ({
         left: (width - contentWidth) / 2 + (point.layer - minLayer) * LEVEL_STEP,
-        top: (height - contentHeight) / 2 + (point.row - minRow) * ROW_STEP,
+        top: (height - contentHeight) / 2 + (point.row - minRow) * rowStep,
       })
       const positions = Object.fromEntries([...layout.positions].map(([id, point]) => [id, position(point)]))
       const routes = Object.fromEntries([...layout.routes].map(([key, route]) => [key, route.map(position)]))
@@ -603,13 +607,14 @@ export default {
           loading: branch.loading,
         })),
       ]
+      const byId = new Map(nodes.map(node => [node.id, node]))
       const edges = this.visibleGraph.edges.map(edge => {
-        const source = this.nodePosition(edge.fromId)
-        const target = this.nodePosition(edge.toId)
-        const forward = source.left < target.left
+        const source = byId.get(edge.fromId)
+        const target = byId.get(edge.toId)
+        const forward = source.x < target.x
         const route = this.mindMapLayout.routes[edge.key] || []
-        const startPoint = { x: source.left + CARD_W, y: source.top + CARD_H / 2 }
-        const endPoint = { x: target.left, y: target.top + CARD_H / 2 }
+        const startPoint = { x: source.x + CARD_W / 2, y: source.y }
+        const endPoint = { x: target.x - CARD_W / 2, y: target.y }
         // 共享依赖的跨层通道仅提供布局点，绘制、拖动后的重算和箭头均交给 LogicFlow。
         const geometry = {}
         if (this.globalEdgeLineType === 'polyline' && forward && route.length && !this.positionOverrides[edge.fromId] && !this.positionOverrides[edge.toId]) {
@@ -758,6 +763,7 @@ export default {
       this.$nextTick(() => this.fitGraph())
     },
     onGlobalEdgeLineTypeChange() {
+      this.explicitEdgeType = true
       this.renderLineageGraph()
     },
     onCanvasSettingsChange(patch) {
@@ -799,6 +805,8 @@ export default {
       if (!node) return
       this.selectedNodeId = node.properties.nodeId
       this.lf?.selectElementById(node.id)
+      if (this.viewport.scale < 0.75) this.lf?.zoom?.(1)
+      this.lf?.focusOn?.(node.id)
     },
     closeNodePanel() {
       this.selectedNodeId = null
@@ -808,6 +816,13 @@ export default {
       if (!this.lf) return
       const container = this.$refs.graphContainer
       if (container?.clientWidth && container.clientHeight) this.lf.resize(container.clientWidth, container.clientHeight)
+    },
+    highlightSelectedRelations() {
+      const current = this.selectedNodeId === this.startNode?.id ? 'CURRENT' : this.selectedNodeId
+      this.lf?.graphModel?.edges?.forEach(edge => {
+        const dim = current && edge.sourceNodeId !== current && edge.targetNodeId !== current
+        edge.setStyle('opacity', dim ? 0.18 : 1)
+      })
     },
     renderLineageGraph() {
       if (!this.lf) {
@@ -823,8 +838,10 @@ export default {
         })
       })
       const selected = data.nodes.find(node => node.properties.nodeId === this.selectedNodeId)
-      if (selected) this.lf.selectElementById(selected.id)
-      else this.selectedNodeId = null
+      if (selected) {
+        this.lf.selectElementById(selected.id)
+        this.highlightSelectedRelations()
+      } else this.selectedNodeId = null
       this.resizeCanvas()
       if (this.preserveGraphViewport) this.preserveGraphViewport = false
       else this.fitGraph()
@@ -882,11 +899,13 @@ export default {
     },
     toGraphNode(id, node, properties) {
       const position = this.nodePosition(id)
+      // LogicFlow 会在 render 时对齐节点；端点和卡片必须使用同一组中心坐标。
+      const snap = value => this.snapGridEnabled ? Math.round(value / this.gridSize) * this.gridSize : value
       return {
         id,
         type: 'lineage-node',
-        x: position.left + CARD_W / 2,
-        y: position.top + CARD_H / 2,
+        x: snap(position.left + CARD_W / 2),
+        y: snap(position.top + CARD_H / 2),
         properties: {
           nodeId: node.id,
           nodeType: node.type,
@@ -969,6 +988,7 @@ export default {
       this.loadOptions('')
     },
     resetGraph() {
+      if (!this.explicitEdgeType) this.globalEdgeLineType = 'line'
       this.canvasError = ''
       this.startNode = null
       this.upstreamRoots = []
@@ -1000,6 +1020,15 @@ export default {
     },
     fitGraph() {
       if (!this.lf || !this.startNode) return
+      const bounds = this.lf.graphModel?.getVirtualRectSize?.()
+      const container = this.$refs.graphContainer
+      if (bounds && container?.clientWidth && container.clientHeight) {
+        // LogicFlow 会拒绝小于缩放下限的 fitView，导致大图停在 100% 且只看得到中心。
+        const width = this.lf.graphModel.width || container.clientWidth
+        const height = this.lf.graphModel.height || container.clientHeight
+        this.minZoom = Math.min(MIN_SCALE, 1 / Math.max((bounds.width + 80) / width, (bounds.height + 80) / height))
+        this.lf.setZoomMiniSize(this.minZoom)
+      }
       this.lf.fitView(80, 80)
       if (this.lf.getTransform().SCALE_X > 1) {
         this.lf.zoom(1)
@@ -1011,6 +1040,9 @@ export default {
       this.positionOverrides = {}
       this.positionOffset = { left: 0, top: 0 }
       this.preservedCurrentPosition = null
+      if (!this.explicitEdgeType && Object.values(this.mindMapLayout.routes).some(route => route.length)) {
+        this.globalEdgeLineType = 'polyline'
+      }
       this.lf?.resetZoom()
       this.blurToolbarFocus()
       this.$nextTick(() => {
@@ -1043,7 +1075,7 @@ export default {
     onZoomInputChange() {
       const requested = Number.parseFloat(String(this.zoomInput).replace('%', ''))
       const nextPercent = Number.isFinite(requested)
-        ? Math.min(MAX_SCALE * 100, Math.max(MIN_SCALE * 100, requested))
+        ? Math.min(MAX_SCALE * 100, Math.max(this.minZoom * 100, requested))
         : this.zoomPercent
       this.lf?.zoom?.(nextPercent / 100)
       this.updateZoom()
@@ -1051,7 +1083,7 @@ export default {
     setZoom(nextScale, clientPoint) {
       const graphWrap = this.$refs.graphWrap
       if (!graphWrap) return
-      const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale))
+      const scale = Math.max(this.minZoom, Math.min(MAX_SCALE, nextScale))
       const rect = graphWrap.getBoundingClientRect()
       const focusX = clientPoint ? clientPoint.clientX - rect.left : graphWrap.clientWidth / 2
       const focusY = clientPoint ? clientPoint.clientY - rect.top : graphWrap.clientHeight / 2
@@ -1395,6 +1427,15 @@ export default {
     height: 10px;
     border-radius: 2px;
   }
+  // 密集图保留所有关系线，仅在指向或选中连线时显示其标签。
+  .dense-relations :deep(.lf-edge:not(:hover):not(.lf-edge-selected) .lf-line-text) {
+    visibility: hidden;
+  }
+  .dense-relations :deep(.lf-edge:hover [marker-end]),
+  .dense-relations :deep(.lf-edge-selected [marker-end]) {
+    stroke-width: 3;
+  }
+
   .lineage-graph-layout {
     position: relative;
     min-width: 0;

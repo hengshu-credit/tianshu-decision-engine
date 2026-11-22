@@ -430,8 +430,8 @@
         </div>
       </transition>
 
-      <!-- 无选中提示 -->
-      <div v-if="!activeElement" class="flow-hint">
+      <!-- 空画布操作提示 -->
+      <div v-if="!activeElement && !startNodeExists" class="flow-hint">
         <el-icon class="hint-icon"><el-icon-set-up /></el-icon>
         <p>从工具栏添加节点，拖拽锚点连线</p>
         <p>单击节点/连线可编辑属性</p>

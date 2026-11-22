@@ -11,7 +11,7 @@ import {
 // 根入口还会加载未使用的 ELK；按当前固定版本直接使用 Dagre 模块。
 import { Dagre } from '@logicflow/layout/es/dagre/index.js'
 
-import { convertLegacyModel, FLOW_THEME_COLOR, addConnectedNode, blurActiveDesignerControl, createAnchorGesture, createDynamicGroup, createFlowNodeData, findToolbarNodePosition, getBusinessGraphData, getPersistableGraphData, isAnchorClickGesture, isDesignerInteractiveTarget, layoutGraphByAnchors, updateAnchorGesture } from '@/components/flow/flowDesignerGraph'
+import { branchCaption, edgePriority, convertLegacyModel, FLOW_THEME_COLOR, addConnectedNode, blurActiveDesignerControl, createAnchorGesture, createDynamicGroup, createFlowNodeData, findToolbarNodePosition, getBusinessGraphData, getPersistableGraphData, isAnchorClickGesture, isDesignerInteractiveTarget, layoutGraphByAnchors, updateAnchorGesture } from '@/components/flow/flowDesignerGraph'
 import { normalizeDefaultEdgeLineType, applyGlobalEdgeTypeToInheritedEdges, mergeEdgePropertiesFromForm } from '@/components/flow/edgeLineType'
 
 import {
@@ -73,10 +73,7 @@ export default {
     document.body.style.userSelect = ''
   },
 
-  edgePriority(edge, fallbackIndex = 0) {
-    const value = edge && edge.properties && Number(edge.properties.priority)
-    return Number.isFinite(value) ? value : (fallbackIndex + 1) * 10
-  },
+  edgePriority,
 
   moveGatewayEdge(edgeId, offset) {
     const ordered = this.outEdges.slice()
@@ -605,7 +602,9 @@ export default {
       /* ignore */
     }
     try {
-      this.lf.updateText(edgeId, form.conditionName || '')
+      const edge = this.lf.getEdgeModelById?.(edgeId)
+      const source = edge && this.lf.getNodeModelById?.(edge.sourceNodeId)
+      this.lf.updateText(edgeId, source?.type === 'exclusive-gateway' ? branchCaption(props) : form.conditionName || '')
     } catch (e) {
       /* ignore */
     }
@@ -770,7 +769,7 @@ export default {
       return
     }
     try {
-      this.lf.render(layoutGraphByAnchors(canvasGraph))
+      this.lf.render(layoutGraphByAnchors(canvasGraph, { gridSize: this.snapGridEnabled ? this.gridSize : 0 }))
       this.$nextTick(() => {
         this.lf.fitView(40, 40)
         this.updateZoom()
@@ -958,10 +957,7 @@ export default {
       const props = e.properties || {}
       const sourceIndex = edgeCountBySource[e.sourceNodeId] || 0
       edgeCountBySource[e.sourceNodeId] = sourceIndex + 1
-      const storedPriority = Number(props.priority)
-      const priority = Number.isFinite(storedPriority)
-        ? storedPriority
-        : (sourceIndex + 1) * 10
+      const priority = edgePriority(e, sourceIndex)
       edgePriorityById[e.id] = priority
       return {
         id: e.id,

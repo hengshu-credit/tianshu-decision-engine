@@ -222,6 +222,19 @@ describe('LineageGraph', () => {
     wrapper.vm.positionOverrides = { CURRENT: { left: 0, top: 0 } }
     wrapper.vm.resetToBestLayout()
     expect(wrapper.vm.mindMapLayout.positions).toEqual(positions)
+    await nextTick()
+    const { nodes, edges } = wrapper.vm.graphData
+    const routed = edges.find(edge => edge.id === shortcut.key)
+    const project = nodes.find(node => node.id === 'PROJECT:5')
+    const current = nodes.find(node => node.id === 'CURRENT')
+    expect(routed.type).toBe('polyline')
+    expect(routed.pointsList[0]).toEqual({ x: project.x + 100, y: project.y })
+    expect(routed.pointsList.at(-1)).toEqual({ x: current.x - 100, y: current.y })
+    wrapper.vm.globalEdgeLineType = 'line'
+    wrapper.vm.onGlobalEdgeLineTypeChange()
+    wrapper.vm.resetToBestLayout()
+    await nextTick()
+    expect(wrapper.vm.graphData.edges.every(edge => edge.type === 'line')).toBe(true)
     wrapper.unmount()
   })
 
