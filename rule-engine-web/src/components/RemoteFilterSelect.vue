@@ -6,8 +6,10 @@
     class="remote-filter-input"
     popper-class="remote-filter-suggestions"
     :model-value="value"
-    :fetch-suggestions="fetchSuggestions"
-    :debounce="200"
+    :fetch-suggestions="scheduleSuggestions"
+    :debounce="0"
+    fit-input-width
+    :popper-options="suggestionPopperOptions"
     :highlight-first-item="false"
     :teleported="true"
     :placeholder="placeholder"
@@ -16,13 +18,15 @@
     @update:model-value="updateValue"
     @change="$emit('change', $event)"
     @select="handleSelect"
-    @focus="resumeSuggestions"
+    @focus="onSuggestionFocus"
     @blur="closeSuggestions"
+    @keydown.esc.capture="handleEscape"
     @clear="closeSuggestions"
     @click="openSuggestions"
     @keydown.enter.capture="handleEnterStart"
     @keyup.enter="handleEnter"
   >
+    <template #loading><app-loading-icon size="48px" /></template>
     <template #default="{ item }"><span class="remote-filter-suggestion" :title="item.label">{{ item.label }}</span></template>
   </el-autocomplete>
   <el-select
@@ -36,12 +40,16 @@
     :teleported="true"
     :placeholder="placeholder"
     :aria-label="$attrs['aria-label']"
-    :loading="loading"
+    popper-class="remote-filter-options"
+    fit-input-width
+    :loading="loading && pageNum === 1"
     :remote-method="handleRemote"
     @update:model-value="updateValue"
     @change="$emit('change', $event)"
     @popup-scroll="handleDropdownScroll"
   >
+    <template #loading><app-loading-icon size="48px" /></template>
+    <template #empty>暂无匹配选项</template>
     <template v-if="contentType" #label><content-reference :show-value-type="showValueType" v-if="selectedContent" :value="{ ...selectedContent, refType: contentType }" /></template>
     <el-option v-if="selectedOption && String(optionValue(selectedOption)) === String(value) && !options.some(option => String(optionValue(option)) === String(value))"
       :key="'selected:' + value" :label="optionLabel(selectedOption)" :value="value"><content-reference :show-value-type="showValueType" v-if="contentType" :value="{ ...selectedOption, refType: contentType }" /></el-option>
@@ -55,13 +63,14 @@
 </template>
 
 <script>
+import AppLoadingIcon from '@/components/common/AppLoadingIcon.vue'
 import ContentReference from '@/components/common/ContentReference.vue'
 import { $emit } from '../utils/gogocodeTransfer'
 
 // 文本筛选使用受控输入；候选查询只更新建议，不改写筛选条件。
 // 页面通过 fetchOptions、optionLabelKey、optionValueKey 配置数据源和字段。
 export default {
-  components: { ContentReference },
+  components: { AppLoadingIcon, ContentReference },
   name: 'RemoteFilterSelect',
   inheritAttrs: false,
   props: {
@@ -88,6 +97,8 @@ export default {
       loadedCount: 0,
       optionsRequestId: 0,
       suggestionsCallback: null,
+      suggestionTimer: null,
+      suggestionPopperOptions: undefined,
       dropdownWrap: null,
       lastInputValue: this.value,
       composingEnter: false,
@@ -114,7 +125,6 @@ export default {
       this.lastInputValue = value
       // 输入一变化就作废旧请求，不等候选查询的防抖结束。
       this.cancelPendingLoad()
-      this.suggestionsCallback?.([])
       $emit(this, 'update:value', value)
     },
     handleSelect() {
@@ -128,11 +138,19 @@ export default {
         autocomplete.getData(String(this.value ?? ''))
       }
     },
+    handleEscape(event) {
+      const autocomplete = this.$refs.autocomplete
+      if (autocomplete?.activated && (autocomplete.loading || autocomplete.suggestions?.length)) {
+        event.preventDefault()
+        event.stopPropagation()
+        this.closeSuggestions()
+      }
+    },
     handleEnterStart(event) {
       this.composingEnter = event.isComposing || event.keyCode === 229
       if (this.composingEnter) return
       // 未主动用方向键选中候选时，回车只查询输入，不执行自动补全的重新加载逻辑。
-      if (!(this.$refs.autocomplete?.highlightedIndex >= 0)) {
+      if (this.suggestionTimer !== null || this.loading || !(this.$refs.autocomplete?.highlightedIndex >= 0)) {
         event.preventDefault()
         event.stopPropagation()
         this.closeSuggestions()
@@ -146,6 +164,27 @@ export default {
       }
       this.closeSuggestions()
       // 值已经由 update:model-value 同步，keyup 冒泡到页面只执行一次查询。
+    },
+    scheduleSuggestions(query, callback) {
+      // Element 立即进入加载态，只对网络查询防抖，避免连续输入时下拉反复开关。
+      if (this.suggestionsClosed || String(query ?? '') !== String(this.lastInputValue ?? '')) {
+        callback([])
+        return
+      }
+      if (!this.suggestionsCallback && String(query ?? '') === String(this.value ?? '')) {
+        this.fetchSuggestions(query, callback)
+        return
+      }
+      if (this.loading && this.query === query) {
+        this.suggestionsCallback = callback
+        return
+      }
+      clearTimeout(this.suggestionTimer)
+      this.suggestionsCallback = callback
+      this.suggestionTimer = setTimeout(() => {
+        this.suggestionTimer = null
+        this.fetchSuggestions(query, callback)
+      }, 200)
     },
     fetchSuggestions(query, callback) {
       // 回车、失焦或重置后，排队的防抖任务不能重新打开候选或再发起查询。
@@ -174,6 +213,17 @@ export default {
         this.cancelPendingLoad()
       }
     },
+    onSuggestionFocus(event) {
+      this.resumeSuggestions()
+      const toolbar = event.target.closest('.uiue-filter-toolbar')
+      const form = event.target.closest('form')
+      if (!toolbar || !form) return
+      // 换行的筛选表单仍需留出下一行查询和重置按钮。
+      const extra = form.getBoundingClientRect().bottom - event.target.getBoundingClientRect().bottom
+      this.suggestionPopperOptions = extra > 20 ? {
+        modifiers: [{ name: 'offset', options: { offset: ({ placement }) => [0, placement.startsWith('bottom') ? extra + 8 : 12] } }],
+      } : undefined
+    },
     resumeSuggestions() {
       this.suggestionsClosed = false
     },
@@ -186,11 +236,13 @@ export default {
       this.unbindDropdownScroll()
     },
     cancelPendingLoad() {
+      clearTimeout(this.suggestionTimer)
+      this.suggestionTimer = null
       this.optionsRequestId += 1
       this.loading = false
     },
     async loadOptions(reset) {
-      if (!reset && (this.loading || !this.hasMore)) return
+      if (!reset && (this.loading || this.suggestionTimer !== null || !this.hasMore)) return
       const requestId = ++this.optionsRequestId
       if (reset) {
         this.pageNum = 1
@@ -291,9 +343,27 @@ export default {
   pointer-events: none;
 }
 
-:global(.remote-filter-suggestions.el-popper) {
-  min-width: min(320px, calc(100vw - 24px)) !important;
-  max-width: calc(100vw - 24px);
+/* 加载、空结果与可滚动列表共用同一个视口，换内容时保持弹层定位。 */
+:global(.remote-filter-suggestions),
+:global(.remote-filter-options) {
+  --filter-panel-height: min(176px, 35vh);
+}
+:global(.remote-filter-suggestions .el-autocomplete-suggestion__wrap),
+:global(.remote-filter-options .el-select-dropdown__wrap),
+:global(.remote-filter-options .el-select-dropdown__loading),
+:global(.remote-filter-options .el-select-dropdown__empty) {
+  box-sizing: border-box;
+  height: var(--filter-panel-height);
+}
+:global(.remote-filter-options .el-select-dropdown__loading),
+:global(.remote-filter-options .el-select-dropdown__empty) {
+  display: grid;
+  place-items: center;
+  margin: 0;
+}
+:global(.remote-filter-suggestions .el-autocomplete-suggestion.is-loading .el-autocomplete-suggestion__wrap) {
+  display: grid;
+  align-content: center;
 }
 
 :global(.remote-filter-suggestions .el-autocomplete-suggestion__list li) {

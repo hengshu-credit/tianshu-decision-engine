@@ -44,7 +44,7 @@ test('真实规则测试收藏保留执行快照并完整恢复输入', async ({
   await page.getByRole('option').filter({ hasText: `(${rule.ruleCode})` }).click()
   await expect(page.locator('.input-load-state strong')).toHaveText(/测试输入已就绪|未识别到结构化输入/)
 
-  await page.getByRole('button', { name: '手动添加', exact: true }).click()
+  await page.getByRole('button', { name: '添加参数', exact: true }).click()
   const snapshotRow = page.locator('.param-row').last()
   await snapshotRow.locator('.param-key input').fill('uiSnapshotMarker')
   await snapshotRow.locator('.param-value input').fill('original')
@@ -77,7 +77,7 @@ test('真实规则测试收藏保留执行快照并完整恢复输入', async ({
     await page.getByRole('button', { name: '保存为新用例', exact: true }).click()
     await expect(page.getByText('输入参数已修改，请重新执行后再收藏输入与结果', { exact: true })).toBeVisible()
     await expect(page.locator('.el-message-box')).not.toBeVisible()
-    await page.getByRole('button', { name: '手动添加', exact: true }).click()
+    await page.getByRole('button', { name: '添加参数', exact: true }).click()
     const temporaryRow = page.locator('.param-row').last()
     await temporaryRow.locator('.param-key input').fill('uiTemporaryField')
     await temporaryRow.locator('.param-value input').fill('remove-me')

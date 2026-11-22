@@ -1,8 +1,8 @@
 <template>
-  <div class="expected-output-editor">
+  <details class="expected-output-editor" :open="mode !== 'NONE' || Boolean(configurationError)">
+    <summary><strong>结果校验</strong><span>{{ configurationError ? '配置待修复' : mode === 'FIELDS' ? '按输出字段校验' : mode === 'SNAPSHOT' ? '比对 JSON 快照' : '仅查看执行结果' }}</span></summary>
     <div class="expectation-heading">
-      <strong>预期结果</strong>
-      <el-radio-group :model-value="mode" :disabled="Boolean(configurationError)" size="small" data-testid="expectation-mode" @update:model-value="setMode">
+      <el-radio-group aria-label="结果校验方式" :model-value="mode" :disabled="Boolean(configurationError)" size="small" data-testid="expectation-mode" @update:model-value="setMode">
         <el-radio-button value="NONE">不校验</el-radio-button>
         <el-radio-button value="FIELDS">按输出字段校验</el-radio-button>
         <el-radio-button value="SNAPSHOT">JSON 快照</el-radio-button>
@@ -75,7 +75,7 @@
       <p class="expectation-help">采用结果会替换当前预期快照，请先确认业务结果正确；执行成功本身不代表符合预期。</p>
     </template>
     <p v-else class="expectation-help">只记录执行结果，不判断用例是否通过。</p>
-  </div>
+  </details>
 </template>
 
 <script>
@@ -255,6 +255,9 @@ export default {
 
 <style scoped>
 .expected-output-editor { min-width: 0; color: var(--tianshu-text-primary); }
+.expected-output-editor summary { cursor: pointer; }
+.expected-output-editor summary span { margin-inline-start: 12px; color: var(--tianshu-text-secondary); font-size: 12px; }
+.expected-output-editor[open] summary { margin-bottom: 12px; }
 .expectation-heading, .expectation-check-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .expectation-help { color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.6; margin: 8px 0; overflow-wrap: anywhere; }
 .expectation-check { padding: 12px; margin: 10px 0; border: 1px solid var(--tianshu-border); border-radius: 6px; background: var(--tianshu-bg-surface); min-width: 0; }

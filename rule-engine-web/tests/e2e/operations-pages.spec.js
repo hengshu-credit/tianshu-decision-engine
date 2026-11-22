@@ -160,9 +160,10 @@ test('规则测试长表单可滚动到底并点击执行，窄屏底部也可�
   await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
   await page.getByRole('option', { name: /age_rule/ }).click()
   await expect(page.getByText('测试输入已就绪', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '自动生成', exact: true }).click()
+  await page.getByRole('button', { name: '输入工具', exact: true }).click()
+  await page.getByRole('button', { name: '生成模拟输入', exact: true }).click()
   await expect(page.locator('.param-value input').first()).toHaveValue('36')
-  for (let i = 0; i < 18; i++) await page.getByRole('button', { name: '手动添加' }).click()
+  for (let i = 0; i < 18; i++) await page.getByRole('button', { name: '添加参数' }).click()
   await expect(page.locator('.param-row')).toHaveCount(19)
   const left = page.locator('.test-left')
   const execute = page.getByRole('button', { name: '执行测试', exact: true })
@@ -182,7 +183,8 @@ test('规则测试长表单可滚动到底并点击执行，窄屏底部也可�
   await execute.click()
   await expectNoRootOverflow(page)
   await page.setViewportSize({ width: 1440, height: 1400 })
-  await page.getByRole('button', { name: '生成样例', exact: true }).click()
+  await page.getByRole('button', { name: '输入工具', exact: true }).click()
+  await page.getByRole('button', { name: '载入默认样例', exact: true }).click()
   const shortLayout = await page.locator('.test-actions').evaluate(element => ({
     top: element.getBoundingClientRect().top,
     previousBottom: element.previousElementSibling.getBoundingClientRect().bottom,
@@ -232,7 +234,8 @@ test('规则测试在表单与 JSON 间同步输入、生成样例并校验执�
   await expect(editor.getByRole('alert')).toHaveText('输入参数必须是 JSON 对象')
   await page.getByRole('button', { name: '执行测试', exact: true }).click()
   expect(submitted).toBeNull()
-  await page.getByRole('button', { name: '生成样例', exact: true }).click()
+  await page.getByRole('button', { name: '输入工具', exact: true }).click()
+  await page.getByRole('button', { name: '载入默认样例', exact: true }).click()
   await expect(editor.getByRole('alert')).toHaveCount(0)
   await expect(editor.locator('.view-lines')).toContainText('18')
   await page.getByRole('button', { name: '执行测试', exact: true }).click()
@@ -767,6 +770,7 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
     .locator('.el-select')
   await ruleSelect.click()
   await page.getByRole('option', { name: /age_rule/ }).click()
+  await page.locator('.expected-output-editor summary').click()
   const inputReady = page.locator('.input-load-state.is-ready')
   await expectStyleUsesToken(
     page.locator('.expected-output-editor .el-radio-button:not(.is-active) .el-radio-button__inner').first(),
@@ -1072,6 +1076,7 @@ test('预期模式按钮在明暗实时预览后仍使用可读文字色', async
   await page.goto('http://tianshu.local/index.html#/test')
   await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
   await page.getByRole('option', { name: /age_rule/ }).click()
+  await page.locator('.expected-output-editor summary').click()
   await page.getByTestId('expectation-mode').getByText('按输出字段校验', { exact: true }).click()
   await page.locator('.layout-account-trigger').click()
   await page.locator('[data-account-command="theme"]').click()

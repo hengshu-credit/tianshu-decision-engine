@@ -1,5 +1,6 @@
 const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
+const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
 const { DEFAULT_THEME_CONFIG } = require('../../src/theme/themeConfig.js')
 
 const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
@@ -21,6 +22,19 @@ async function expectLoader(locator) {
   const size = await locator.evaluate(element => getComputedStyle(element).fontSize)
   await expect(locator).toHaveCSS('background-size', `${size} ${size}`)
   await expect(locator.locator('svg:visible')).toHaveCount(0)
+}
+
+async function centeredPanel(panel, loader) {
+  const box = await panel.boundingBox()
+  const icon = await loader.boundingBox()
+  expect(Math.abs(box.x + box.width / 2 - icon.x - icon.width / 2)).toBeLessThan(2)
+  expect(Math.abs(box.y + box.height / 2 - icon.y - icon.height / 2)).toBeLessThan(2)
+  return box
+}
+function expectStablePanel(before, after) {
+  for (const key of ['x', 'y', 'width', 'height']) {
+    expect(Math.abs(after[key] - before[key]), key).toBeLessThan(2)
+  }
 }
 
 test('脚本下载前首屏就加载 HSCredit 动图，脚本完成后正常进入页面', async ({ page }) => {
@@ -47,7 +61,8 @@ test('脚本下载前首屏就加载 HSCredit 动图，脚本完成后正常进�
 
 for (const colorScheme of ['LIGHT', 'DARK']) {
   test(`${colorScheme} 表格与抽屉直接展示内容，候选下拉保留请求动画`, async ({ page }, testInfo) => {
-    const data = deferred(), options = deferred(), versions = deferred()
+    const data = deferred(), options = deferred(), search = deferred(), versions = deferred()
+    const queries = []
     const project = { id: 1, projectCode: 'e2e_project', projectName: 'E2E 项目', status: 1 }
     const { assertClean } = await installDistRoutes(page, { origin, liveStatic, apiData: new Map([
       ['/api/auth/console/config', { loginEnabled: true }],
@@ -55,7 +70,12 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
       ['/api/auth/console/preferences/theme', { ...DEFAULT_THEME_CONFIG, colorScheme }],
       ['POST /api/rule/console/activity', true],
       ['/api/rule/project/list', async () => { await data.promise; return { records: [project], total: 1 } }],
-      ['/api/rule/project/options', async () => { await options.promise; return { records: [project], total: 1 } }],
+      ['/api/rule/project/options', async ({ url }) => {
+        const query = url.searchParams.get('projectCode') || ''
+        queries.push(query)
+        await (query ? search : options).promise
+        return { records: [query ? { ...project, projectCode: 'typed_result' } : project], total: 1 }
+      }],
       ['/api/rule/resource-versions/PROJECT/1', async () => { await versions.promise; return { versions: [], history: [], drafts: [], actor: 'admin' } }],
     ]) })
     try {
@@ -71,11 +91,22 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
       await expect(table).toHaveAttribute('aria-busy', 'false')
       const input = page.getByRole('textbox', { name: '项目编码', exact: true })
       await input.click()
-      const suggestion = page.locator('.el-autocomplete-suggestion.is-loading .el-icon.is-loading')
+      const panel = page.locator('.remote-filter-suggestions:visible')
+      const suggestion = panel.locator('.tianshu-loading')
       await expectLoader(suggestion)
+      const before = await centeredPanel(panel, suggestion)
       options.resolve()
       await expect(page.getByRole('option', { name: 'e2e_project', exact: true })).toBeVisible()
       await expect(suggestion).toBeHidden()
+      expectStablePanel(before, await panel.boundingBox())
+      await input.fill('t')
+      await input.fill('typed')
+      await expectLoader(suggestion)
+      expectStablePanel(before, await centeredPanel(panel, suggestion))
+      await expect.poll(() => queries).toEqual(['', 'typed'])
+      search.resolve()
+      await expect(page.getByRole('option', { name: 'typed_result', exact: true })).toBeVisible()
+      expectStablePanel(before, await panel.boundingBox())
       await input.press('Escape')
       await page.getByRole('button', { name: '版本', exact: true }).click()
       const drawer = page.getByRole('dialog', { name: '版本管理' })
@@ -85,7 +116,7 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
       versions.resolve()
       await expect(drawer.locator('.resource-version-manager')).toHaveAttribute('aria-busy', 'false')
       assertClean()
-    } finally { data.resolve(); options.resolve(); versions.resolve() }
+    } finally { data.resolve(); options.resolve(); search.resolve(); versions.resolve() }
   })
 }
 
@@ -125,6 +156,45 @@ test('登录按钮显示旋转圆圈，提交期间保持禁用状态和文字�
     await expect(page).not.toHaveURL(/#\/login$/)
     assertClean()
   } finally { login.resolve() }
+})
+
+test('规则选项加载与列表使用相同面板，执行期间按钮显示双弧、结果区显示品牌动画', async ({ page }) => {
+  const options = deferred(), execution = deferred()
+  const fixtures = createOperationsApiData()
+  const optionsPath = '/api/rule/definition/list'
+  const executePath = 'POST /api/rule/definition/101/api-scenarios/execute-validated'
+  const execute = fixtures.get(executePath)
+  fixtures.set(executePath, async context => { await execution.promise; return execute(context) })
+  const { assertClean } = await installDistRoutes(page, { origin, liveStatic, apiData: fixtures })
+  try {
+    await page.goto(`${origin}/#/test`)
+    const selector = page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select')
+    await page.route(`**${optionsPath}*`, async route => { await options.promise; await route.fallback() })
+    await selector.click()
+    const panel = page.locator('.el-popper.remote-filter-options:visible')
+    const icon = panel.locator('.tianshu-loading')
+    await expectLoader(icon)
+    const before = await centeredPanel(panel, icon)
+    options.resolve()
+    const rule = page.getByRole('option', { name: /age_rule/ })
+    await expect(rule).toBeVisible()
+    expectStablePanel(before, await panel.boundingBox())
+    await rule.click()
+    const button = page.getByRole('button', { name: '执行测试', exact: true })
+    await button.click()
+    const spinner = button.locator('.el-icon.is-loading')
+    await expect(spinner).toBeVisible()
+    await expect(spinner).toHaveCSS('background-image', 'none')
+    await expect(spinner.locator('svg')).toBeHidden()
+    expect(await spinner.evaluate(el => getComputedStyle(el, '::before').animationName)).toBe('button-spin')
+    expect(await spinner.evaluate(el => getComputedStyle(el, '::after').backgroundColor)).toBe(await spinner.evaluate(el => getComputedStyle(el).color))
+    const result = page.locator('.result-loading')
+    await expectLoader(result.locator('.tianshu-loading'))
+    await centeredPanel(result, result.locator('.tianshu-loading'))
+    execution.resolve()
+    await expect(page.getByText('执行成功', { exact: true })).toBeVisible()
+    assertClean()
+  } finally { options.resolve(); execution.resolve() }
 })
 
 test('独立状态图标显示 HSCredit 动图，完成邮箱验证后消失', async ({ page }) => {

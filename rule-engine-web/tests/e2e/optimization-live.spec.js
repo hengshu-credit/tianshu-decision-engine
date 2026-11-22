@@ -183,6 +183,7 @@ test('隔离环境通过 UI 新建项目、提交审批、生效并测试数据�
   await checkRegression(page, gate => { expect(gate.allowed).toBe(true); expect(gate.requiredCount).toBe(0) })
   await page.getByRole('button', { name: '执行测试', exact: true }).click()
   await expect(page.getByText('执行成功', { exact: true }).first()).toBeVisible()
+  await page.locator('.expected-output-editor summary').click()
   await page.getByTestId('expectation-mode').getByText('JSON 快照', { exact: true }).click()
   await page.getByTestId('expectation-use-actual').click()
   await page.getByRole('button', { name: '保存为新用例', exact: true }).click()
