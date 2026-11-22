@@ -383,11 +383,16 @@ public class OfflineResourceImportService {
                                    Map<String, TransferBundle.Resource> byKey, Map<String, Long> idMap,
                                    Map<String, Map<Long, Long>> childMap,
                                    Map<String, Long> fieldBindings) {
+        Map<Long, String> variableTypes = new HashMap<>();
+        Set<String> versionPaths = new HashSet<>();
+        for (var version : TransferVersionReferences.scan(resource.configuration())) {
+            versionPaths.add(version.path());
+            versionPaths.addAll(version.ownedPaths());
+        }
         for (TransferBundle.Reference reference : resource.references()) {
             // Old format-1 manifests sometimes recorded the operand itself as the binding path.
             // The version mapper owns that node and all of its resource/version identity fields.
-            if (TransferVersionReferences.scan(resource.configuration()).stream().anyMatch(version ->
-                    version.path().equals(reference.path()) || version.ownedPaths().contains(reference.path()))) continue;
+            if (versionPaths.contains(reference.path())) continue;
             Long target = idMap.get(reference.targetKey());
             if (target == null) throw new IllegalArgumentException("上游资源尚未导入: " + reference.targetKey());
             if (reference.childPath() != null) {
@@ -400,7 +405,36 @@ public class OfflineResourceImportService {
                 if (mapped == null) throw new IllegalArgumentException("源资源子字段无法映射: " + reference.targetKey());
                 target = mapped;
             }
-            TransferJsonPath.replace(configuration, reference.path(), target);
+            if (resource.key().startsWith("RULE:") && reference.childPath() == null && reference.targetKey().startsWith("VARIABLE:")) {
+                Long variableId = target;
+                TransferJsonPath.replace(configuration, reference.path(), target, owner ->
+                        completeVariableType(owner, reference.path(), () -> variableTypes.computeIfAbsent(variableId, this::targetVariableType)));
+            } else {
+                TransferJsonPath.replace(configuration, reference.path(), target);
+            }
+        }
+    }
+
+    private String targetVariableType(Long variableId) {
+        ResourceSnapshot snapshot = adapterRegistry.require("VARIABLE").loadEffective(variableId);
+        if (snapshot != null && CanonicalJson.readMap(snapshot.snapshotJson()).get("varType") instanceof String type) return type;
+        return "";
+    }
+
+    static void completeVariableType(Map<String, Object> owner, String path, java.util.function.Supplier<String> declaration) {
+        if ("FIXED".equals(owner.get("versionMode"))) return;
+        String key;
+        if (path.endsWith("/varId") && (path.startsWith("/inputFieldsJson/") || path.startsWith("/outputFieldsJson/"))) {
+            key = "fieldType";
+        } else if (path.startsWith("/content/modelJson/") && path.endsWith("/refId") && "REFERENCE".equals(owner.get("kind"))) {
+            key = "valueType";
+        } else if (path.startsWith("/content/modelJson/") && path.endsWith("/_varId")) {
+            key = "varType";
+        } else return;
+        Object type = owner.get(key);
+        if (type == null || type instanceof String text && (text.isBlank() || "?".equals(text.trim()))) {
+            String resolved = declaration.get();
+            if (resolved != null && !resolved.isBlank() && !"?".equals(resolved.trim())) owner.put(key, resolved);
         }
     }
 

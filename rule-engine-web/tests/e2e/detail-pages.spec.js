@@ -263,6 +263,7 @@ test('规则工作区输入和输出的数据对象字段按对象父层和字�
   const errors = await openDetailPage(page, '/rule/101', apiData)
   await page.getByRole('tab', { name: /输入字段/ }).click()
   const inputHierarchy = page.getByTestId('input-field-hierarchy-2001')
+  await expect(inputHierarchy.locator('.content-ref__type').last()).toHaveText('1.0')
   await expect(inputHierarchy.locator('.content-ref__name').first()).toHaveText('评分字段')
   await expect(inputHierarchy.locator('.content-ref__code').first()).toHaveText('score_f1_fields')
   await expect(inputHierarchy.locator('.content-ref__name').last()).toHaveText('HYBASE_X115')
@@ -270,6 +271,7 @@ test('规则工作区输入和输出的数据对象字段按对象父层和字�
 
   await page.getByRole('tab', { name: /输出字段/ }).click()
   const outputHierarchy = page.getByTestId('output-field-hierarchy-2002')
+  await expect(outputHierarchy.locator('.content-ref__type').last()).toHaveText('Abc')
   await expect(outputHierarchy.locator('.content-ref__name').first()).toHaveText('评分字段')
   await expect(outputHierarchy.locator('.content-ref__name').last()).toHaveText('风险结果')
   await expect(outputHierarchy.locator('.content-ref__code').last()).toHaveText('score_f1_fields.risk_result')

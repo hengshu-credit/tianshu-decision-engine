@@ -23,7 +23,7 @@ function refEntry({ id, refType, refCode, label, varType, category, varObj, extr
     refCode,
     refLabel,
     displayName: [refLabel.label, refLabel.code].filter(Boolean).join(' '),
-    varType: varType || 'STRING',
+    varType: varType || '',
     category,
     varObj: Object.assign({ refType }, varObj || {}),
     ...extra

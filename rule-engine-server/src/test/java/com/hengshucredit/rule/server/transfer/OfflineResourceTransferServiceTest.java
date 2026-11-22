@@ -164,7 +164,7 @@ public class OfflineResourceTransferServiceTest {
         return service;
     }
 
-    private static class StubAdapter implements GovernedResourceAdapter {
+    static class StubAdapter implements GovernedResourceAdapter {
         final String type;
         final Map<String, Object> config;
         final List<ResourceDependencyRef> dependencies;

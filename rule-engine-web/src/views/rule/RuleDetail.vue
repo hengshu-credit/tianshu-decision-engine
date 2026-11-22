@@ -321,7 +321,7 @@
           >
             <template v-slot="{ row }">
               <el-tag size="small" type="info">{{
-                typeLabel(row.fieldType)
+                typeLabel(fieldHierarchyDisplay(row).valueType)
               }}</el-tag>
             </template>
           </el-table-column>
@@ -525,7 +525,7 @@
           >
             <template v-slot="{ row }">
               <el-tag size="small" type="info">{{
-                typeLabel(row.fieldType)
+                typeLabel(fieldHierarchyDisplay(row).valueType)
               }}</el-tag>
             </template>
           </el-table-column>
@@ -1407,6 +1407,7 @@
 
 <script>
 import { pageTabState } from '@/mixins/pageTabState'
+import { declaredContentType } from '@/constants/varTypes'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
@@ -3036,7 +3037,7 @@ export default {
       )
     },
     fieldHierarchyDisplay(row) {
-      const item = this.getFieldVarMap(row)
+      const item = row.versionMode === 'FIXED' ? null : this.getFieldVarMap(row)
       const refType = row.refType || row._refType || ''
       const isDataObject = refType === 'DATA_OBJECT'
       const objectLabel = isDataObject
@@ -3050,6 +3051,14 @@ export default {
           : mappedLabel || row.fieldLabel || '—'
       return {
         isDataObject,
+        refType,
+        refId: row.varId ?? row._varId,
+        valueType: declaredContentType(item) || declaredContentType(row),
+        versionMode: row.versionMode,
+        versionId: row.versionId,
+        version: row.version,
+        objectId: item?._ref?.objectId,
+        objectVersion: item?._ref?.objectVersion,
         objectLabel,
         objectCode: isDataObject
           ? (item && (item.objectCode || item.sourceCode)) || '—'
@@ -3058,6 +3067,7 @@ export default {
         fieldPath:
           (item && (item.varCodeText || item.scriptName)) ||
           row.scriptName ||
+          row.fieldName ||
           '—',
       }
     },
