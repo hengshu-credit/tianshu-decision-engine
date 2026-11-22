@@ -422,6 +422,7 @@ CREATE TABLE IF NOT EXISTS `governance_dependency_snapshot` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一生命周期审批依赖快照';
 
 CREATE TABLE IF NOT EXISTS `rule_definition` (
+  `test_input_json` JSON DEFAULT NULL COMMENT '规则测试的默认输入参数，空值表示按字段生成',
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
   `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
@@ -843,6 +844,7 @@ CREATE TABLE IF NOT EXISTS `rule_publish_outbox` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则发布通知可靠投递事务发件箱';
 
 CREATE TABLE IF NOT EXISTS `rule_mock_rule` (
+  `project_id` BIGINT DEFAULT NULL COMMENT '生成规则所属项目主键，空值表示全局可用',
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '可复用的测试数据生成规则主键',
   `seed_key` VARCHAR(32) DEFAULT NULL COMMENT '内置规则的稳定初始化标识，自定义规则为空',
   `name` VARCHAR(128) NOT NULL COMMENT '业务人员选择生成方式时看到的名称',
@@ -881,6 +883,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象定义表（Java实体类/JSON对象）';
 
 CREATE TABLE IF NOT EXISTS `rule_variable` (
+  `test_input_json` JSON DEFAULT NULL COMMENT '变量在线测试的默认输入参数，空值表示按字段生成',
   `system_constant` TINYINT NOT NULL DEFAULT 0 COMMENT '系统只读标记：系统常量与引擎内部字段为1，禁止业务修改和删除',
   `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '是否显式记录字段结果供历史统计：0=否，1=是',
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',

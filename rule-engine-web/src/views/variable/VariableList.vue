@@ -1256,7 +1256,7 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="isObjectField" label="示例值">
-          <example-value-editor v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
+          <example-value-editor :project-id="form.projectId" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
         </el-form-item>
         <el-form-item v-if="isObjectField && objectHasExternalSource && !objectFieldApiId" label="来源路径">
           <el-input
@@ -1550,7 +1550,7 @@
             <el-input v-model="form.valueRange" placeholder="如：0~100、A/B/C" />
           </el-form-item>
           <el-form-item label="示例值">
-            <example-value-editor v-if="form.varSource === 'INPUT'" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
+            <example-value-editor v-if="form.varSource === 'INPUT'" :project-id="form.projectId" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
             <el-input v-else v-model="form.exampleValue" placeholder="可留空" />
           </el-form-item>
           <el-form-item label="排序">
@@ -1720,7 +1720,7 @@
           />
         </el-form-item>
         <el-form-item label="整体示例值">
-          <example-value-editor v-model:mode="objectForm.exampleMode" v-model:value="objectForm.exampleValue" v-model:rule-id="objectForm.mockRuleId" field-type="OBJECT" />
+          <example-value-editor :project-id="objectForm.projectId" v-model:mode="objectForm.exampleMode" v-model:value="objectForm.exampleValue" v-model:rule-id="objectForm.mockRuleId" field-type="OBJECT" />
         </el-form-item>
         <el-form-item label="对象类型" prop="objectType">
           <el-radio-group v-model="objectForm.objectType">
@@ -1897,7 +1897,7 @@
         <span>{{ testTarget.varLabel || testTarget.varCode }}</span>
         <code>{{ testTarget.scriptName || testTarget.varCode }}</code>
       </div>
-      <resource-test-cases v-if="variableTestVisible && testTarget" :endpoint="'/rule/variable/'+testTarget.id+'/test-cases'" :params="variableTestParamsText" :outcome="variableTestResult" @context="variableTestRoot = $event" @apply="value => { variableTestParamsText = value; variableTestResult = null }" />
+      <resource-test-cases kind="VARIABLE" :owner="testTarget" v-if="variableTestVisible && testTarget" :endpoint="'/rule/variable/'+testTarget.id+'/test-cases'" :params="variableTestParamsText" :outcome="variableTestResult" @context="variableTestRoot = $event" @apply="value => { variableTestParamsText = value; variableTestResult = null }" />
       <dismissible-guidance :guide-id="'variable.test.' + (testTarget?.varSource || 'input')" label="变量测试入参说明">
         {{ testDialogHint }}
       </dismissible-guidance>
@@ -1916,6 +1916,7 @@
           <el-button size="small" @click="variableTestVisible = false"
             >关闭</el-button
           >
+          <el-button v-permission="'field:edit'" size="small" @click="saveVariableDefault">保存默认输入</el-button>
           <el-button v-permission="'field:edit'"
             size="small"
             type="primary"
@@ -2417,6 +2418,7 @@ import {
   deleteFieldValidationDraft,
 } from '@/api/variable'
 import { listProjectOptions as listProjects } from '@/api/project'
+import { saveDefaultInput } from '@/api/testData'
 import { getRuleTestSchema } from '@/api/definition'
 import request from '@/api/request'
 import {
@@ -5186,6 +5188,10 @@ export default {
       }
       return rows
     },
+    async saveVariableDefault() {
+      await saveDefaultInput('VARIABLE',this.testTarget.id,this.variableTestParamsText)
+      this.$message.success('变量默认测试输入已保存')
+    },
     async handleTestVariable(row) {
       this.variableTestVisible = false
       if (!(await this.loadVariableSourceOptions(row && row.varSource, row))) return
@@ -5204,7 +5210,7 @@ export default {
       if (requestId !== this.sourceOptionsRequestId) return
       this.variableTestRoot = null
       this.testTarget = row
-      this.variableTestParamsText = hasSchema ? this.formatJson(schema.sampleParams) : this.buildTestParamTemplate(row)
+      this.variableTestParamsText = hasSchema ? (schema.sampleParamsJson || this.formatJson(schema.sampleParams)) : this.buildTestParamTemplate(row)
       this.variableTestResult = null
       this.variableTestVisible = true
     },

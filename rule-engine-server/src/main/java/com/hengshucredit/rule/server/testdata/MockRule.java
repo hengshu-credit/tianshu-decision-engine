@@ -14,7 +14,10 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 public record MockRule(Long id, String name, String valueType, String matchNames, String generator,
-                       String configJson, boolean builtin) {
+                       String configJson, boolean builtin, Long projectId, String projectName) {
+    public MockRule(Long id, String name, String valueType, String matchNames, String generator, String configJson, boolean builtin) {
+        this(id,name,valueType,matchNames,generator,configJson,builtin,null,null);
+    }
     static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     static JsonNode parse(String raw) {

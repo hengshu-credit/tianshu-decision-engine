@@ -238,7 +238,7 @@ public class DataObjectGovernedResourceAdapter
                                      List<GovernanceIssue> issues) {
         List<FieldDraft> fields = parseDrafts(snapshot);
         RuleDataObject owner = JSON.parseObject(CanonicalJson.write(snapshot), RuleDataObject.class);
-        if ((owner.getExampleMode() != null || owner.getMockRuleId() != null) && !mockCatalog.validExample(owner.getExampleMode(), owner.getMockRuleId(), "OBJECT"))
+        if ((owner.getExampleMode() != null || owner.getMockRuleId() != null) && !mockCatalog.validExample(owner.getExampleMode(), owner.getMockRuleId(), "OBJECT", owner.getProjectId()))
             issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "请选择对象类型的 Mock 规则", "DATA_OBJECT", owner.getId(), "$.mockRuleId"));
         validateObjectSource(snapshot, owner, issues);
         if ("API".equals(owner.getSourceType()) && sourceValidator != null) {
@@ -271,7 +271,7 @@ public class DataObjectGovernedResourceAdapter
                         longValue(snapshot.get("id")),
                         "$.fields"));
             }
-            if ((field.getExampleMode() != null || field.getMockRuleId() != null) && !mockCatalog.validExample(field.getExampleMode(), field.getMockRuleId(), field.getVarType()))
+            if ((field.getExampleMode() != null || field.getMockRuleId() != null) && !mockCatalog.validExample(field.getExampleMode(), field.getMockRuleId(), field.getVarType(), owner.getProjectId()))
                 issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "子字段 Mock 规则与字段类型不兼容", "DATA_OBJECT", owner.getId(), "$.fields"));
             referenceValidator.validate(owner, field, referenceFields).forEach(issue ->
                     issues.add(GovernanceIssue.error(issue.getCode(), issue.getMessage(),

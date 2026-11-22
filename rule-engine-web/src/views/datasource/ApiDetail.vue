@@ -1092,6 +1092,7 @@
                 <el-button size="small" @click="regenerateTestParams"
                   >生成测试 JSON</el-button
                 >
+                <el-button v-permission="'datasource:edit'" size="small" @click="setDefaultSample">保存默认输入</el-button>
                 <el-button size="small" @click="loadSavedSample"
                   >加载已存样例</el-button
                 >
@@ -1145,7 +1146,7 @@
                 <div class="field-help">取消仅停止后续步骤，已经发出的供应商请求及已产生的费用不会撤销。</div>
               </div>
             </section>
-            <resource-test-cases v-if="form.id" :endpoint="'/rule/datasource/api-config/'+form.id+'/test-cases'" :params="invokeParamsText" :outcome="invokeSnapshotChanged ? null : invokeResultText" @apply="value => { invokeParamsText = value; invokeResultText = ''; selectedSampleId = '' }" />
+            <resource-test-cases kind="API" :owner="{ id: form.id, projectId: resolveDatasourceProjectId(form.datasourceId) }" v-if="form.id" :endpoint="'/rule/datasource/api-config/'+form.id+'/test-cases'" :params="invokeParamsText" :outcome="invokeSnapshotChanged ? null : invokeResultText" @apply="value => { invokeParamsText = value; invokeResultText = ''; selectedSampleId = '' }" />
             <el-form-item v-if="form.executionConfig" label="选择测试样例">
               <el-select v-model="selectedSampleId" clearable filterable placeholder="选择已保存样例" @change="selectExecutionSample">
                 <el-option v-for="sample in executionSamples" :key="sample.id" :value="sample.id" :label="sample.name" />
@@ -1264,9 +1265,7 @@ import ResponseConditionTreeEditor from '@/components/common/ResponseConditionTr
 import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import {
-  collectOperandInputPaths,
-  sampleValueForVarType,
-  setPathValue,
+  apiDefaultInput,
 } from '@/utils/testParamTemplate'
 import { routeProjectId } from '@/utils/projectContext'
 import { trialStatusLabel, trialStatusType } from '@/utils/apiTrialStatus'
@@ -1588,7 +1587,7 @@ export default {
   activated() {
     const resuming = !this.routeActive
     this.routeActive = true
-    if (resuming && (this.initializing || this.initializationError)) this.initializeRoute()
+    if (resuming && (this.initializing || this.initializationError || this.form.id && !this.configurationHasUnsavedChanges)) this.initializeRoute()
   },
   deactivated() {
     this.routeActive = false
@@ -2303,7 +2302,20 @@ export default {
       this.syncStructuredConfigToForm()
       this.invokeParamsText = this.buildApiInvokeParamTemplate(this.form)
     },
-    loadSavedSample() { if (this.selectedSampleId) this.selectExecutionSample(); else this.regenerateTestParams() },
+    loadSavedSample() {
+      if (this.selectedSampleId) this.selectExecutionSample()
+      else if (this.form.testSampleParams) this.invokeParamsText = typeof this.form.testSampleParams === 'string'
+        ? this.form.testSampleParams : this.stringifyJson(this.form.testSampleParams)
+      else this.regenerateTestParams()
+    },
+    setDefaultSample() {
+      try {
+        this.parseTestParams()
+        this.form.testSampleParams = this.invokeParamsText.trim() || '{}'
+        this.selectedSampleId = ''
+        this.$message.success('默认输入已更新，请保存接口草稿')
+      } catch (error) { this.$message.error(error.message) }
+    },
     selectExecutionSample() {
       const sample = this.executionSamples.find(item => item.id === this.selectedSampleId)
       if (sample) this.invokeParamsText = JSON.stringify(sample.params, null, 2)
@@ -2321,19 +2333,8 @@ export default {
       } catch (error) { this.$message.error(error.message || '测试参数不是合法 JSON') }
     },
     buildApiInvokeParamTemplate(row) {
-      const sample = {}
-      const execution = JSON.parse(row.executionConfig)
-      const auth = this.parseConfigForTemplate(row.authApiConfig)
-      const paths = new Set(collectOperandInputPaths([execution.requestFields, execution.requestBranches, execution.steps, auth]))
-      paths.forEach(path => setPathValue(sample, path, this.sampleValueForPath(path)))
-      return this.stringifyJson(sample)
+      return this.stringifyJson(apiDefaultInput(row, this.apiPickerVars))
     },
-    sampleValueForPath(path) {
-      const normalized = String(path || '').replace(/^\$\./, '')
-      const field = this.findFieldForSamplePath(normalized)
-      return sampleValueForVarType(field && field.varType)
-    },
-    findFieldForSamplePath(path) { return this.apiPickerVars.find(field => field.varCode === String(path || '').replace(/^\$\./, '')) },
     captureTestSignature() {
       return JSON.stringify([this.form, this.invokeParamsText, this.apiAuthConfig, this.scriptVariableRows, this.cacheKeyRows,
         this.successConditionRoot, this.exceptionConditionRoot, this.retryConditionRoot, this.tokenFailureMode,

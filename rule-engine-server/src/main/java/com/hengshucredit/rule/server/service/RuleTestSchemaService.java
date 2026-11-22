@@ -30,10 +30,10 @@ public class RuleTestSchemaService {
     @Resource @org.springframework.context.annotation.Lazy
     private com.hengshucredit.rule.server.testdata.TestMockService mockService;
 
-    public RuleTestSchema withExamples(RuleTestSchema schema, com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
+    public RuleTestSchema withExamples(RuleTestSchema schema, com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot, Long projectId) {
         if (mockService != null && !schema.getInputs().isEmpty()) {
             schema.setGeneratedExamples(true);
-            var values = mockService.examples(schema.getInputs(),snapshot);
+            var values = mockService.examples(schema.getInputs(),snapshot,projectId);
             schema.setSampleParams(JSON.parseObject(values.toString(), new com.alibaba.fastjson.TypeReference<LinkedHashMap<String,Object>>() {},
                     Feature.DisableSpecialKeyDetect, Feature.UseBigDecimal));
         }
@@ -46,9 +46,29 @@ public class RuleTestSchemaService {
                     request.getModelJson(), request.getModelType(), request.getProjectId());
             RuleTestSchema schema = build(target);
             if (request.isIncludeDesign()) schema.setModelJson(target.modelJson());
-            return withExamples(schema,target.snapshot());
+            return withDefaultOrExamples(schema,request,target.snapshot(),target.projectId());
         }
-        return withExamples(build(fieldDependencyResolver.resolve(request)),null);
+        RuleTestSchema schema = build(fieldDependencyResolver.resolve(request));
+        Long projectId = request.getProjectId();
+        if (defaults != null && request.getTargetId() != null)
+            projectId = defaults.ownerProject(request.getTargetType(),request.getTargetId());
+        return withDefaultOrExamples(schema,request,null,projectId);
+    }
+
+    @Resource private com.hengshucredit.rule.server.testdata.TestInputDefaults defaults;
+
+    private RuleTestSchema withDefaultOrExamples(RuleTestSchema schema, RuleTestSchemaRequest request,
+            com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot, Long projectId) {
+        String json = defaults == null || request.getTargetId() == null || request.getModelJson() != null
+                ? null : defaults.read(request.getTargetType(),request.getTargetId());
+        if (json != null) {
+            schema.setSavedDefault(true);
+            schema.setGeneratedExamples(true);
+            schema.setSampleParams(JSON.parseObject(json, new com.alibaba.fastjson.TypeReference<LinkedHashMap<String,Object>>() {},
+                    Feature.DisableSpecialKeyDetect, Feature.UseBigDecimal));
+            return schema;
+        }
+        return withExamples(schema,snapshot,projectId);
     }
 
     public RuleTestSchema buildModelSnapshot(com.hengshucredit.rule.model.entity.RuleModel model,
@@ -70,7 +90,7 @@ public class RuleTestSchemaService {
     }
 
     public RuleTestSchema buildDerivedDraft(com.hengshucredit.rule.model.entity.RuleVariable variable) {
-        return withExamples(build(fieldDependencyResolver.resolveDerivedDraft(variable)),null);
+        return withExamples(build(fieldDependencyResolver.resolveDerivedDraft(variable)),null,variable.getProjectId());
     }
 
     public RuleTestSchema build(ResolutionPlan plan) {

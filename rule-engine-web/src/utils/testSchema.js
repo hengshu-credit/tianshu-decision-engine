@@ -5,6 +5,7 @@ export function normalizeTestSchema(response) {
   return {
     inputs: (Array.isArray(schema.inputs) ? schema.inputs : []).filter(field => !schema.generatedExamples ||
       readParamPath(schema.sampleParams, field.scriptName || field.code) !== undefined),
+    ...(schema.savedDefault ? { savedDefault: true } : {}),
     ...(schema.generatedExamples ? { generatedExamples: true } : {}),
     outputs: Array.isArray(schema.outputs) ? schema.outputs : [],
     runtimeNodes: Array.isArray(schema.runtimeNodes) ? schema.runtimeNodes : [],

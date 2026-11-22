@@ -14,6 +14,7 @@ import java.util.Map;
 public class TestDataController {
     private final TestDataCatalog catalog;
     private final SavedTestDirectory directory;
+    private final TestInputDefaults defaults;
     private final MockFieldBindings bindings;
     private final TestMockService generator;
 
@@ -67,11 +68,18 @@ public class TestDataController {
             @RequestParam String source,@RequestParam String id) {
         return ApiResponse.ok(Map.of("paramsJson",directory.sample(type,source,owner,id)));
     }
+    @PutMapping("/defaults/{type}/{owner}")
+    @RequirePermission(value="rule:edit",anyOf="field:edit")
+    public ApiResponse<Void> saveDefault(@PathVariable TestResource type,@PathVariable long owner,@RequestBody Map<String,String> body) {
+        defaults.save(type,owner,body.get("paramsJson")); return ApiResponse.ok();
+    }
+
     @GetMapping("/cases")
     @RequirePermission("rule:view")
     public ApiResponse<Map<String,Object>> cases(@RequestParam(required=false) TestResource type,
-            @RequestParam(defaultValue="") String keyword,@RequestParam(defaultValue="1") int page) {
-        return ApiResponse.ok(directory.list(type,keyword,page));
+            @RequestParam(defaultValue="") String keyword,@RequestParam(defaultValue="1") int page,
+            @RequestParam(required=false) String scope,@RequestParam(required=false) Long projectId) {
+        return ApiResponse.ok(directory.list(type,keyword,page,scope,projectId));
     }
     @GetMapping("/{type}/catalog")
     @RequirePermission("rule:view")
@@ -90,10 +98,17 @@ public class TestDataController {
         catalog.saveCase(type,owner,null,row); return ApiResponse.ok();
     }
     @PutMapping("/{type}/{owner}/cases/{id}")
-    @RequirePermission("rule:view")
+    @RequirePermission(value="field:edit",anyOf={"model:edit","datasource:edit"})
     public ApiResponse<Void> update(@PathVariable TestResource type,@PathVariable long owner,@PathVariable long id,@RequestBody TestDataCatalog.ResourceCase row) {
         catalog.saveCase(type,owner,id,row); return ApiResponse.ok();
     }
+    @PutMapping("/{type}/{owner}/cases/{id}/input")
+    @RequirePermission(value="field:edit",anyOf={"model:edit","datasource:edit"})
+    public ApiResponse<Void> updateCaseInput(@PathVariable TestResource type,@PathVariable long owner,@PathVariable long id,
+            @RequestBody Map<String,String> input) {
+        catalog.saveCaseInput(type,owner,id,input.get("paramsJson"),input.get("originalJson")); return ApiResponse.ok();
+    }
+
     @DeleteMapping("/{type}/{owner}/cases/{id}")
     @RequirePermission("rule:view")
     public ApiResponse<Void> remove(@PathVariable TestResource type,@PathVariable long owner,@PathVariable long id) {

@@ -357,7 +357,22 @@ public class RuleModelController {
     public ApiResponse<GovernanceRequestView> saveVersionTestParams(@PathVariable Long id, @PathVariable Integer version,
                                                          @RequestBody Map<String, String> body) {
         RuleModel draft = modelService.prepareVersionSampleDraft(id, version, body.get("testParams"));
-        return ApiResponse.ok(createModelDraft(draft, "UPDATE", "修改模型 v" + version + " 的测试参数"));
+        String actor = operatorResolver.resolve();
+        GovernanceRequestView workspace = governanceApprovalService.editableWorkspace("MODEL",id,actor);
+        String summary = "修改模型 v" + version + " 的测试参数";
+        if (workspace == null) return ApiResponse.ok(createModelDraft(draft, "UPDATE", summary));
+        // 测试入口只改样例，保留同一工作区尚未发布的字段、制品及其他配置。
+        var snapshot = JSON.parseObject(workspace.draftSnapshotJson());
+        String raw = snapshot.getString("modelConfig");
+        var config = raw == null || raw.isBlank() ? new com.alibaba.fastjson.JSONObject() : JSON.parseObject(raw);
+        config.put("testParams",body.get("testParams"));
+        config.put("testParamsSource","SAVED");
+        snapshot.put("modelConfig",config.toJSONString());
+        var change = new GovernanceDraftRequest();
+        change.setSnapshotJson(snapshot.toJSONString());
+        change.setExpectedSnapshotDigest(workspace.snapshotDigest());
+        change.setChangeSummary(summary);
+        return ApiResponse.ok(GovernanceRequestView.from(governanceApprovalService.saveDraft(workspace.id(),change,actor)));
     }
 
     /**
@@ -497,6 +512,6 @@ public class RuleModelController {
     @com.hengshucredit.rule.server.security.RequirePermission("model:view")
     public ApiResponse<java.util.List<Map<String,Object>>> testCases(@PathVariable Long id) {
         if (modelService.getDetail(id) == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "测试资源不存在");
-        return ApiResponse.ok(testCaseJdbc.queryForList("SELECT case_code AS code, case_name AS name, params_json AS paramsJson, expected_json AS expectedJson FROM rule_model_test_case WHERE model_id=? ORDER BY id", id));
+        return ApiResponse.ok(testCaseJdbc.queryForList("SELECT CAST(id AS CHAR) AS id, case_code AS code, case_name AS name, params_json AS paramsJson, expected_json AS expectedJson FROM rule_model_test_case WHERE model_id=? ORDER BY id", id));
     }
 }

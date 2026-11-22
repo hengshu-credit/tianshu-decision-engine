@@ -18,42 +18,55 @@ public class TestDataCatalog {
     private final ConsoleResourceAccess access;
     private final ConsoleProjectAccess projects;
 
-    public boolean compatible(Long ruleId,String type) {
-        return ruleId == null || jdbc.queryForList("SELECT value_type FROM rule_mock_rule WHERE id=?",String.class,ruleId)
+    public boolean compatible(Long ruleId,String type,Long projectId) {
+        return ruleId == null || jdbc.queryForList("SELECT value_type FROM rule_mock_rule WHERE id=? AND (project_id IS NULL OR project_id=?)",String.class,ruleId,projectId)
                 .contains(MockRule.group(type));
     }
 
-    public boolean validExample(String mode, Long ruleId, String type) {
-        if (mode == null) return compatible(ruleId,type);
+    public boolean validExample(String mode, Long ruleId, String type, Long projectId) {
+        if (mode == null) return compatible(ruleId,type,projectId);
         return switch (mode) {
-            case "RULE" -> ruleId != null && compatible(ruleId,type);
+            case "RULE" -> ruleId != null && compatible(ruleId,type,projectId);
             case "FIXED","AUTO","NONE" -> ruleId == null;
             default -> false;
         };
     }
 
     List<MockRule> rules() {
-        return jdbc.query("SELECT * FROM rule_mock_rule ORDER BY seed_key IS NULL DESC,id DESC", (rs,i) ->
+        var scope = projects.current();
+        return jdbc.query("SELECT m.*,p.project_name FROM rule_mock_rule m LEFT JOIN rule_project p ON p.id=m.project_id "
+                +"WHERE m.project_id IS NULL OR p.status>=0 ORDER BY m.project_id IS NULL, m.seed_key IS NULL DESC,m.id DESC", (rs,i) ->
                 new MockRule(rs.getLong("id"),rs.getString("name"),rs.getString("value_type"),rs.getString("match_names"),
-                        rs.getString("generator"),rs.getString("config_json"),rs.getString("seed_key") != null));
+                        rs.getString("generator"),rs.getString("config_json"),rs.getString("seed_key") != null,
+                        rs.getObject("project_id",Long.class),rs.getString("project_name"))).stream()
+                .filter(rule -> scope == null || scope.can("field:view",rule.projectId()) || scope.can("rule:view",rule.projectId())).toList();
+    }
+    List<MockRule> rulesForProject(Long projectId) {
+        return rules().stream().filter(rule -> rule.projectId() == null || rule.projectId().equals(projectId)).toList();
     }
     @Transactional
     public void saveRule(Long id, MockRule rule) {
-        projects.requirePermission("field:edit",0L);
+        Long projectId = rule.projectId();
+        if (projectId != null && (projectId <= 0 || jdbc.queryForList("SELECT id FROM rule_project WHERE id=? AND status>=0",Long.class,projectId).isEmpty()))
+            throw new IllegalArgumentException("请选择有效的所属项目");
+        projects.requirePermission("field:edit",projectId);
         rule.validate();
         if (id == null) {
-            jdbc.update("INSERT INTO rule_mock_rule (name,value_type,match_names,generator,config_json) VALUES (?,?,?,?,?)",
-                    rule.name(),rule.valueType(),rule.matchNames(),rule.generator(),rule.configJson());
+            jdbc.update("INSERT INTO rule_mock_rule (name,value_type,match_names,generator,config_json,project_id) VALUES (?,?,?,?,?,?)",
+                    rule.name(),rule.valueType(),rule.matchNames(),rule.generator(),rule.configJson(),projectId);
         } else {
-            var types = jdbc.queryForList("SELECT value_type FROM rule_mock_rule WHERE id=? FOR UPDATE",String.class,id);
+            var types = jdbc.queryForList("SELECT value_type FROM rule_mock_rule WHERE id=? AND project_id <=> ? FOR UPDATE",String.class,id,projectId);
             if (types.isEmpty()) throw new IllegalArgumentException("生成规则已删除");
             if (!types.get(0).equals(rule.valueType())) throw new IllegalArgumentException("已有规则的字段类型不可变，请新增规则");
             jdbc.update("UPDATE rule_mock_rule SET name=?,match_names=?,generator=?,config_json=? WHERE id=?",
                     rule.name(),rule.matchNames(),rule.generator(),rule.configJson(),id);
         }
     }
-    void removeRule(long id) {
-        projects.requirePermission("field:edit",0L);
+    @Transactional
+    public void removeRule(long id) {
+        var owners = jdbc.queryForList("SELECT project_id FROM rule_mock_rule WHERE id=? FOR UPDATE",Long.class,id);
+        if (owners.isEmpty()) throw new IllegalArgumentException("规则已删除");
+        projects.requirePermission("field:edit",owners.get(0));
         try {
             if (jdbc.update("DELETE FROM rule_mock_rule WHERE id=? AND seed_key IS NULL",id) == 0)
                 throw new IllegalArgumentException("内置规则需保留，或该规则已删除");
@@ -63,9 +76,11 @@ public class TestDataCatalog {
         return "(" + policy.predicate(kind.table,"r") + ")";
     }
     Map<String,Object> page(TestResource kind, boolean cases, String keyword, int page) {
-        String from = " FROM " + kind.table + " r";
+        String owner = kind == TestResource.API ? "ds" : "r";
+        String from = " FROM " + kind.table + " r" + (kind == TestResource.API ? " JOIN rule_external_datasource ds ON ds.id=r.datasource_id" : "")
+                + " LEFT JOIN rule_project p ON p.id="+owner+".project_id";
         String name = kind == TestResource.RULE ? "c.scenario_name" : "c.case_name";
-        String columns = "r.id AS ownerId,r."+kind.label+" AS resourceName,r."+kind.code+" AS code";
+        String columns = "r.id AS ownerId,r."+kind.label+" AS resourceName,r."+kind.code+" AS code,"+owner+".scope AS scope,"+owner+".project_id AS projectId,p.project_name AS projectName";
         if (cases) {
             from += " JOIN "+kind.cases+" c ON c."+kind.owner+"=r.id";
             columns += ",c.id,"+name+" AS name";
@@ -126,6 +141,13 @@ public class TestDataCatalog {
             if (jdbc.update("UPDATE "+kind.cases+" SET "+fields+" WHERE "+kind.owner+"=? AND id=?",args.toArray())==0)
                 throw new IllegalArgumentException("用例已删除");
         }
+    }
+    @Transactional
+    public void saveCaseInput(TestResource kind,long owner,long id,String params,String original) {
+        caseAccess(kind,owner,"edit");
+        if (!MockRule.parse(params).isObject()) throw new IllegalArgumentException("输入参数必须是 JSON 对象");
+        if (jdbc.update("UPDATE "+kind.cases+" SET params_json=? WHERE "+kind.owner+"=? AND id=? AND params_json=CAST(? AS JSON)",
+                params,owner,id,original)==0) throw new IllegalArgumentException("用例已修改或删除，请刷新后再保存");
     }
     void removeCase(TestResource kind,long owner,long id) {
         caseAccess(kind,owner,"edit");

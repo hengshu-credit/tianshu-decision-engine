@@ -618,7 +618,7 @@
       :close-on-click-modal="false"
       @closed="closeTestDialog"
     >
-      <resource-test-cases v-if="testVisible && model.id" :key="'cases-' + testVersion" :endpoint="'/rule/model/'+model.id+'/test-cases'" :params="testJsonStr" :outcome="testResult" @apply="value => { testMode = 'json'; testJsonStr = value; syncJsonToParams(); testResult = null }" />
+      <resource-test-cases kind="MODEL" :owner="model" v-if="testVisible && model.id" :key="'cases-' + testVersion" :endpoint="'/rule/model/'+model.id+'/test-cases'" :params="testJsonStr" :outcome="testResult" @apply="value => { testMode = 'json'; testJsonStr = value; syncJsonToParams(); testResult = null }" />
       <div class="version-compare-toolbar model-test-version-toolbar" data-testid="model-test-version-toolbar">
         <span>测试版本</span>
         <el-select :model-value="testVersion" :disabled="testSaving" data-testid="model-test-version" @change="openTestDialog">
@@ -2012,7 +2012,10 @@ export default {
         let configParams = null
         let configParamSource = 'CONFIG_SAMPLE'
         try {
-          const rawConfig = freshModel.modelConfig
+          const sampleModel = String(version) === String(context.currentVersion) && hasPermission('model:edit',freshModel)
+            ? await editableResource('MODEL',modelId,freshModel) : freshModel
+          if (!this.isActiveTestSetup(requestId, modelId)) return
+          const rawConfig = sampleModel?.modelConfig
           const config =
             typeof rawConfig === 'string'
               ? JSON.parse(rawConfig)

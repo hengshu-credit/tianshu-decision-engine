@@ -21,3 +21,7 @@ export const listMockFields = id => request.get(base + '/rules/' + id + '/fields
 export const setMockField = (id,type,ref,remove=false) => request({
   url: base + '/rules/' + id + '/fields/' + type + '/' + ref, method: remove ? 'delete' : 'put'
 })
+
+export const saveDefaultInput = (type, owner, paramsJson) => request.put(base + '/defaults/' + type + '/' + owner, { paramsJson })
+export const saveResourceCaseInput = (type, owner, id, paramsJson, originalJson) =>
+  request.put(casesPath(type, owner) + '/' + id + '/input', { paramsJson, originalJson })

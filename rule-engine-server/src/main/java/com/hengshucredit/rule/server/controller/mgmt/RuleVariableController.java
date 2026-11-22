@@ -269,6 +269,6 @@ public class RuleVariableController {
     @com.hengshucredit.rule.server.security.RequirePermission("field:view")
     public ApiResponse<java.util.List<Map<String,Object>>> testCases(@PathVariable Long id) {
         if (variableService.getById(id) == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "测试资源不存在");
-        return ApiResponse.ok(testCaseJdbc.queryForList("SELECT context_definition_id AS contextDefinitionId, case_code AS code, case_name AS name, params_json AS paramsJson, expected_json AS expectedJson FROM rule_variable_test_case WHERE variable_id=? ORDER BY id", id));
+        return ApiResponse.ok(testCaseJdbc.queryForList("SELECT CAST(id AS CHAR) AS id, context_definition_id AS contextDefinitionId, case_code AS code, case_name AS name, params_json AS paramsJson, expected_json AS expectedJson FROM rule_variable_test_case WHERE variable_id=? ORDER BY id", id));
     }
 }

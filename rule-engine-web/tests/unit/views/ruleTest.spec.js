@@ -7,8 +7,8 @@ import { h, nextTick } from 'vue'
 import fs from 'fs'
 import path from 'path'
 
-import { generateTestInput } from '@/api/testData'
-vi.mock('@/api/testData', () => ({ generateTestInput: vi.fn() }))
+import { generateTestInput, saveDefaultInput } from '@/api/testData'
+vi.mock('@/api/testData', () => ({ generateTestInput: vi.fn(), saveDefaultInput: vi.fn() }))
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
 import * as projectApi from '@/api/project'
@@ -793,6 +793,18 @@ describe('RuleTest — 辅助方法', () => {
       },
       mockModelScore: 88
     })
+  })
+
+  test('目录和原测试入口共用资源 ID 与精确默认输入', async () => {
+    await wrapper.setData({ selectedRuleId: 1 })
+    const row = { type: 'RULE', ownerId: '1' }
+    wrapper.vm.syncCatalogDefault(row,'{"amount":9007199254740993}')
+    expect(stringifyExactJson(wrapper.vm.buildParamMap())).toBe('{"amount":9007199254740993}')
+    wrapper.vm.syncCatalogDefault({ ...row, ownerId: 2 },'{"amount":32}')
+    expect(wrapper.vm.params[0].value).toBe('9007199254740993')
+    wrapper.vm.params[0].value = '9007199254740995'
+    await wrapper.vm.saveWorkspaceDefault()
+    expect(saveDefaultInput).toHaveBeenCalledWith('RULE',1,expect.stringContaining('9007199254740995'))
   })
 
   test('自动生成使用选中的版本并同步表单及精确 JSON', async () => {

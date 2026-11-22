@@ -8,14 +8,14 @@
     </el-select>
     <el-input v-if="selected==='FIXED'" :model-value="value" :type="structured ? 'textarea' : 'text'"
       :placeholder="structured ? '输入 JSON，可留空' : '输入固定示例，可留空'" aria-label="固定示例值" @update:model-value="$emit('update:value',$event)" />
-    <mock-rule-select v-if="selected==='RULE'" :model-value="ruleId" :field-type="fieldType"
+    <mock-rule-select v-if="selected==='RULE'" :model-value="ruleId" :field-type="fieldType" :project-id="projectId"
       @update:model-value="$emit('update:ruleId',$event)" />
   </div>
 </template>
 <script setup>
 import { computed } from 'vue'
 import MockRuleSelect from './MockRuleSelect.vue'
-const props = defineProps({
+const props = defineProps({ projectId: { type: [String,Number], default: null },
   mode: { type: String, default: '' }, value: { type: String, default: '' },
   ruleId: { type: [String, Number], default: null }, fieldType: { type: String, required: true }
 })

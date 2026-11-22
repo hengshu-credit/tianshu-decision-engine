@@ -110,3 +110,5 @@ docker compose --project-name tianshu-server --env-file config/.env.server \
 - `2026-11-21-test-mock.sql` 建立测试生成规则与变量、对象及子字段的绑定外键，重复执行保留已编辑的规则。
 
 - `2026-11-21-test-examples.sql` 补齐示例方式、对象示例及方法关联表，移除旧版内置方法的出厂字段匹配。
+
+- `2026-11-22-test-scope.sql` 增加 Mock 规则的所属项目、规则和变量的默认测试输入。既有 Mock 规则继续全局可用。

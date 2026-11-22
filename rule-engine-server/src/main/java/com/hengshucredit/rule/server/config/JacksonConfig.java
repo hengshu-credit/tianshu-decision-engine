@@ -71,6 +71,7 @@ public class JacksonConfig {
         public void serialize(RuleTestSchema schema, JsonGenerator generator, SerializerProvider provider) throws IOException {
             ObjectMapper mapper = (ObjectMapper) generator.getCodec();
             generator.writeStartObject();
+            if (schema.isSavedDefault()) generator.writeBooleanField("savedDefault", true);
             if (schema.isGeneratedExamples()) generator.writeBooleanField("generatedExamples", true);
             fields("inputs", schema.getInputs(), generator, mapper);
             fields("runtimeNodes", schema.getRuntimeNodes(), generator, mapper);

@@ -1,7 +1,7 @@
 <template>
   <el-dialog title="关联字段" :model-value="true" width="min(600px, 95vw)" append-to-body @close="$emit('close')">
     <el-form label-position="top" @submit.prevent>
-      <el-form-item label="项目范围"><project-resource-select v-model="project" clearable placeholder="全局字段" /></el-form-item>
+      <el-form-item label="项目范围"><project-resource-select v-model="project" :disabled="!!rule.projectId" clearable placeholder="全局字段" /></el-form-item>
       <el-form-item label="选择字段">
         <var-picker value-key="reference" :value="selected" :vars="options" :allow-custom="false" :loading="loading"
           @update:value="selected=$event" />
@@ -27,7 +27,7 @@ import { mockType } from '@/utils/mockTypes'
 const props = defineProps({ rule: { type: Object, required: true } })
 defineEmits(['close'])
 const kinds = { VARIABLE: '变量', DATA_OBJECT: '对象子字段', DATA_OBJECT_ROOT: '整体对象' }
-const project = ref(null), options = ref([]), rows = ref([]), selected = ref(''), loading = ref(false), saving = ref(false)
+const project = ref(props.rule.projectId || null), options = ref([]), rows = ref([]), selected = ref(''), loading = ref(false), saving = ref(false)
 watch(project, async (id, old, onCleanup) => {
   let current = true
   onCleanup(() => { current = false })
@@ -35,7 +35,7 @@ watch(project, async (id, old, onCleanup) => {
   try {
     const [vars, tree] = await Promise.all([listVariablesByProject(id || 0),getVariableTree(id || 0)])
     const catalog = buildReferenceCatalog((vars.data || []).filter(v => v.varSource === 'INPUT'),tree.data?.tree || [])
-    if (current) options.value = buildPickerOptions(catalog).filter(o => kinds[o.refType] && mockType(o.varType) === props.rule.valueType)
+    if (current) options.value = buildPickerOptions(catalog).filter(o => kinds[o.refType] && (!props.rule.projectId || String(o.varObj?.projectId) === String(props.rule.projectId)) && mockType(o.varType) === props.rule.valueType)
   } finally { if (current) loading.value = false }
 }, { immediate: true })
 async function load() { rows.value = (await listMockFields(props.rule.id)).data }

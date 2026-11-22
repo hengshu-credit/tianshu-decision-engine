@@ -1,6 +1,6 @@
 <template>
-  <div class="uiue-list-page rule-test-page">
-    <el-tabs v-model="activeTestTab" class="test-page-tabs" aria-label="规则测试工作区" @tab-change="onWorkspaceTabChange">
+  <div class="uiue-list-page rule-test-page" :class="{ 'management-list-page': activeTestTab !== 'test' }">
+    <el-tabs v-model="activeTestTab" class="test-page-tabs" :class="{ 'management-table-region': activeTestTab !== 'test' }" aria-label="规则测试工作区" @tab-change="onWorkspaceTabChange">
       <el-tab-pane label="规则测试" name="test" class="test-workspace">
     <config-layer-guide
       guide-id="rule-test.steps"
@@ -166,6 +166,8 @@
             >
               <el-icon><el-icon-plus /></el-icon> 手动添加
             </el-button>
+            <el-button v-if="selectedRule"
+              v-permission="'rule:edit'" link size="small" :disabled="inputLoadState === 'LOADING'" @click="saveWorkspaceDefault">保存默认输入</el-button>
             <el-button
               link
               size="small"
@@ -549,10 +551,10 @@
       </div>
     </div>
       </el-tab-pane>
-      <el-tab-pane label="测试用例" name="cases" class="test-management" lazy>
-        <test-cases-panel v-if="activeTestTab === 'cases'" @apply="openCatalogCase" />
+      <el-tab-pane label="测试用例" name="cases" class="test-management management-table-region" lazy>
+        <test-cases-panel v-if="activeTestTab === 'cases'" @apply="openCatalogCase" @default-saved="syncCatalogDefault" />
       </el-tab-pane>
-      <el-tab-pane label="Mock 规则" name="mock" class="test-management" lazy>
+      <el-tab-pane label="Mock 规则" name="mock" class="test-management management-table-region" lazy>
         <mock-rules-panel v-if="activeTestTab === 'mock'" />
       </el-tab-pane>
     </el-tabs>
@@ -564,7 +566,7 @@
 import { pageTabState } from '@/mixins/pageTabState'
 import MockRulesPanel from '@/components/test/MockRulesPanel.vue'
 import TestCasesPanel from '@/components/test/TestCasesPanel.vue'
-import { generateTestInput } from '@/api/testData'
+import { generateTestInput, saveDefaultInput } from '@/api/testData'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ElIconLoading from '@/components/common/AppLoadingIcon.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
@@ -1414,6 +1416,12 @@ export default {
         this.inputSampleJson = stringifyExactJson(Object.keys(schema.sampleParams).length
           ? schema.sampleParams
           : buildNestedSchemaParams(schemaFields, flattenSchemaSample(schemaFields, schema.sampleParams)), 2)
+        if (schema.savedDefault && !previousValues.size) {
+          this.replaceParamsFromValues(schema.sampleParams)
+          this.commitInputLoad(requestId,ruleId,this.params,'SCHEMA',warnings)
+          this.updateInputJson(this.inputSampleJson)
+          return
+        }
         if (schemaFields.length > 0) {
           var schemaValues = flattenSchemaSample(
             schemaFields,
@@ -1683,6 +1691,15 @@ export default {
       this.updateInputJson(stringifyExactJson(values, 2))
       this.resetExecutionState()
     },
+    async saveWorkspaceDefault() {
+      try {
+        const json = stringifyExactJson(this.buildParamMap(),2)
+        const owner = this.selectedRuleId
+        await saveDefaultInput('RULE',owner,json)
+        if (owner === this.selectedRuleId) this.inputSampleJson = json
+        this.$message.success('规则默认输入已保存')
+      } catch (e) { this.notifyError(e.message || '保存默认输入失败') }
+    },
     async generateMock() {
       const source = this.selectedExecutionSource
       if (!source || this.generatingMock || this.inputLoadState !== 'READY') return
@@ -1706,6 +1723,13 @@ export default {
       if (tab !== 'test' || !this.selectedRuleId) return
       await this.loadTestCases({ preserveSelection: true })
     },
+    syncCatalogDefault(row,json) {
+      if (row.type !== 'RULE' || String(this.selectedRuleId) !== String(row.ownerId)) return
+      this.inputSampleJson = json
+      this.replaceParamsFromValues(parseExactJson(json))
+      this.updateInputJson(json)
+      this.resetExecutionState()
+    },
     async openCatalogCase(row) {
       const { data: rule } = await getDefinition(row.ownerId)
       const ownerProject = rule.scope === 'PROJECT' ? rule.projectId : null
@@ -1715,7 +1739,7 @@ export default {
       this.rules = [rule]
       this.activeTestTab = 'test'
       await this.onRuleChange()
-      if (String(this.selectedRuleId) !== String(rule.id)) return
+      if (String(this.selectedRuleId) !== String(rule.id) || row.source === 'DEFAULT') return
       const saved = this.testCases.find(item => String(item.id) === String(row.id))
       if (saved) await this.applyTestCase(saved)
       else this.notifyWarning('用例加载失败，请刷新用例列表')

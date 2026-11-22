@@ -37,10 +37,10 @@ public class TestMockService {
     public Sample generate(long id, RuleTestSchemaRequest request) {
         access.require("RULE",id,"view");
         var target = targets.resolve(id,request.getExecutionSource(),null,null,request.getProjectId());
-        return new Sample(examples(schemas.build(target).getInputs(), target.snapshot()).toString(), target.identity());
+        return new Sample(examples(schemas.build(target).getInputs(), target.snapshot(), target.projectId()).toString(), target.identity());
     }
 
-    public ObjectNode examples(List<ResolvedField> inputs, com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
+    public ObjectNode examples(List<ResolvedField> inputs, com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot, Long projectId) {
         if (inputs.isEmpty()) return MockRule.JSON.createObjectNode();
         var varIds = ids(inputs,"VARIABLE");
         var rootIds = ids(inputs,"DATA_OBJECT_ROOT");
@@ -77,7 +77,7 @@ public class TestMockService {
         var bindings = new Bindings(settings(MockFieldBindings.Target.VARIABLE,boundVars,RuleVariable::getId,RuleVariable::getExampleMode,RuleVariable::getExampleValue,RuleVariable::getMockRuleId),
                 settings(MockFieldBindings.Target.DATA_OBJECT_ROOT,boundRoots,RuleDataObject::getId,RuleDataObject::getExampleMode,RuleDataObject::getExampleValue,RuleDataObject::getMockRuleId),
                 settings(MockFieldBindings.Target.DATA_OBJECT,boundFields,RuleDataObjectField::getId,RuleDataObjectField::getExampleMode,RuleDataObjectField::getExampleValue,RuleDataObjectField::getMockRuleId),fieldEnums);
-        var rules = catalog.rules();
+        var rules = catalog.rulesForProject(projectId);
         var result = MockRule.JSON.createObjectNode();
         Map<Long,JsonNode> samples = new HashMap<>();
         for (ResolvedField input : inputs) {

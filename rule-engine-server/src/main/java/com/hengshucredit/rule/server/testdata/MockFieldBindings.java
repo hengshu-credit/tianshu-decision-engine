@@ -49,7 +49,7 @@ public class MockFieldBindings {
         }
         var rows=jdbc.queryForList("SELECT "+(t.type==null ? "'OBJECT'" : t.type)+" FROM "+t.table
                 +" WHERE id=? AND status=1"+(t==Target.VARIABLE ? " AND var_source='INPUT'" : "")+" FOR UPDATE",String.class,id);
-        if (rows.isEmpty() || !catalog.compatible(method,rows.get(0))) throw new IllegalArgumentException("请选择与生成方法类型相同的有效输入字段");
+        if (rows.isEmpty() || !catalog.compatible(method,rows.get(0),access.projectForResource(t.permissionType,id))) throw new IllegalArgumentException("请选择与生成方法类型相同的有效输入字段");
         var existing=jdbc.queryForList("SELECT rule_id FROM rule_mock_field_binding WHERE "+t.column+"=?",Long.class,id);
         if (existing.contains(method)) return;
         if (!existing.isEmpty()) throw new IllegalArgumentException("该字段已关联其他方法，请先解除原关联");

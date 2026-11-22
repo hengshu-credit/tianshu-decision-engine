@@ -18,4 +18,5 @@ public class RuleTestSchema {
     private RuleTestExecutionIdentity executionIdentity;
     private String modelJson;
     private boolean generatedExamples;
+    private boolean savedDefault;
 }

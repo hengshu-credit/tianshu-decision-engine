@@ -8,10 +8,10 @@
 import { computed, ref, watch } from 'vue'
 import { listMockRules } from '@/api/testData'
 import { mockType } from '@/utils/mockTypes'
-const props = defineProps({ modelValue: { type: [Number,String], default: null }, fieldType: { type: String, required: true } })
+const props = defineProps({ projectId: { type: [String,Number], default: null },  modelValue: { type: [Number,String], default: null }, fieldType: { type: String, required: true } })
 const emit = defineEmits(['update:modelValue'])
 const rules = ref([]), loading = ref(false)
-const options = computed(() => rules.value.filter(rule => rule.valueType === mockType(props.fieldType)))
+const options = computed(() => rules.value.filter(rule => rule.valueType === mockType(props.fieldType) && (!rule.projectId || String(rule.projectId) === String(props.projectId))))
 async function open(visible) {
   if (!visible || loading.value) return
   loading.value = true
