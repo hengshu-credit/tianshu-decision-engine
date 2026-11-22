@@ -71,3 +71,7 @@ ONNX Runtime 与 JPMML 的许可证不同；启用 `onnx-gpu` Maven profile 时�
 
 前端许可文本随 `public/licenses/` 复制到独立部署产物。ClamAV 是通过协议连接的外部扫描服务，不包含在本项目构建产物中。
 
+
+## Faker 测试数据生成
+
+管理服务使用 Faker v10.6.0 的官方 JavaScript 发行包，Maven 坐标为 `org.mvnpm.at.faker-js:faker:10.6.0`。上游 MIT 许可证随依赖 JAR 提供。服务内使用 GraalJS 23.0.14 执行发行包中的 ES 模块，运行时按需读取本地类路径，不需要安装 Node.js。[Faker 源码与许可证](https://github.com/faker-js/faker/tree/v10.6.0) · [GraalJS 发行元数据](https://repo.maven.apache.org/maven2/org/graalvm/js/js/23.0.14/js-23.0.14.pom)

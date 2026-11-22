@@ -1114,3 +1114,35 @@ test('规则测试刷新恢复管理页签，默认跨类型展示用例并保�
   }
   assertClean()
 })
+
+test('Mock 规则按项目范围排列，可按 Faker 类别和方法查询、预览并重置筛选', async ({ page }) => {
+  const apiData = createOperationsApiData()
+  const person = { id: 39, name: '个人资料 · 全名', valueType: 'STRING', generator: 'FAKER', configJson: '"person.fullName"', builtin: true, matchNames: '' }
+  apiData.set('GET /api/rule/test-data/rules', [
+    person, { ...person, id: 40, name: '图书 · 作者', configJson: '"book.author"' },
+    { ...person, id: 41, projectId: 1, projectName: 'E2E 项目', name: '订单编号', generator: 'UUID', configJson: 'null' },
+  ])
+  apiData.set('POST /api/rule/test-data/rules/preview', ({ request }) => {
+    expect(request.postDataJSON()).toMatchObject({ id: 39, generator: 'FAKER', configJson: '"person.fullName"' })
+    return { valueJson: '"陈明"' }
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.goto('http://tianshu.local/#/test')
+  await page.getByRole('tab', { name: 'Mock 规则', exact: true }).click()
+  const pane = page.locator('.test-management:visible')
+  const headers = pane.locator('.el-table__header th:not(.gutter)')
+  await expect(headers).toHaveText(['作用范围', '项目名称', '规则名称', '生成类别', '字段类型', '生成方式', '自动匹配字段', '操作'])
+  await pane.getByRole('combobox', { name: '生成类别' }).click()
+  await page.getByRole('option', { name: '个人资料 · person', exact: true }).click()
+  await pane.getByPlaceholder('规则名称、方法或匹配字段').fill('fullName')
+  await pane.getByPlaceholder('规则名称、方法或匹配字段').press('Enter')
+  await expect(pane.locator('.el-table__body tr')).toHaveCount(1)
+  await pane.getByRole('row').filter({ hasText: 'person.fullName' }).getByRole('button', { name: '编辑' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Mock 规则详情' })
+  await dialog.getByRole('button', { name: '试生成' }).click()
+  await expect(dialog.getByLabel('生成预览')).toHaveText('"陈明"')
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await pane.getByRole('button', { name: '重置', exact: true }).click()
+  await expect(pane.locator('.el-table__body tr')).toHaveCount(3)
+  assertClean()
+})

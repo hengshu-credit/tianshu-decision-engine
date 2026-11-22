@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.config;
 
 import com.hengshucredit.rule.server.schema.MysqlSchemaUpgrade;
 import com.hengshucredit.rule.server.service.SchemaSyncService;
+import com.hengshucredit.rule.server.testdata.FakerMethods;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
@@ -53,6 +54,7 @@ public class SchemaInitializationConfig {
                                 var defaults = new ResourceDatabasePopulator(new ClassPathResource("sql/mock-defaults.sql"));
                                 defaults.setSqlScriptEncoding(StandardCharsets.UTF_8.name());
                                 defaults.populate(connection);
+                                FakerMethods.install(connection);
                                 packaged = true;
                             } else {
                                 var populator = new ResourceDatabasePopulator();

@@ -1,8 +1,16 @@
 <template>
-  <test-directory-table v-model:filters="filters" :columns="columns" :rows="filtered" :loading="loading" :error="error"
-    :suggestions="suggestions" storage-key="tianshu:table-columns:test-mock" placeholder="规则名称或匹配字段"
+  <test-directory-table v-model:filters="filters" :columns="columns" :rows="pageRows" :loading="loading" :error="error"
+    :suggestions="suggestions" storage-key="tianshu:table-columns:test-mock" placeholder="规则名称、方法或匹配字段"
     empty-text="暂无匹配规则" :action-width="190" :create-label="canCreate ? '新增规则' : ''"
     @search="search" @reset="reset" @refresh="load" @create="edit()">
+    <template #filters>
+      <el-form-item label="生成类别"><el-select v-model="filters.category" clearable filterable placeholder="全部" style="width: 160px">
+        <el-option label="基础规则" value="base" />
+        <el-option v-for="group in fakerGroups" :key="group.module" :label="group.label + ' · ' + group.module" :value="group.module" />
+      </el-select></el-form-item>
+    </template>
+    <el-pagination v-if="filtered.length > pageSize" v-model:current-page="page" :page-size="pageSize"
+      :total="filtered.length" layout="prev, pager, next, total" />
     <template #actions="{ row }">
       <el-button link type="primary" @click="edit(row)">{{ canEdit(row) ? '编辑' : '查看' }}</el-button>
       <el-button v-if="canEdit(row)" link type="primary" @click="bindingRule=row">关联字段</el-button>
@@ -19,64 +27,96 @@
         <el-form-item label="生成方式"><el-select :model-value="draft.generator" @update:model-value="setGenerator">
           <el-option v-for="key in methods" :key="key" :label="generatorNames[key]" :value="key" />
         </el-select></el-form-item>
+        <el-form-item v-if="draft.generator === 'FAKER'" label="Faker 方法">
+          <el-cascader :model-value="selectedMethod" :options="methodGroups" :props="{ emitPath: false }" filterable
+            placeholder="选择类别和方法" @update:model-value="chooseMethod" />
+        </el-form-item>
         <el-form-item v-if="configLabel" :label="configLabel"><el-input v-model="draft.configJson" type="textarea" :rows="4" /></el-form-item>
         <el-form-item label="自动匹配字段"><el-input v-model="draft.matchNames" placeholder="如 applicant.mobile 或手机号，逗号分隔；留空仅显式引用" maxlength="512" /></el-form-item>
       </el-form>
       <pre v-if="preview" class="method-preview" aria-label="生成预览">{{ preview }}</pre>
-      <template #footer><el-button @click="tryRule">试生成</el-button><el-button @click="visible=false">关闭</el-button><el-button v-if="editable" type="primary" :loading="saving" @click="save">保存</el-button></template>
+      <template #footer><el-button :loading="previewing" :disabled="methodMissing" @click="tryRule">试生成</el-button><el-button @click="visible=false">关闭</el-button><el-button v-if="editable" type="primary" :disabled="methodMissing" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
   </test-directory-table>
 </template>
 <script setup>
-import { computed, ref, onMounted, onActivated, onDeactivated } from 'vue'
+import { computed, ref, watch, onMounted, onActivated, onDeactivated } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import TestDirectoryTable from './TestDirectoryTable.vue'
 import ScopeProjectFields from '@/components/common/ScopeProjectFields.vue'
 import MockFieldBindings from './MockFieldBindings.vue'
 import { previewMockRule, listMockRules, saveMockRule, deleteMockRule } from '@/api/testData'
 import { hasPermission } from '@/security/permissionState'
+import { fakerGroups, fakerMethod } from '@/utils/fakerMethods'
 import { generatorNames, mockTypes } from '@/utils/mockTypes'
 const canCreate = computed(() => hasPermission('field:edit'))
 const canEdit = row => hasPermission('field:edit', row)
 const editable = computed(() => draft.value.id ? canEdit(draft.value) : canCreate.value)
-const bindingRule = ref(null), preview = ref('')
+const bindingRule = ref(null), preview = ref(''), previewing = ref(false)
 const rules = ref([]), loading = ref(false), error = ref(''), draft = ref({}), visible = ref(false), saving = ref(false)
-const initialFilters = () => ({ keyword: '', scope: '', projectId: null })
+const page = ref(1), pageSize = 20
+const baseCategory = { module: 'base', category: '基础规则' }
+const initialFilters = () => ({ category: '', keyword: '', scope: '', projectId: null })
 const filters = ref(initialFilters()), applied = ref(initialFilters())
 const columns = [
-  { key: 'name', label: '规则名称', minWidth: 150, required: true },
-  { key: 'scope', label: '作用范围', minWidth: 95 }, { key: 'projectName', label: '所属项目', minWidth: 130 },
+  { key: 'scope', label: '作用范围', minWidth: 95, required: true },
+  { key: 'projectName', label: '项目名称', minWidth: 130 },
+  { key: 'name', label: '规则名称', minWidth: 160, required: true },
+  { key: 'category', label: '生成类别', minWidth: 110, format: row => row.method.category },
   { key: 'valueType', label: '字段类型', minWidth: 100, format: row => mockTypes[row.valueType] },
-  { key: 'generator', label: '生成方式', minWidth: 135, format: row => generatorNames[row.generator] },
+  { key: 'generator', label: '生成方式', minWidth: 165, format: row => row.method.key || generatorNames[row.generator] },
   { key: 'matchNames', label: '自动匹配字段', minWidth: 180, format: row => row.matchNames === '*' ? '同类型字段' : row.matchNames || '仅手动绑定' }
 ]
 function matches(row, filter) {
-  return (!filter.scope || filter.scope === row.scope) && (!filter.projectId || String(row.projectId) === String(filter.projectId))
-    && (row.name + ' ' + row.matchNames).toLowerCase().includes(filter.keyword.trim().toLowerCase())
+  const keywords = [row.name, row.matchNames, row.method.category, row.method.key, generatorNames[row.generator]].join(' ').toLowerCase()
+  return (!filter.category || filter.category === row.method.module)
+    && (!filter.scope || filter.scope === row.scope) && (!filter.projectId || String(row.projectId) === String(filter.projectId))
+    && keywords.includes(filter.keyword.trim().toLowerCase())
 }
 const filtered = computed(() => rules.value.filter(row => matches(row, applied.value)))
-function search() { applied.value = { ...filters.value } }
+const pageRows = computed(() => filtered.value.slice((page.value - 1) * pageSize, page.value * pageSize))
+watch(() => filtered.value.length, size => { page.value = Math.min(page.value, Math.max(1, Math.ceil(size / pageSize))) })
+function search() { applied.value = { ...filters.value }; page.value = 1 }
 function reset() { filters.value = initialFilters(); search() }
-function suggestions({ query }) {
+function suggestions({ query, pageNum, pageSize: limit }) {
   const records = rules.value.filter(row => matches(row, { ...filters.value, keyword: query })).map(row => ({ label: row.name, value: row.name }))
-  return { data: { records, total: records.length } }
+  return { data: { records: records.slice((pageNum - 1) * limit, pageNum * limit), total: records.length } }
 }
-const methods = computed(() => ['FIXED','CHOICE',...({ STRING: ['TEXT','UUID','PHONE','EMAIL','TEMPLATE'], NUMBER: ['INTEGER','DECIMAL'], DATE: ['DATE'], DATETIME: ['DATETIME'], TIMESTAMP: ['TIMESTAMP'], BOOLEAN: ['BOOLEAN'] }[draft.value.valueType] || [])])
+const methodGroups = computed(() => fakerGroups.map(group => ({
+  label: group.label + ' · ' + group.module, value: group.module,
+  children: group.methods.filter(method => method.type === draft.value.valueType).map(method => ({
+    label: method.label + ' · ' + method.name, value: group.module + '.' + method.name,
+  })),
+})).filter(group => group.children.length))
+const selectedMethod = computed(() => fakerMethod(draft.value)?.key)
+const methodMissing = computed(() => draft.value.generator === 'FAKER' && !selectedMethod.value)
+function chooseMethod(key) { draft.value.configJson = JSON.stringify(key) }
+
+const methods = computed(() => ['FIXED','CHOICE',...(methodGroups.value.length ? ['FAKER'] : []),...({ STRING: ['TEXT','UUID','PHONE','EMAIL','TEMPLATE'], NUMBER: ['INTEGER','DECIMAL'], DATE: ['DATE'], DATETIME: ['DATETIME'], TIMESTAMP: ['TIMESTAMP'], BOOLEAN: ['BOOLEAN'] }[draft.value.valueType] || [])])
 const configLabel = computed(() => ({ FIXED: '固定值（JSON）', CHOICE: '候选值（JSON 数组）', INTEGER: '整数范围 [最小值, 最大值]', DECIMAL: '小数范围 [最小值, 最大值, 小数位数]', TEMPLATE: '文本模板（JSON 字符串，支持 {uuid}、{phone}、{date}、{digits}）' })[draft.value.generator])
 async function load() {
   if (loading.value) return
   loading.value = true
   error.value = ''
-  try { rules.value = (await listMockRules()).data.map(row => ({ ...row, scope: row.projectId ? 'PROJECT' : 'GLOBAL' })) } catch (e) { error.value = e.message || '规则加载失败' } finally { loading.value = false }
+  try { rules.value = (await listMockRules()).data.map(row => ({ ...row, method: fakerMethod(row) || baseCategory, scope: row.projectId ? 'PROJECT' : 'GLOBAL' })) } catch (e) { error.value = e.message || '规则加载失败' } finally { loading.value = false }
 }
+let previewRequest = 0
+watch(() => [draft.value, draft.value.generator, draft.value.configJson, draft.value.valueType], () => {
+  previewRequest++
+  preview.value = ''
+  previewing.value = false
+}, { flush: 'sync' })
 async function tryRule() {
-  const rule = draft.value
-  const { data } = await previewMockRule({ ...rule, name: rule.name || '预览' })
-  if (rule === draft.value) preview.value = data.valueJson
+  const request = ++previewRequest
+  previewing.value = true
+  try {
+    const { data } = await previewMockRule({ ...draft.value, name: draft.value.name || '预览' })
+    if (request === previewRequest) preview.value = data.valueJson
+  } finally { if (request === previewRequest) previewing.value = false }
 }
 function edit(row) {
   preview.value = ''
-  draft.value = row ? { ...row } : { scope: canEdit({ scope: 'GLOBAL' }) ? 'GLOBAL' : 'PROJECT', projectId: null, name: '', matchNames: '', valueType: 'STRING', generator: 'FIXED', configJson: '""' }
+  draft.value = row ? { ...row, method: undefined } : { scope: canEdit({ scope: 'GLOBAL' }) ? 'GLOBAL' : 'PROJECT', projectId: null, name: '', matchNames: '', valueType: 'STRING', generator: 'FIXED', configJson: '""' }
   visible.value = true
 }
 function setGenerator(method) {

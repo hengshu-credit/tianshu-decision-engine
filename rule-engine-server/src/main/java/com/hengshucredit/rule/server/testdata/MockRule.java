@@ -41,6 +41,7 @@ public record MockRule(Long id, String name, String valueType, String matchNames
         };
     }
     boolean matches(String key, String label) {
+        if (matchNames.isBlank()) return false;
         return Arrays.stream(matchNames.split("[,，]")).map(String::trim)
                 .map(s -> s.startsWith("$.") ? s.substring(2) : s)
                 .anyMatch(s -> !s.isEmpty() && (s.equalsIgnoreCase(key) || s.equalsIgnoreCase(label)));
@@ -51,6 +52,10 @@ public record MockRule(Long id, String name, String valueType, String matchNames
                 || !group(valueType).equals(valueType)) throw new IllegalArgumentException("请核对规则名称、字段类型和生成配置");
         JsonNode config = parse(configJson);
         boolean valid = switch (generator) {
+            case "FAKER" -> {
+                var method = FakerMethods.METHODS.get(config.asText());
+                yield config.isTextual() && method != null && method.type().equals(valueType);
+            }
             case "FIXED" -> compatible(config);
             case "CHOICE" -> config.isArray() && !config.isEmpty() && config.valueStream().allMatch(this::compatible);
             case "TEMPLATE" -> valueType.equals("STRING") && config.isTextual();
@@ -84,6 +89,7 @@ public record MockRule(Long id, String name, String valueType, String matchNames
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         JsonNode config = parse(configJson);
         return switch (generator) {
+            case "FAKER" -> FakerGenerator.sample(config.asText());
             case "FIXED" -> config;
             case "CHOICE" -> config.get(rng.nextInt(config.size()));
             case "INTEGER" -> LongNode.valueOf(rng.nextLong(config.get(0).longValue(), config.get(1).longValue()+1));
