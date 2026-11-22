@@ -29,15 +29,16 @@
     </div>
     <el-alert v-if="error" type="error" show-icon :title="error" :closable="false" />
     <el-table class="management-table" :data="rows" :aria-busy="loading" border size="small" show-overflow-tooltip :empty-text="emptyText">
-      <el-table-column v-for="column in visibleColumns" :key="column.key" :label="column.label" :prop="column.key" :min-width="column.minWidth">
+      <el-table-column v-for="column in visibleColumns" :key="column.key" :label="column.label" :prop="column.key" :min-width="column.minWidth" :align="column.align">
         <template #default="{ row }">
           <el-tag v-if="column.key === 'scope'" :class="row.scope === 'GLOBAL' ? 'el-tag--scope-global' : 'el-tag--scope-project'" size="small">
             {{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}
           </el-tag>
+          <el-tag v-else-if="column.tag" size="small">{{ row[column.key] }}</el-tag>
           <template v-else>{{ column.format ? column.format(row) : row[column.key] || '—' }}</template>
         </template>
       </el-table-column>
-      <el-table-column label="操作" fixed="right" align="center" :width="actionWidth"><template #default="{ row }"><slot name="actions" :row="row" /></template></el-table-column>
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" fixed="right" align="center" :width="actionWidth"><template #default="{ row }"><div class="table-operation-group"><slot name="actions" :row="row" /></div></template></el-table-column>
     </el-table>
     <slot />
   </section>

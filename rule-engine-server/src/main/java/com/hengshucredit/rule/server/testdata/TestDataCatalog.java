@@ -51,6 +51,8 @@ public class TestDataCatalog {
             throw new IllegalArgumentException("请选择有效的所属项目");
         projects.requirePermission("field:edit",projectId);
         rule.validate();
+        // 带参数的配置在落库前走同一条执行路径，避免把无效区间或不匹配的返回格式绑定到字段。
+        if ("FAKER".equals(rule.generator()) && MockRule.parse(rule.configJson()).path("args").size() > 0) rule.sample();
         if (id == null) {
             jdbc.update("INSERT INTO rule_mock_rule (name,value_type,match_names,generator,config_json,project_id) VALUES (?,?,?,?,?,?)",
                     rule.name(),rule.valueType(),rule.matchNames(),rule.generator(),rule.configJson(),projectId);

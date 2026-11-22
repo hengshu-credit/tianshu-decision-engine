@@ -35,10 +35,48 @@ public class FakerGeneratorTest {
                     """);
             FakerMethods.install(db);
             long id = jdbc.queryForObject("SELECT id FROM rule_mock_rule WHERE seed_key='person.fullName'", Long.class);
+            assertEquals("全名", jdbc.queryForObject("SELECT name FROM rule_mock_rule WHERE id=?", String.class, id));
+            long cityId = jdbc.queryForObject("SELECT id FROM rule_mock_rule WHERE seed_key='location.city'", Long.class);
+            jdbc.update("UPDATE rule_mock_rule SET name=? WHERE id=?", "地址与区域 · 城市", cityId);
             jdbc.update("UPDATE rule_mock_rule SET name=?, match_names=? WHERE id=?", "申请人全名", "applicantName", id);
             FakerMethods.install(db);
             assertEquals(Integer.valueOf(262), jdbc.queryForObject("SELECT COUNT(*) FROM rule_mock_rule", Integer.class));
+            assertEquals("城市", jdbc.queryForObject("SELECT name FROM rule_mock_rule WHERE id=?", String.class, cityId));
             assertEquals("申请人全名", jdbc.queryForObject("SELECT name FROM rule_mock_rule WHERE id=? AND match_names='applicantName'", String.class, id));
+        }
+    }
+    @Test public void configuredArgumentsDrivePreviewAndBoundValues() {
+        var rule = new MockRule(9L, "批次编码", "STRING", "", "FAKER",
+                "{\"method\":\"string.alpha\",\"args\":[{\"length\":23,\"casing\":\"upper\"}]}", false);
+        rule.validate();
+        assertEquals("字符串", rule.getRuleType());
+        assertEquals("string", rule.getRuleTypeCode());
+        assertTrue(TestMockService.sample("STRING", "batch", "", 9L, null, java.util.List.of(rule)).asText().matches("[A-Z]{23}"));
+        assertEquals(42, FakerGenerator.sample("number.int", MockRule.parse("[{\"min\":42,\"max\":42}]")).intValue());
+        assertThrows(IllegalArgumentException.class, () -> FakerGenerator.sample("string.alpha", MockRule.parse("[{\"length\":-20}]")));
+        assertThrows(IllegalArgumentException.class, () -> FakerGenerator.sample("helpers.fake", MockRule.parse("[\"{{unknown.method}}\"]")));
+        assertEquals("9007199254740997", FakerGenerator.sample("number.bigInt",
+                MockRule.parse("[{\"min\":\"9007199254740997\",\"max\":\"9007199254740997\"}]")).asText());
+    }
+
+    @Test public void everyDocumentedExampleAcceptsItsArguments() throws java.io.IOException {
+        try (var in = getClass().getResourceAsStream("/faker-methods.json")) {
+            var groups = MockRule.JSON.readTree(in);
+            int count = 0;
+            for (var group : groups) {
+                for (var method : group.path("methods")) {
+                    if (!method.has("parameters")) continue;
+                    var key = group.path("module").asText() + "." + method.path("name").asText();
+                    var config = MockRule.JSON.createObjectNode().put("method", key).set("args", method.get("exampleArgs"));
+                    var rule = new MockRule(null, key, method.path("type").asText(), "", "FAKER", config.toString(), false);
+                    try {
+                        rule.validate();
+                        assertNotNull(rule.sample());
+                    } catch (RuntimeException ex) { throw new AssertionError(key, ex); }
+                    count++;
+                }
+            }
+            assertEquals(126, count);
         }
     }
     @Test public void boundFakerMethodUsesTheSameGeneratorAsPreview() {

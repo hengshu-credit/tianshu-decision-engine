@@ -40,6 +40,19 @@ public record MockRule(Long id, String name, String valueType, String matchNames
             default -> "STRING";
         };
     }
+    private FakerMethods.Entry fakerMethod() {
+        return "FAKER".equals(generator) ? FakerMethods.METHODS.get(FakerMethods.methodKey(parse(configJson))) : null;
+    }
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    public String getRuleTypeCode() {
+        var method = fakerMethod();
+        return method == null ? "base" : method.module();
+    }
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    public String getRuleType() {
+        var method = fakerMethod();
+        return method == null ? "基础规则" : method.category();
+    }
     boolean matches(String key, String label) {
         if (matchNames.isBlank()) return false;
         return Arrays.stream(matchNames.split("[,，]")).map(String::trim)
@@ -53,8 +66,11 @@ public record MockRule(Long id, String name, String valueType, String matchNames
         JsonNode config = parse(configJson);
         boolean valid = switch (generator) {
             case "FAKER" -> {
-                var method = FakerMethods.METHODS.get(config.asText());
-                yield config.isTextual() && method != null && method.type().equals(valueType);
+                var method = FakerMethods.METHODS.get(FakerMethods.methodKey(config));
+                if (method == null || !method.resultTypes().contains(valueType)) yield false;
+                FakerGenerator.validateArguments(method, config);
+                if (config.path("args").isEmpty() && !method.type().equals(valueType)) yield false;
+                yield true;
             }
             case "FIXED" -> compatible(config);
             case "CHOICE" -> config.isArray() && !config.isEmpty() && config.valueStream().allMatch(this::compatible);
@@ -89,7 +105,11 @@ public record MockRule(Long id, String name, String valueType, String matchNames
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         JsonNode config = parse(configJson);
         return switch (generator) {
-            case "FAKER" -> FakerGenerator.sample(config.asText());
+            case "FAKER" -> {
+                var value = FakerGenerator.sample(FakerMethods.methodKey(config), config.path("args"));
+                if (!compatible(value)) throw new IllegalArgumentException("所选参数生成结果与字段类型 " + valueType + " 不符");
+                yield value;
+            }
             case "FIXED" -> config;
             case "CHOICE" -> config.get(rng.nextInt(config.size()));
             case "INTEGER" -> LongNode.valueOf(rng.nextLong(config.get(0).longValue(), config.get(1).longValue()+1));

@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Source;
+import org.graalvm.polyglot.ResourceLimits;
+import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 import org.graalvm.polyglot.io.IOAccess;
 import org.graalvm.polyglot.proxy.ProxyExecutable;
@@ -15,15 +17,42 @@ final class FakerGenerator {
     private FakerGenerator() {}
     private static Value generate;
 
-    static synchronized JsonNode sample(String method) {
+    private static Context runtime;
+
+    static void validateArguments(FakerMethods.Entry method, JsonNode config) {
+        if (config.isTextual()) return;
+        JsonNode args = config.path("args");
+        if (!config.isObject() || !args.isArray() || config.size() != 2)
+            throw new IllegalArgumentException("Faker 配置需要 method 和 args 参数数组");
+        if (args.size() > method.parameters().size())
+            throw new IllegalArgumentException(method.key() + " 的参数顺序：" + method.parameters());
+    }
+
+    static JsonNode sample(String method) {
+        return sample(method, MockRule.JSON.createArrayNode());
+    }
+
+    static synchronized JsonNode sample(String method, JsonNode args) {
         if (!FakerMethods.METHODS.containsKey(method)) throw new IllegalArgumentException("未知 Faker 方法：" + method);
         if (generate == null) generate = initialize();
-        return MockRule.parse(generate.execute(method).asString());
+        try {
+            runtime.resetLimits();
+            String json = generate.execute(method, args.isMissingNode() ? "[]" : args.toString()).asString();
+            return MockRule.parse(json);
+        } catch (PolyglotException error) {
+            if (error.isResourceExhausted() || error.isCancelled()) {
+                runtime.close(true);
+                generate = null;
+                throw new IllegalArgumentException("参数生成量过大，请缩短长度或减少数量");
+            }
+            throw new IllegalArgumentException(method + " 参数无效：" + error.getMessage(), error);
+        }
     }
 
     private static Value initialize() {
         Context context = Context.newBuilder("js")
                 .allowIO(IOAccess.newBuilder().fileSystem(new FakerModuleFiles()).build())
+                .resourceLimits(ResourceLimits.newBuilder().statementLimit(500_000L, null).build())
                 .option("engine.WarnInterpreterOnly", "false")
                 .build();
         try (var stream = FakerGenerator.class.getResourceAsStream("/mock/faker-entry.mjs")) {
@@ -36,6 +65,11 @@ final class FakerGenerator {
             Source source = Source.newBuilder("js", new String(stream.readAllBytes(), StandardCharsets.UTF_8), "faker-entry.mjs")
                     .mimeType("application/javascript+module").uri(FakerModuleFiles.ROOT.resolve("faker-entry.mjs").toUri()).build();
             context.eval(source);
+            // 仅传递目录中的签名，用于校验嵌套回调以及模板中的方法调用。
+            var signatures = MockRule.JSON.createObjectNode();
+            FakerMethods.METHODS.forEach((key, method) -> signatures.set(key, MockRule.JSON.valueToTree(method.parameters())));
+            context.getBindings("js").getMember("configureFakerSignatures").execute(signatures.toString());
+            runtime = context;
             return context.getBindings("js").getMember("sampleFakerMethod");
         } catch (IOException | RuntimeException error) {
             context.close();

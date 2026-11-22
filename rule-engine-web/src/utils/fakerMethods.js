@@ -8,6 +8,9 @@ export const fakerMethods = new Map(groups.flatMap(group => group.methods.map(me
 
 export function fakerMethod(rule) {
   if (rule.generator !== 'FAKER') return undefined
-  try { return fakerMethods.get(JSON.parse(rule.configJson)) }
+  try {
+    const config = JSON.parse(rule.configJson)
+    return fakerMethods.get(typeof config === 'string' ? config : config?.method)
+  }
   catch { return undefined }
 }

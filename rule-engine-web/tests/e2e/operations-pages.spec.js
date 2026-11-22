@@ -1117,9 +1117,9 @@ test('规则测试刷新恢复管理页签，默认跨类型展示用例并保�
 
 test('Mock 规则按项目范围排列，可按 Faker 类别和方法查询、预览并重置筛选', async ({ page }) => {
   const apiData = createOperationsApiData()
-  const person = { id: 39, name: '个人资料 · 全名', valueType: 'STRING', generator: 'FAKER', configJson: '"person.fullName"', builtin: true, matchNames: '' }
+  const person = { id: 39, name: '全名', valueType: 'STRING', generator: 'FAKER', configJson: '"person.fullName"', builtin: true, matchNames: '' }
   apiData.set('GET /api/rule/test-data/rules', [
-    person, { ...person, id: 40, name: '图书 · 作者', configJson: '"book.author"' },
+    person, { ...person, id: 40, name: '作者', configJson: '"book.author"' },
     { ...person, id: 41, projectId: 1, projectName: 'E2E 项目', name: '订单编号', generator: 'UUID', configJson: 'null' },
   ])
   apiData.set('POST /api/rule/test-data/rules/preview', ({ request }) => {
@@ -1131,8 +1131,8 @@ test('Mock 规则按项目范围排列，可按 Faker 类别和方法查询、�
   await page.getByRole('tab', { name: 'Mock 规则', exact: true }).click()
   const pane = page.locator('.test-management:visible')
   const headers = pane.locator('.el-table__header th:not(.gutter)')
-  await expect(headers).toHaveText(['作用范围', '项目名称', '规则名称', '生成类别', '字段类型', '生成方式', '自动匹配字段', '操作'])
-  await pane.getByRole('combobox', { name: '生成类别' }).click()
+  await expect(headers).toHaveText(['作用范围', '项目名称', '规则名称', '规则类型', '规则类型编码', '字段类型', '生成方式', '自动匹配字段', '操作'])
+  await pane.getByRole('combobox', { name: '规则类型' }).click()
   await page.getByRole('option', { name: '个人资料 · person', exact: true }).click()
   await pane.getByPlaceholder('规则名称、方法或匹配字段').fill('fullName')
   await pane.getByPlaceholder('规则名称、方法或匹配字段').press('Enter')
@@ -1144,5 +1144,29 @@ test('Mock 规则按项目范围排列，可按 Faker 类别和方法查询、�
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   await pane.getByRole('button', { name: '重置', exact: true }).click()
   await expect(pane.locator('.el-table__body tr')).toHaveCount(3)
+  assertClean()
+})
+
+test('Mock 数值上下界可依次输入并与 JSON 参数同步', async ({ page }) => {
+  const apiData = createOperationsApiData()
+  const row = { id: 7, name: '整数', valueType: 'NUMBER', generator: 'FAKER', configJson: '"number.int"', builtin: true, matchNames: '' }
+  apiData.set('GET /api/rule/test-data/rules', [row])
+  apiData.set('POST /api/rule/test-data/rules/preview', ({ request }) => {
+    expect(JSON.parse(request.postDataJSON().configJson)).toEqual({ method: 'number.int', args: [{ min: 42, max: 42 }] })
+    return { valueJson: '42' }
+  })
+  await page.addInitScript(() => localStorage.setItem('tianshu:table-columns:test-mock',
+    JSON.stringify({ version: 2, visibleKeys: ['scope','name','category','generator'] })))
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.goto('http://tianshu.local/#/test')
+  await page.getByRole('tab', { name: 'Mock 规则', exact: true }).click()
+  const pane = page.locator('.test-management:visible')
+  await expect(pane.locator('.el-table__header th:not(.gutter)')).toHaveText(['作用范围','规则名称','规则类型','规则类型编码','生成方式','操作'])
+  await pane.getByRole('button', { name: '编辑', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Mock 规则详情' })
+  await dialog.getByLabel('最小值', { exact: true }).fill('42')
+  await dialog.getByLabel('最大值', { exact: true }).fill('42')
+  await dialog.getByRole('button', { name: '试生成' }).click()
+  await expect(dialog.getByLabel('生成预览')).toHaveText('42')
   assertClean()
 })
