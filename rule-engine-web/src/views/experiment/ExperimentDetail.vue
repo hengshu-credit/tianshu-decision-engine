@@ -443,13 +443,11 @@
             width="100"
             align="center"
           />
-          <el-table-column label="字段校验" min-width="240">
+          <el-table-column label="字段校验" min-width="240" class-name="field-validation-cell" :show-overflow-tooltip="false">
             <template #default="{ row }">
               <el-select
                 :model-value="inputValidationIds(row)"
                 multiple
-                collapse-tags
-                collapse-tags-tooltip
                 clearable
                 filterable
                 placeholder="可选"

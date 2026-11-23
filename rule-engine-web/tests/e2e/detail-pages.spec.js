@@ -28,6 +28,57 @@ function createEditableDetailApiData() {
   return apiData
 }
 
+for (const [entry, route, tab] of [
+  ['规则', '/rule/101', /^输入字段/],
+  ['分流实验', '/experiment/detail/61', /^输入字段/],
+  ['外数请求', '/datasource/api/22', '请求字段'],
+]) test(`${entry}输入字段完整显示多项校验并在列内换行`, async ({ page }) => {
+  const rules = ['必填', '纯数字', '至少十六位', '业务渠道提供的客户识别编号必须满足当前项目配置的长度及字符格式要求'].map((validationName, i) => ({
+    id: i + 1, validationName, validationType: i === 0 ? 'REQUIRED' : 'REGEX',
+  }))
+  const data = createEditableDetailApiData()
+  data.set('/api/rule/field-validation/available', rules)
+  data.set('/api/rule/governance/workspaces/EXTERNAL_API/22', {})
+  data.set('/api/rule/governance/workspaces/EXPERIMENT/61', {})
+  data.get('/api/rule/datasource/api-config/22').executionConfig = JSON.stringify({
+    version: 2, requestFields: [{ id: 'credit', path: 'credit_id', location: 'JSON', value: { kind: 'LITERAL', value: '123' } }],
+  })
+  if (entry === '规则') {
+    const field = data.get('/api/rule/definition/detail/101').inputFieldsJson[0]
+    field.validationRuleIds = JSON.stringify(rules.map(rule => rule.id))
+    field.validationOverride = 1
+  }
+  const harness = await openDetailPage(page, route, data)
+  await page.setViewportSize({ width: 1000, height: 820 })
+  await page.getByRole('tab', { name: tab, exact: true }).click()
+  const cell = page.locator('td.field-validation-cell:visible').first()
+  if (entry === '规则') {
+    const saved = cell.locator('.field-validation-tags .el-tag')
+    await expect(saved).toHaveText(rules.map(rule => rule.validationName))
+    const lines = await saved.evaluateAll(tags => tags.map(tag => tag.getBoundingClientRect().top))
+    expect(new Set(lines).size).toBeGreaterThan(1)
+    await cell.locator('xpath=..').getByRole('button', { name: '编辑', exact: true }).click()
+  }
+  const select = cell.locator('.el-select')
+  if (entry !== '规则') {
+    await select.click()
+    for (const rule of rules) await page.getByRole('option', { name: new RegExp(rule.validationName) }).click()
+    await page.keyboard.press('Escape')
+  }
+  const tags = select.locator('.el-tag')
+  await expect(tags).toHaveCount(rules.length)
+  for (const rule of rules) await expect(select).toContainText(rule.validationName)
+  const sizes = await tags.evaluateAll(items => items.map(tag => {
+    const text = tag.querySelector('.el-select__tags-text')
+    const rect = tag.getBoundingClientRect(), cellRect = tag.closest('td').getBoundingClientRect()
+    return { y: rect.top, fits: rect.right <= cellRect.right + 1 && rect.bottom <= cellRect.bottom + 1 &&
+      text.scrollWidth <= text.clientWidth + 1 && text.scrollHeight <= tag.clientHeight + 1 }
+  }))
+  expect(new Set(sizes.map(size => size.y)).size).toBeGreaterThan(1)
+  expect(sizes.every(size => size.fits)).toBe(true)
+  harness.assertClean()
+})
+
 async function expectNoRootOverflow(page) {
   const metrics = await page.evaluate(() => ({
     viewport: window.innerWidth,

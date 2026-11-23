@@ -341,13 +341,12 @@
               <span v-else style="color: var(--tianshu-text-tertiary)">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="字段校验" min-width="240">
+          <el-table-column label="字段校验" min-width="240" class-name="field-validation-cell">
             <template v-slot="{ row }">
               <template v-if="row._editing">
                 <el-select
                   v-model="row.validationRuleIdList"
                   multiple
-                  collapse-tags
                   clearable
                   placeholder="选择一个或多个校验规则"
                   style="width: 100%"
@@ -367,32 +366,13 @@
                   >恢复子规则配置</el-button
                 >
               </template>
-              <template v-else>
-                <span
-                  v-if="!(row.validationRuleIdList || []).length"
-                  style="color: var(--tianshu-text-tertiary)"
-                  >未配置</span
-                >
-                <template v-else>
-                  <el-tag
-                    v-for="item in selectedFieldValidations(row)"
-                    :key="item.id"
-                    size="small"
-                    type="info"
-                    style="margin-right: 4px"
-                    >{{ item.validationName }}</el-tag
-                  >
-                </template>
-                <el-tag
-                  v-if="
-                    row.validationOverride !== 1 &&
-                    (row.validationRuleIdList || []).length
-                  "
-                  size="small"
-                  type="success"
-                  >继承子规则</el-tag
-                >
-              </template>
+              <span v-else-if="!(row.validationRuleIdList || []).length" style="color: var(--tianshu-text-tertiary)">未配置</span>
+              <div v-else class="field-validation-tags">
+                <el-tag v-for="item in selectedFieldValidations(row)" :key="item.id" size="small" type="info">
+                  {{ item.validationName }}
+                </el-tag>
+                <el-tag v-if="row.validationOverride !== 1" size="small" type="success">继承子规则</el-tag>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="修改时间" width="140" align="center">
@@ -3361,13 +3341,8 @@ export default {
     },
     selectedFieldValidations(row) {
       const ids = (row && row.validationRuleIdList) || []
-      return ids
-        .map((id) =>
-          this.fieldValidationOptions.find(
-            (item) => Number(item.id) === Number(id)
-          )
-        )
-        .filter(Boolean)
+      return ids.map(id => this.fieldValidationOptions.find(item => String(item.id) === String(id))
+        || { id, validationName: `校验 #${id}` })
     },
     fieldValidationTypeLabel(type) {
       return (

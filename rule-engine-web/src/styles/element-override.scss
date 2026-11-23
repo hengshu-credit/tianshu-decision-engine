@@ -532,6 +532,27 @@ textarea[data-selected-hint]::placeholder,
     word-break: normal;
   }
 
+  .field-validation-cell {
+    .field-validation-tags {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .el-tag {
+      max-width: 100%;
+      height: auto;
+      min-height: var(--el-tag-height);
+    }
+
+    .el-tag__content,
+    .el-select__tags-text {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+  }
+
   .table-operation-column {
     text-align: left !important;
 

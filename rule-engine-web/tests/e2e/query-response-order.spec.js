@@ -157,6 +157,7 @@ for (const theme of ['LIGHT', 'DARK']) {
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme.toLowerCase())
       await page.getByRole('button', { name: '新建计费项', exact: true }).click()
       const dialog = page.getByRole('dialog', { name: '新建计费配置', exact: true })
+      await select(page, dialog, '作用范围', '全局')
       await started.promise
       await select(page, dialog, '计费对象', '数据库查询')
       const target = field(page, dialog, '指定对象').locator('.el-select')
@@ -168,6 +169,7 @@ for (const theme of ['LIGHT', 'DARK']) {
       await page.getByRole('dialog', { name: '未保存提醒', exact: true }).getByRole('button', { name: '继续离开', exact: true }).click()
       await expect(dialog).toBeHidden()
       await page.getByRole('button', { name: '新建计费项', exact: true }).click()
+      await select(page, dialog, '作用范围', '全局')
       await expect(target).not.toHaveClass(/is-disabled/)
       const response = page.waitForResponse('**/api/rule/definition/list*')
       delayed.resolve({ records: [{ id: 11, ruleName: '过期规则', ruleCode: 'old_rule' }], total: 1 })
@@ -193,6 +195,7 @@ for (const theme of ['LIGHT', 'DARK']) {
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme.toLowerCase())
       await page.getByRole('button', { name: '新建计费项', exact: true }).click()
       const dialog = page.getByRole('dialog', { name: '新建计费配置', exact: true })
+      await select(page, dialog, '作用范围', '全局')
       await expect(dialog.getByRole('alert')).toContainText('计费对象加载失败')
       await expect.poll(async () => (await field(page, dialog, '指定对象').locator('.el-select').boundingBox()).width).toBeGreaterThan(400)
       const message = dialog.getByRole('alert').locator('span').first()
