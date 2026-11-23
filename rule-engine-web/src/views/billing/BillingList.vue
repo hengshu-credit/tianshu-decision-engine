@@ -650,7 +650,7 @@
           </template>
           <el-table-column v-if="!summaryQuery.ruleId" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" fixed="right" align="center">
             <template #default="{ row }">
-              <el-tooltip :content="row.mailAvailable ? '发送此项目、计费项及鉴权范围当月已汇总的账单' : '请检查收件邮箱和计费配置关联，再刷新对应日期的汇总'">
+              <el-tooltip :content="row.mailAvailable ? statementSendHint(row) : '请检查收件邮箱和计费配置关联，再刷新对应日期的汇总'">
                 <span><el-button v-permission="{ code: 'billing:edit', projectId: row.projectId }"
                   link type="primary" data-action="execute" :disabled="!row.mailAvailable || sendingBill !== null"
                   :loading="sendingBill === row.id" @click="sendStatement(row)">发送</el-button></span>
@@ -921,6 +921,10 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="账单公司抬头" prop="billCompanyName">
+          <el-input v-model.trim="configForm.billCompanyName" maxlength="128" clearable
+            placeholder="选填，默认使用系统基本信息中的系统名称" />
+        </el-form-item>
         <el-form-item label="账单收件邮箱" prop="billEmail">
           <el-input v-model.trim="configForm.billEmail" type="email" maxlength="254" clearable
             placeholder="选填，审批生效后可在计费汇总发送月度账单" />
@@ -1130,6 +1134,7 @@ export default {
       summaryLoading: false,
       summaryRequestId: 0,
       sendingBill: null,
+      statementRange: null,
       summaryError: '',
       summaryDateRange: [],
       summaryQuery: {
@@ -1347,6 +1352,7 @@ export default {
         expireTime: '',
         description: '',
         billEmail: '',
+        billCompanyName: '',
         status: 1,
       }
     },
@@ -1392,10 +1398,10 @@ export default {
       this.summaryError = ''
       this.summaryList = []
       try {
-        const res = await listBillingSummaries(
-          this.cleanParams({ ...this.summaryQuery })
-        )
+        const params = this.cleanParams({ ...this.summaryQuery })
+        const res = await listBillingSummaries(params)
         if (requestId !== this.summaryRequestId) return
+        this.statementRange = params.beginDate && params.endDate ? { beginDate: params.beginDate, endDate: params.endDate } : null
         this.summaryList = (res.data && res.data.records) || []
         this.summaryTotal = (res.data && res.data.total) || 0
       } catch {
@@ -1539,11 +1545,16 @@ export default {
         })
         .catch(() => {})
     },
+    statementSendHint(row) {
+      const range = this.statementRange
+      const period = range ? [range.beginDate, range.endDate].join(' 至 ') : row.summaryDate?.slice(0, 7)
+      return period + ' · 合并相同收件邮箱和抬头的产品，按本项目、账户、鉴权及币种发送'
+    },
     async sendStatement(row) {
       if (!row.mailAvailable || this.sendingBill !== null) return
       this.sendingBill = row.id
       try {
-        await sendBillingStatement(row.id)
+        await sendBillingStatement(row.id, this.statementRange)
         this.$message.success('账单邮件已发送')
       } finally {
         this.sendingBill = null

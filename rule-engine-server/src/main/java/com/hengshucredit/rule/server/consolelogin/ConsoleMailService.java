@@ -76,7 +76,7 @@ public class ConsoleMailService {
         try {
             deliver(sender, from, name, email, title, plain,
                     html(name, (String) brand.get("subtitle"), title, username, text, link, action, ttl, logoSource),
-                    "cid:tianshu-logo".equals(logoSource), null, null);
+                    "cid:tianshu-logo".equals(logoSource) && assets != null ? assets.logo() : null, null, null);
         } catch (java.io.IOException error) {
             throw new IllegalStateException("邮件模板读取失败", error);
         }
@@ -92,24 +92,31 @@ public class ConsoleMailService {
         }
     }
 
-    public void sendStatement(String email, String title, String plain, String body, String filename, byte[] attachment) {
+    public void sendStatement(SystemBrandAssetService.StatementBrand brand, String email, String title,
+                              String recipientName, String introduction, String plain, String tables,
+                              String signature, String filename, byte[] attachment) {
         if (!validBillRecipient(email)) throw new IllegalArgumentException("请先在计费配置中设置有效的账单收件邮箱");
         if (!configured()) throw new IllegalStateException("请先在系统设置中配置通知邮箱");
         Map<String, Object> config = settings == null ? null : settings.mail();
-        deliver(config == null ? mailSender : sender(config),
-                config == null ? properties.getMail().getFrom() : (String) config.get("email"),
-                settings == null ? "天枢决策引擎" : (String) settings.publicBrand().get("systemName"),
-                email, title, plain, body, false, filename, attachment);
+        try {
+            String body = renderNotification(brand.name(), brand.subtitle(), title, recipientName, introduction,
+                    tables, "cid:tianshu-logo", signature, "");
+            deliver(config == null ? mailSender : sender(config),
+                    config == null ? properties.getMail().getFrom() : (String) config.get("email"),
+                    brand.name(), email, title, plain, body, brand.logo(), filename, attachment);
+        } catch (java.io.IOException error) {
+            throw new IllegalStateException("通知邮件模板读取失败", error);
+        }
     }
 
     private void deliver(JavaMailSender sender, String from, String name, String email, String title,
-                         String plain, String body, boolean inlineLogo, String filename, byte[] attachment) {
+                         String plain, String body, byte[] inlineLogo, String filename, byte[] attachment) {
         try {
             var message = sender.createMimeMessage();
             var helper = new MimeMessageHelper(message, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED, StandardCharsets.UTF_8.name());
             helper.setFrom(from, name); helper.setTo(email); helper.setSubject(name + " · " + title);
             helper.setText(plain, body);
-            if (assets != null && inlineLogo) helper.addInline("tianshu-logo", new ByteArrayResource(assets.logo()), "image/png");
+            if (inlineLogo != null) helper.addInline("tianshu-logo", new ByteArrayResource(inlineLogo), "image/png");
             if (attachment != null) helper.addAttachment(filename, new ByteArrayResource(attachment),
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             sender.send(message);
@@ -144,9 +151,15 @@ public class ConsoleMailService {
         String button = link == null ? "" : "<p style=\"padding:10px 12px;background:#f3f3ff;border-left:3px solid #2934ea\">链接有效期：" + ttl
                 + " 分钟</p><p><a href=\"" + escape(link) + "\" style=\"display:block;padding:12px;background:#2934ea;color:#fff;text-align:center;text-decoration:none;border-radius:0\">"
                 + escape(action) + "</a></p><p style=\"font-size:12px;color:#657087\">若非您本人操作，请忽略此邮件。请勿向他人转发此链接。</p>";
+        return renderNotification(name, subtitle, title, username, text, button, logoSource, "上海衡枢真信科技有限公司",
+                "<a href=\"https://www.hengshucredit.com\" style=\"color:#2934ea;text-decoration:none\">www.hengshucredit.com</a>");
+    }
+
+    private static String renderNotification(String name, String subtitle, String title, String username, String text,
+                                             String content, String logoSource, String signature, String website) throws java.io.IOException {
         String template = new ClassPathResource("brand/notification.html").getContentAsString(StandardCharsets.UTF_8);
         Map<String, String> values = Map.of("name", escape(name), "subtitle", escape(subtitle), "title", escape(title),
-                "username", escape(username), "text", escape(text), "action", button, "logo", escape(logoSource));
+                "username", escape(username), "text", escape(text), "action", content, "logo", escape(logoSource), "signature", escape(signature), "website", website);
         Matcher matcher = Pattern.compile("\\{\\{([a-z]+)}}").matcher(template);
         StringBuffer result = new StringBuffer();
         while (matcher.find()) matcher.appendReplacement(result, Matcher.quoteReplacement(values.getOrDefault(matcher.group(1), "")));

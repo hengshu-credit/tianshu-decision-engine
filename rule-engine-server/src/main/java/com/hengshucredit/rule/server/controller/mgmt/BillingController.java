@@ -111,10 +111,12 @@ public class BillingController {
 
     @PostMapping("/summary/{id:\\d+}/send")
     @com.hengshucredit.rule.server.security.RequirePermission("billing:edit")
-    public ApiResponse<Void> sendStatement(@PathVariable long id) {
-        statements.send(id);
+    public ApiResponse<Void> sendStatement(@PathVariable long id, @RequestBody(required = false) StatementPeriod period) {
+        statements.send(id, period == null ? null : period.beginDate(), period == null ? null : period.endDate());
         return ApiResponse.ok();
     }
+
+    public record StatementPeriod(LocalDate beginDate, LocalDate endDate) {}
 
     @PostMapping("/summary/refresh")
     public ApiResponse<RuleBillingSummaryTask> refreshSummary(@RequestBody(required = false) Map<String, String> body) {

@@ -89,20 +89,20 @@ test('汇总失败保留旧表，重试创建新任务且切换日期展示对�
   assertClean()
 })
 
-test('从计费编辑选中项目规则并保存邮箱，汇总行只提交自己的 ID', async ({ page }) => {
+test('计费编辑保存专属抬头和邮箱，按已查询的跨月账期发送', async ({ page }) => {
   const data = createDocsApiData()
   const config = data.get('/api/rule/billing/config/list').records[0]
   const rules = data.get('/api/rule/definition/project-list/1')
   const nextRule = { ...rules.records[0], id: 108, ruleCode: 'kyc_check', ruleName: '活体核验' }
   data.set('/api/rule/definition/project-list/1', { records: [...rules.records, nextRule], total: 2 })
-  let saved, sends = 0
+  let saved, sentPeriod, sends = 0
   data.set('POST /api/rule/governance/drafts', ({ request }) => {
     saved = JSON.parse(request.postDataJSON().snapshotJson)
     return { resourceId: config.id, resourceType: 'BILLING_CONFIG', state: 'DRAFT' }
   })
   const summary = data.get('/api/rule/billing/summary/list').records[0]
   Object.assign(summary, { projectId: 1, mailAvailable: true })
-  data.set('POST /api/rule/billing/summary/83/send', () => { sends++; return null })
+  data.set('POST /api/rule/billing/summary/83/send', ({ request }) => { sends++; sentPeriod = request.postDataJSON(); return null })
   const { assertClean } = await installDistRoutes(page, { apiData: data })
   await page.goto('http://tianshu.local/index.html#/billing')
   await page.getByRole('button', { name: '编辑', exact: true }).first().click()
@@ -110,12 +110,20 @@ test('从计费编辑选中项目规则并保存邮箱，汇总行只提交自�
   await expect(dialog.locator('.el-form-item').filter({ hasText: '所属项目' })).toContainText(config.projectName)
   await dialog.locator('.el-form-item').filter({ hasText: '指定对象' }).getByRole('combobox').click()
   await page.getByRole('option', { name: /活体核验/ }).click()
+  await dialog.getByPlaceholder('选填，默认使用系统基本信息中的系统名称').fill('甲方结算中心')
   await dialog.getByPlaceholder('选填，审批生效后可在计费汇总发送月度账单').fill('billing@example.test')
   await dialog.getByRole('button', { name: '保存草稿' }).click()
   await expect(dialog).toBeHidden()
-  expect(saved).toMatchObject({ projectId: 1, targetRefId: 108, billEmail: 'billing@example.test' })
+  expect(saved).toMatchObject({ projectId: 1, targetRefId: 108, billEmail: 'billing@example.test', billCompanyName: '甲方结算中心' })
   await page.getByRole('tab', { name: '计费汇总', exact: true }).click()
-  await page.getByRole('button', { name: '发送', exact: true }).click()
+  const panel = page.getByRole('tabpanel', { name: '计费汇总' })
+  const dates = panel.locator('.el-range-input')
+  await dates.nth(0).fill('2026-06-01')
+  await dates.nth(1).fill('2026-07-31')
+  await dates.nth(1).press('Enter')
+  await panel.getByRole('button', { name: '查询', exact: true }).click()
+  await panel.getByRole('button', { name: '发送', exact: true }).click()
+  await expect.poll(() => sentPeriod).toEqual({ beginDate: '2026-06-01', endDate: '2026-07-31' })
   await expect(page.getByText('账单邮件已发送')).toBeVisible()
   expect(sends).toBe(1)
   assertClean()

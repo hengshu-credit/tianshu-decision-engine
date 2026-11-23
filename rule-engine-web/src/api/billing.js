@@ -62,6 +62,6 @@ export function getLatestBillingSummaryRefresh(params) {
   return request({ url: '/rule/billing/summary/refresh', method: 'get', params })
 }
 
-export function sendBillingStatement(summaryId) {
-  return request.post('/rule/billing/summary/' + encodeURIComponent(summaryId) + '/send', null, { timeout: 60000 })
+export function sendBillingStatement(summaryId, period = null) {
+  return request.post('/rule/billing/summary/' + encodeURIComponent(summaryId) + '/send', period, { timeout: 60000 })
 }

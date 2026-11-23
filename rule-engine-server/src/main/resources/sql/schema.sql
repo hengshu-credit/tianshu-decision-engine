@@ -1933,6 +1933,7 @@ CREATE TABLE IF NOT EXISTS `rule_billing_config` (
   `project_id`      BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
   `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `scope`           VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
+  `bill_company_name` VARCHAR(128) DEFAULT NULL COMMENT '账单公司抬头，空值表示发送时使用已生效的系统名称',
   `bill_email` VARCHAR(254) DEFAULT NULL COMMENT '审批生效的月度账单收件邮箱，空值表示关闭发送',
   `billing_code`    VARCHAR(128) NOT NULL                COMMENT '计费项编码',
   `billing_name`    VARCHAR(128) NOT NULL                COMMENT '计费项名称',

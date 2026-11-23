@@ -100,6 +100,8 @@ public class BillingConfigGovernedResourceAdapter
         put(value, "billingCode", source.get("billingCode"));
         put(value, "billingName", source.get("billingName"));
         put(value, "billEmail", stringValue(source.get("billEmail")));
+        String company = stringValue(source.get("billCompanyName"));
+        if (company != null && !company.isBlank()) value.put("billCompanyName", company.strip());
         value.put("billingTarget",
                 upper(source.get("billingTarget"), "ENGINE"));
         putLong(value, "targetRefId", source.get("targetRefId"));
@@ -184,6 +186,10 @@ public class BillingConfigGovernedResourceAdapter
         String email = stringValue(value.get("billEmail"));
         if (hasText(email) && !com.hengshucredit.rule.server.consolelogin.ConsoleMailService.validBillRecipient(email)) {
             issues.add(error("BILLING_MAIL_INVALID", "请输入一个有效的账单收件邮箱", id, "$.billEmail"));
+        }
+        String company = stringValue(value.get("billCompanyName"));
+        if (company != null && (company.length() > 128 || company.chars().anyMatch(Character::isISOControl))) {
+            issues.add(error("BILLING_COMPANY_INVALID", "账单公司抬头须为 128 字以内的单行名称", id, "$.billCompanyName"));
         }
         validateTimeRange(value, id, issues);
 

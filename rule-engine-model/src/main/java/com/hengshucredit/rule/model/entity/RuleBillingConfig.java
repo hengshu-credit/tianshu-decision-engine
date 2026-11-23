@@ -24,6 +24,8 @@ public class RuleBillingConfig {
     private Long targetRefId;
     @TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     private String billEmail;
+    @TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
+    private String billCompanyName;
     private String chargeType;
     private BigDecimal unitPrice;
     private String currency;

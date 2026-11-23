@@ -67,10 +67,14 @@ ONNX Runtime 与 JPMML 的许可证不同；启用 `onnx-gpu` Maven profile 时�
 - `vditor` 4.0.1：MIT，用于台账 Markdown 编辑与解析。上游：[Vanessa219/vditor](https://github.com/Vanessa219/vditor)；[许可证全文](rule-engine-web/public/licenses/vditor-MIT.txt)。
 - `dompurify` 3.4.17：MPL-2.0 或 Apache-2.0，用于净化 Markdown 渲染结果。保留上游的 [Apache-2.0](rule-engine-web/public/licenses/dompurify-Apache-2.0.txt) 与 [MPL-2.0](rule-engine-web/public/licenses/dompurify-MPL-2.0.txt) 许可文本；上游：[cure53/DOMPurify](https://github.com/cure53/DOMPurify)。
 - `diff-match-patch` 1.0.5：Apache-2.0，Vditor 的传递依赖；[许可证全文](rule-engine-web/public/licenses/diff-match-patch-Apache-2.0.txt)。
-- `com.twelvemonkeys.imageio:imageio-webp` 3.15.0：BSD，用于服务端 WebP 解码，未引入 SVG/Batik 解码器。上游：[haraldk/TwelveMonkeys](https://github.com/haraldk/TwelveMonkeys)；许可证随 Maven 依赖 JAR 保留。
+- `com.twelvemonkeys.imageio:imageio-webp` 3.15.0：BSD，用于服务端 WebP 解码，台账上传不启用 SVG 解码。上游：[haraldk/TwelveMonkeys](https://github.com/haraldk/TwelveMonkeys)；许可证随 Maven 依赖 JAR 保留。
 
 前端许可文本随 `public/licenses/` 复制到独立部署产物。ClamAV 是通过协议连接的外部扫描服务，不包含在本项目构建产物中。
 
+
+## 账单品牌图片
+
+账单使用 JSVG 2.0.0 把已配置的 SVG Logo 转成可离线查看的 PNG。MIT 许可证随依赖 JAR 的 `META-INF/LICENSE` 提供。[上游项目](https://github.com/weisJ/jsvg)
 
 ## Faker 测试数据生成
 
