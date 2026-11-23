@@ -97,7 +97,7 @@
                 <el-icon
                   v-if="value && clearable"
                   class="el-input__icon vp-clear-btn"
-                  @mousedown.stop
+                  @mousedown.stop.prevent
                   @click.stop="onClearValue"
                 >
                   <el-icon-close />

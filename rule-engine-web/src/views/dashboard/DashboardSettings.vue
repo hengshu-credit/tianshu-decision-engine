@@ -1,46 +1,51 @@
 <template>
   <div class="uiue-list-page dashboard-settings-page">
-    <div class="dashboard-settings-heading">
-      <el-button @click="$router.push('/dashboard')">返回看板</el-button>
-    </div>
     <dismissible-guidance guide-id="dashboard-settings.intro" label="看板设置说明">
       字段关联始终保存资源 ID；个人项目覆盖逐项继承个人默认，再继承管理员维护的公共默认。
+      <span v-if="canManageDefaults">公共默认仅可关联全局字段，保存后供所有账户继承；已有个人或项目覆盖继续保留。清空字段后保存即可移除该项公共配置。</span>
     </dismissible-guidance>
 
     <div class="uiue-search-container uiue-filter-toolbar">
       <el-form :inline="true" size="small">
+        <el-form-item>
+          <el-button class="uiue-detail-back" size="small" aria-label="返回看板" title="返回看板" @click="$router.push('/dashboard')">
+            <app-icon name="Back" />
+          </el-button>
+        </el-form-item>
         <el-form-item v-if="canManageDefaults" label="配置类型">
           <el-radio-group v-model="editSystemDefaults" :disabled="saving" @change="changeScope">
             <el-radio-button :value="false">我的配置</el-radio-button>
             <el-radio-button :value="true">公共默认</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="!editSystemDefaults" label="配置范围">
-          <project-resource-select
-            v-model="projectId"
-            clearable
-            filterable
-            :disabled="saving"
-            placeholder="个人默认（仅全局字段）"
-            style="width: 280px"
-            @change="load"
-          />
-        </el-form-item>
-        <el-form-item>
-          <el-tag :type="projectId ? 'success' : 'info'">
-            {{ editSystemDefaults ? '公共默认' : projectId ? '项目覆盖' : '个人默认' }}
-          </el-tag>
-          <el-tag v-if="projectId && settings.projectOverride" type="warning">已创建覆盖</el-tag>
-        </el-form-item>
+        <div class="dashboard-scope-controls">
+          <div class="dashboard-scope-row" :class="{ 'is-inactive': editSystemDefaults }" :inert="editSystemDefaults">
+            <el-form-item label="配置范围">
+              <project-resource-select
+                v-model="projectId"
+                clearable
+                filterable
+                :disabled="saving"
+                placeholder="个人默认（仅全局字段）"
+                class="dashboard-project-select"
+                @change="load"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-tag :type="projectId ? 'success' : 'info'">{{ projectId ? '项目覆盖' : '个人默认' }}</el-tag>
+              <el-tag :class="{ 'is-inactive': !projectId || !settings.projectOverride }" type="warning">已创建覆盖</el-tag>
+            </el-form-item>
+          </div>
+          <div v-if="canManageDefaults" class="dashboard-scope-row" :class="{ 'is-inactive': !editSystemDefaults }" :inert="!editSystemDefaults">
+            <el-form-item label="配置范围"><el-tag type="info">公共默认</el-tag></el-form-item>
+            <el-form-item class="dashboard-load-defaults">
+              <el-button :disabled="saving || loading" @click="loadPersonalDefaults">载入我的默认配置</el-button>
+            </el-form-item>
+          </div>
+        </div>
       </el-form>
-      <div v-if="editSystemDefaults" class="btn-right">
-        <el-button :disabled="saving || loading" @click="loadPersonalDefaults">载入我的默认配置</el-button>
-      </div>
     </div>
 
-    <dismissible-guidance v-if="editSystemDefaults" guide-id="dashboard-settings.global" label="公共默认配置说明">
-      公共默认仅可关联全局字段，保存后供所有账户继承；已有个人或项目覆盖继续保留。清空字段后保存即可移除该项公共配置。
-    </dismissible-guidance>
     <el-alert
       v-if="!settings.editable && !loading"
       title="当前控制台未启用用户登录，仅可查看公共默认字段映射。"
@@ -473,14 +478,39 @@ export default {
 <style scoped>
 .dashboard-settings-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
   gap: 16px;
 }
 
-.dashboard-settings-heading {
+.dashboard-scope-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1 1 440px;
+  min-width: 0;
+  gap: inherit;
+}
+
+/* 两组控件共用一格，换行时按较高的一组预留空间。 */
+.dashboard-scope-row {
+  grid-area: 1 / 1;
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: inherit;
+}
+
+.dashboard-scope-controls .is-inactive {
+  visibility: hidden;
+}
+
+.dashboard-project-select {
+  width: 280px;
+  max-width: 100%;
+}
+
+.dashboard-load-defaults {
+  margin-left: auto;
 }
 
 .dashboard-decision-references { width: 100%; }
@@ -533,10 +563,4 @@ export default {
   backdrop-filter: blur(10px);
 }
 
-@media (max-width: 760px) {
-  .dashboard-settings-heading {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-}
 </style>
