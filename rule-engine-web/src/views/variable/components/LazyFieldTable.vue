@@ -5,6 +5,7 @@
     :row-class-name="stickyParents ? parentRowClass : undefined"
     :row-style="stickyParents ? parentRowStyle : undefined"
     :style="spacing"
+    @cell-mouse-enter="trackHoveredRow" @cell-mouse-leave="hoveredIndex = null"
   >
     <slot />
   </el-table>
@@ -23,9 +24,10 @@ export default {
     more: Boolean,
     stickyParents: Boolean,
   },
-  emits: ['load-more'],
-  data: () => ({ start: 0, visibleCount: 32, topRow: 0, parentLimit: 0, innerScroll: false }),
+  emits: ['load-more', 'row-hover'],
+  data: () => ({ hoveredIndex: null, start: 0, visibleCount: 32, topRow: 0, parentLimit: 0, innerScroll: false }),
   computed: {
+    hoveredRow() { return this.visibleRows[this.hoveredIndex] ?? null },
     windowed() { return this.data.length > 50 },
     first() { return this.windowed ? Math.min(this.start, Math.max(0, this.data.length - this.visibleCount)) : 0 },
     // 记录每个展开分组的父行和结束位置。滚动时只沿视口首行的祖先链查找。
@@ -98,15 +100,20 @@ export default {
     tracksScroll() { return this.windowed || this.more || this.stickyParents },
   },
   watch: {
+    hoveredRow(row) { this.$emit('row-hover', row) },
     tracksScroll() { this.$nextTick(this.observe) },
     data() { if (this.tracksScroll) this.$nextTick(this.scheduleMeasure) },
     more(value) { if (value) this.$nextTick(this.scheduleMeasure) },
   },
   mounted() { this.observe() },
   activated() { this.observe() },
-  deactivated() { this.disconnect() },
-  beforeUnmount() { this.disconnect() },
+  deactivated() { this.hoveredIndex = null; this.disconnect() },
+  beforeUnmount() { if (this.hoveredRow) this.$emit('row-hover', null); this.disconnect() },
   methods: {
+    trackHoveredRow(row, column, cell) {
+      // 虚拟窗口会复用行；按当前可见位置解析，使高亮跟随实际显示的字段。
+      if (this.stickyParents) this.hoveredIndex = cell.parentElement.sectionRowIndex
+    },
     treeRowKey(row) {
       // 普通字段复用同一对象内的表格行。父行保留稳定标识，行内操作仍绑定真实字段 ID。
       if (row.field && !row.expandable) return `slot:${row.node.object.id}:${row.index % this.visibleCount}`

@@ -396,28 +396,31 @@
         <div class="management-table-region" v-else :aria-busy="objLoading">
           <lazy-field-table ref="objectTable" class="management-table data-object-table" data-testid="data-object-table"
             :data="objectTableRows" sticky-parents row-key="key" border size="small" show-overflow-tooltip
-            :span-method="objectTableSpan" @row-click="handleObjectRowClick"
+            :span-method="objectTableSpan" @row-click="handleObjectRowClick" @row-hover="hoveredObjectGuides = $event?.guides ?? []"
           >
-            <el-table-column v-for="column in visibleObjectColumns" :key="column.key"
+            <el-table-column v-for="(column, columnIndex) in visibleObjectColumns" :key="column.key"
               :column-key="column.key" :label="column.label" :min-width="column.minWidth" :width="column.width"
               :align="column.align || 'left'"
             >
               <template #default="{ row: item }">
+                <span v-if="columnIndex === 0 && !item.pager" class="object-tree-prefix" :style="{ '--tree-depth': item.depth }">
+                  <span class="object-tree-guides" aria-hidden="true">
+                    <i v-for="guide in item.guides" :key="guide" class="object-tree-guide"
+                      :class="{ 'is-active': guide === hoveredObjectGuides.at(-1) || guide === hoveredObjectGuides.at(-2) }"
+                    ></i>
+                  </span>
+                  <button v-if="item.expandable" type="button" class="object-field-toggle"
+                    :aria-expanded="item.expanded" :aria-label="'展开或收起 ' + item.code"
+                    @click.stop="toggleObjectTableRow(item)"
+                  >{{ item.expanded ? '▾' : '▸' }}</button>
+                </span>
                 <el-pagination v-if="item.pager" size="small"
                   :aria-label="item.node.object.objectCode + '的字段分页'"
                   :current-page="objectFieldPage(item.node)" :page-size="objectFieldPageSize"
                   :total="objectFieldRootTotal(item.node)" layout="total,prev,pager,next"
                   @current-change="handleObjectFieldPageChange(item.node, $event)"
                 />
-                <div v-else-if="column.key === 'objectCode'" class="object-tree-code" :title="item.code" :style="{ '--tree-depth': item.depth }">
-                  <span v-if="item.depth" class="object-tree-guides" aria-hidden="true"></span>
-                  <button v-if="item.expandable" type="button" class="object-field-toggle"
-                    :aria-expanded="item.expanded" :aria-label="'展开或收起 ' + item.code"
-                    @click.stop="toggleObjectTableRow(item)"
-                  >{{ item.expanded ? '▾' : '▸' }}</button>
-                  <span v-else class="object-toggle-space" aria-hidden="true"></span>
-                  <code class="script-name-code">{{ item.code }}</code>
-                </div>
+                <code v-else-if="column.key === 'objectCode'" class="script-name-code" :title="item.code">{{ item.code }}</code>
                 <template v-else-if="column.key === 'objectLabel'">{{ item.field ? item.field.varLabel : item.node.object.objectLabel }}</template>
                 <code v-else-if="column.key === 'scriptName'" class="script-name-code">{{ item.scriptName }}</code>
                 <el-tag v-else-if="column.key === 'scope'" size="small"
@@ -2638,6 +2641,7 @@ export default {
       // 数据对象 tab 分页与展开
       objPageNum: 1,
       objPageSize: 20,
+      hoveredObjectGuides: [],
       objExpanded: {},
       objectFieldPageMap: {},
       objectFieldPageSize: 20,
@@ -2778,20 +2782,25 @@ export default {
       for (const node of this.filteredObjectTree.slice(start, start + this.objPageSize)) {
         const { id, objectCode } = node.object
         const expanded = this.objExpanded[id] === true
-        rows.push(markRaw({ key: `object:${id}`, node, code: objectCode, scriptName: node.object.scriptName?.trim() ? node.object.scriptName : objectCode,
+        const objectKey = `object:${id}`
+        rows.push(markRaw({ key: objectKey, guides: [objectKey], node, code: objectCode, scriptName: node.object.scriptName?.trim() ? node.object.scriptName : objectCode,
           depth: 0, expandable: !!node.variables?.length, expanded }))
         if (!expanded) continue
         const expandedKeys = new Set(this.objectFieldExpandedKeys(node).map(String))
-        const stack = this.paginatedObjectFields(node).map(field => ({ field, depth: 1 })).reverse()
+        // 同一组兄弟字段共享一条竖线，祖先线随子树延续。
+        const fieldGuides = [objectKey, `children:${objectKey}`]
+        const stack = this.paginatedObjectFields(node).map(field => ({ field, guides: fieldGuides })).reverse()
         while (stack.length) {
-          const { field, depth } = stack.pop()
+          const { field, guides } = stack.pop()
           const children = field.children || []
           const fieldExpanded = expandedKeys.has(String(field.id))
-          rows.push(markRaw({ key: `field:${id}:${field.id}`, node, field, depth, index: rows.length, code: field.varCode,
+          const key = `field:${id}:${field.id}`
+          rows.push(markRaw({ key, node, field, guides, depth: guides.length - 1, index: rows.length, code: field.varCode,
             scriptName: Object.hasOwn(field, 'originalScriptName') ? field.originalScriptName : field.scriptName,
             expandable: children.length > 0, expanded: fieldExpanded }))
-          if (fieldExpanded) {
-            for (let i = children.length - 1; i >= 0; i--) stack.push({ field: children[i], depth: depth + 1 })
+          if (fieldExpanded && children.length) {
+            const childGuides = [...guides, key]
+            for (let i = children.length - 1; i >= 0; i--) stack.push({ field: children[i], guides: childGuides })
           }
         }
         if (this.objectFieldNeedsPaging(node)) rows.push(markRaw({ key: `pager:${id}`, node, depth: 1, pager: true }))
@@ -5801,26 +5810,29 @@ export default {
 .data-object-table :deep(.el-table__body .el-table__row > td.el-table__cell) {
   background: var(--tianshu-bg-surface) !important;
 }
-.object-tree-code {
-  --tree-step: 16px;
-  display: flex;
+.object-tree-prefix {
+  --tree-step: 24px;
+  display: inline-flex;
+  vertical-align: middle;
   align-items: center;
-  gap: 4px;
-  padding-inline-start: calc(var(--tree-depth) * var(--tree-step));
+  justify-content: flex-end;
+  width: calc(var(--tree-depth) * var(--tree-step) + 18px);
+  margin-inline-end: 4px;
 }
 .object-tree-guides {
   position: absolute;
-  inset-block: 0;
-  margin-inline-start: calc(-1 * var(--tree-depth) * var(--tree-step));
-  width: calc(var(--tree-depth) * var(--tree-step));
-  background: repeating-linear-gradient(to right, transparent 0 7px, var(--el-color-primary) 7px 9px, transparent 9px 16px);
+  inset-block: 0 -1px;
+  inset-inline-start: 4px;
+  display: flex;
+  column-gap: calc(var(--tree-step) - 3px);
   pointer-events: none;
 }
-.object-field-toggle, .object-toggle-space { flex: 0 0 16px; }
-.object-tree-code code {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.object-tree-guide {
+  width: 3px;
+  background-color: var(--tianshu-designer-accent-border);
+}
+.object-tree-guide.is-active {
+  background-color: var(--el-color-primary);
 }
 .reference-variable-cell {
   display: inline-flex;
