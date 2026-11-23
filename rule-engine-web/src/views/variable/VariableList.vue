@@ -451,7 +451,7 @@
             </el-table-column>
             <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '添加字段', '删除'])" align="center" fixed="right">
               <template #default="{ row: { node, field: row, pager } }">
-                <template v-if="!pager">
+                <span v-if="!pager" :key="row?.id ?? node.object.id">
                   <el-button
                     v-permission="{ code: 'field:edit', projectId: node.object.projectId, scope: node.object.scope }"
                     link data-action="edit" size="small" :icon="ElIconEdit"
@@ -471,7 +471,7 @@
                     link data-action="delete" size="small" :icon="ElIconDelete" class="btn-delete" aria-label="删除"
                     @click.stop="row ? handleDeleteObjectField(row) : handleDeleteObject(node.object)"
                   />
-                </template>
+                </span>
               </template>
             </el-table-column>
           </lazy-field-table>
@@ -2793,7 +2793,7 @@ export default {
           const { field, depth } = stack.pop()
           const children = field.children || []
           const fieldExpanded = expandedKeys.has(String(field.id))
-          rows.push(markRaw({ key: `field:${id}:${field.id}`, node, field, depth, code: field.varCode,
+          rows.push(markRaw({ key: `field:${id}:${field.id}`, node, field, depth, index: rows.length, code: field.varCode,
             scriptName: Object.hasOwn(field, 'originalScriptName') ? field.originalScriptName : field.scriptName,
             expandable: children.length > 0, expanded: fieldExpanded }))
           if (fieldExpanded) {
@@ -4559,11 +4559,16 @@ export default {
      * 删除数据对象字段。
      */
     async handleDeleteObjectField(row) {
-      await this.$confirm(
-        `确定删除字段「${row.varLabel || row.varCode}」？`,
-        '确认删除',
-        { type: 'warning' }
-      )
+      try {
+        await this.$confirm(
+          `确定删除字段「${row.varLabel || row.varCode}」？`,
+          '确认删除',
+          { type: 'warning' }
+        )
+      } catch (error) {
+        if (error === 'cancel' || error === 'close') return
+        throw error
+      }
       const response = await deleteDataObjectField(row.id, row.objectId)
       this.openApproval(response, '对象字段删除已送审')
     },

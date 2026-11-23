@@ -1,7 +1,11 @@
 <template>
-  <el-table ref="table" :data="visibleRows" :class="{
-    'windowed-field-table': windowed, 'uniform-field-rows': windowed || stickyParents,
-  }" :row-style="stickyParents ? parentRowStyle : undefined" :style="spacing">
+  <el-table ref="table" :data="visibleRows"
+    :class="{ 'windowed-field-table': windowed, 'uniform-field-rows': windowed || stickyParents }"
+    :row-key="stickyParents && windowed ? treeRowKey : rowKey"
+    :row-class-name="stickyParents ? parentRowClass : undefined"
+    :row-style="stickyParents ? parentRowStyle : undefined"
+    :style="spacing"
+  >
     <slot />
   </el-table>
 </template>
@@ -9,16 +13,18 @@
 <script>
 const ROW_HEIGHT = 42
 const BUFFER = 8
+const TREE_WINDOW_STEP = 4
 
 export default {
   name: 'LazyFieldTable',
   props: {
     data: { type: Array, required: true },
+    rowKey: [String, Function],
     more: Boolean,
     stickyParents: Boolean,
   },
   emits: ['load-more'],
-  data: () => ({ start: 0, visibleCount: 32, topRow: 0, parentLimit: 0 }),
+  data: () => ({ start: 0, visibleCount: 32, topRow: 0, parentLimit: 0, innerScroll: false }),
   computed: {
     windowed() { return this.data.length > 50 },
     first() { return this.windowed ? Math.min(this.start, Math.max(0, this.data.length - this.visibleCount)) : 0 },
@@ -33,7 +39,7 @@ export default {
       while (stack.length) ends[stack.pop()] = this.data.length
       return { parents, ends }
     },
-    pinnedIndexes() {
+    pinnedIndexes(_, previous) {
       const pinned = []
       if (!this.stickyParents || !this.parentLimit) return pinned
       const { parents, ends } = this.treeBounds
@@ -46,6 +52,8 @@ export default {
         pinned.push(index)
         end = ends[index]
       }
+      // 同一分组内逐行滚动时沿用已渲染的父行，避免触发表体重新渲染。
+      if (previous?.length === pinned.length && pinned.every((index, i) => index === previous[i])) return previous
       return pinned
     },
     retainedParents() {
@@ -55,6 +63,29 @@ export default {
       if (!this.windowed) return this.data
       const rows = this.data.slice(this.first, this.first + this.visibleCount)
       return this.retainedParents.map(index => this.data[index]).concat(rows)
+    },
+    parentStyles() {
+      const styles = new Map()
+      this.pinnedIndexes.forEach((index, level) => {
+        const last = this.treeBounds.ends[index] - 1
+        const zIndex = this.pinnedIndexes.length - level + 2
+        if (this.innerScroll) {
+          styles.set(this.data[index], {
+            position: 'sticky', zIndex,
+            top: `min(${level * ROW_HEIGHT}px, calc(${last * ROW_HEIGHT}px - var(--field-scroll-offset, 0px)))`,
+          })
+        } else {
+          const retained = this.retainedParents.indexOf(index)
+          const physical = retained < 0 ? index : this.first - this.retainedParents.length + retained
+          const offset = (level - physical) * ROW_HEIGHT
+          const limit = (last - physical) * ROW_HEIGHT
+          styles.set(this.data[index], {
+            position: 'relative', zIndex,
+            transform: `translateY(clamp(0px, calc(var(--field-scroll-offset, 0px) + ${offset}px), ${limit}px))`,
+          })
+        }
+      })
+      return styles
     },
     spacing() {
       if (!this.windowed && !this.stickyParents) return null
@@ -76,19 +107,21 @@ export default {
   deactivated() { this.disconnect() },
   beforeUnmount() { this.disconnect() },
   methods: {
-    parentRowStyle({ rowIndex }) {
-      const before = this.retainedParents
-      const index = rowIndex < before.length ? before[rowIndex] : this.first + rowIndex - before.length
-      const level = this.pinnedIndexes.indexOf(index)
-      if (level < 0) return
-      // 保留原行和所有控件；当下一个同级分组接近时，在当前分组末尾让位。
-      const physicalIndex = this.first - before.length + rowIndex
-      const offset = (level - physicalIndex) * ROW_HEIGHT
-      const limit = (this.treeBounds.ends[index] - 1 - physicalIndex) * ROW_HEIGHT
-      return {
-        position: 'relative',
-        zIndex: this.pinnedIndexes.length - level + 2,
-        transform: `translateY(clamp(0px, calc(var(--field-scroll-offset, 0px) + ${offset}px), ${limit}px))`,
+    treeRowKey(row) {
+      // 普通字段复用同一对象内的表格行。父行保留稳定标识，行内操作仍绑定真实字段 ID。
+      if (row.field && !row.expandable) return `slot:${row.node.object.id}:${row.index % this.visibleCount}`
+      return row.key
+    },
+    parentRowClass({ row }) {
+      if (this.parentStyles.has(row)) return 'field-pinned-parent'
+    },
+    parentRowStyle({ row }) {
+      return this.parentStyles.get(row)
+    },
+    paintParents() {
+      // 位移只作用于固定行，避免每帧在整张表的单元格与操作控件上重新计算继承样式。
+      for (const row of this.scrollView?.querySelectorAll('.field-pinned-parent') || []) {
+        row.style.setProperty('--field-scroll-offset', this.paintOffset + 'px')
       }
     },
     restorePinnedPosition(row) {
@@ -137,7 +170,8 @@ export default {
       if (!this.scrollView?.isConnected || !this.scrollView.clientWidth) return
       const wrap = this.scrollView.parentElement
       let top, bottom
-      if (wrap.scrollHeight > wrap.clientHeight + 1) {
+      const innerScroll = wrap.scrollHeight > wrap.clientHeight + 1
+      if (innerScroll) {
         // 内表独立滚动时，预备整个内表视口，包括暂时被外表裁切的部分。
         top = wrap.getBoundingClientRect().top
         bottom = top + wrap.clientHeight
@@ -156,11 +190,18 @@ export default {
       const topRow = Math.floor(offset / ROW_HEIGHT)
       if (this.stickyParents) {
         this.scrollOffset = offset
-        this.scrollView.style.setProperty('--field-scroll-offset', offset + 'px')
+        this.innerScroll = innerScroll
         this.topRow = topRow
         this.parentLimit = Math.max(0, Math.floor((bottom - top) / ROW_HEIGHT) - 1)
+        const nearGroupEnd = this.pinnedIndexes.some((index, level) => topRow + level >= this.treeBounds.ends[index] - 1)
+        // 内部滚动由原生 sticky 定位，只在分组交接时需要额外位移。
+        const paintOffset = innerScroll && !nearGroupEnd ? 0 : offset
+        if (paintOffset || this.paintOffset) this.$nextTick(this.paintParents)
+        this.paintOffset = paintOffset
       }
-      this.start = Math.max(0, topRow - BUFFER)
+      // 预留一批已渲染的行，跨过缓冲区时再移动窗口。
+      const windowRow = this.stickyParents ? topRow - topRow % TREE_WINDOW_STEP : topRow
+      this.start = Math.max(0, windowRow - BUFFER)
       this.visibleCount = Math.ceil((bottom - top) / ROW_HEIGHT) + 2 * BUFFER + 1
       if (this.more && bottom >= this.scrollView.getBoundingClientRect().bottom - BUFFER * ROW_HEIGHT) this.$emit('load-more')
     },
@@ -169,6 +210,11 @@ export default {
 </script>
 
 <style scoped>
+@property --field-scroll-offset {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
 .windowed-field-table :deep(.el-table__body-wrapper .el-scrollbar__view) { overflow-anchor: none; }
 .windowed-field-table :deep(.el-table__body-wrapper .el-scrollbar__view)::before,
 .windowed-field-table :deep(.el-table__body-wrapper .el-scrollbar__view)::after { display: block; content: ''; }

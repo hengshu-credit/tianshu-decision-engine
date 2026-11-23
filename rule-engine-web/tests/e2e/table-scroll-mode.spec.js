@@ -286,8 +286,36 @@ for (const mode of ['FIXED', 'AUTO']) test(`大型对象在 ${mode} 模式按可
   }
   expect(await table.locator('.el-table__row').count()).toBeLessThan(50)
   const wrap = mode === 'FIXED' ? table.locator('.el-scrollbar__wrap').first() : page.locator('.layout-main')
+  // 连续滚动跨过多个渲染窗口，验证行复用和更新次数，不依赖 CI 机器的帧率。
+  const activity = await wrap.evaluate(async el => {
+    const tbody = document.querySelector('.data-object-table tbody')
+    const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
+    el.scrollTop = 3000
+    await frame()
+    await frame()
+    const originalRows = new Set(tbody.rows)
+    const firstField = tbody.rows[2].textContent
+    let updates = 0
+    const observer = new MutationObserver(() => updates++)
+    observer.observe(tbody, { childList: true })
+    for (let i = 0; i < 16; i++) {
+      el.scrollTop += 42
+      await frame()
+      await frame()
+    }
+    observer.disconnect()
+    return { updates, reused: [...tbody.rows].every(row => originalRows.has(row)), advanced: tbody.rows[2].textContent !== firstField }
+  })
+  expect(activity.advanced).toBe(true)
+  expect(activity.reused).toBe(true)
+  expect(activity.updates).toBeLessThanOrEqual(5)
   await wrap.evaluate(el => { el.scrollTop = el.scrollHeight })
   await expect(table.getByText('child_4999', { exact: true })).toBeVisible()
+  const last = table.getByRole('row').filter({ has: page.getByText('child_4999', { exact: true }) })
+  await last.getByRole('button', { name: '删除', exact: true }).click()
+  const confirmation = page.getByRole('dialog', { name: '确认删除', exact: true })
+  await expect(confirmation).toContainText('子字段4999')
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click()
   await wrap.evaluate(el => { el.scrollTop = 0 })
   await toggle.click()
   await expect(table.locator('.el-table__row')).toHaveCount(rootCount + 1)
