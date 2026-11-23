@@ -44,7 +44,8 @@ export function createGraphCanvas(options) {
     snapGrid: true,
     style: {
       nodeText: { overflowMode: 'ellipsis', fontSize: 12 },
-      edgeText: { fontSize: 12, background: { fill: 'var(--tianshu-bg-surface)' } },
+      // 保留两行分支文字之间的点击区域，点击标签仍可打开条件。
+      edgeText: { fontSize: 12, background: { fill: 'none', 'pointer-events': 'all' } },
       polyline: edgeStyle(),
       line: edgeStyle(),
       bezier: edgeStyle(),

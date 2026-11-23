@@ -697,6 +697,7 @@ export default {
           },
         },
         edgeType: this.globalEdgeLineType,
+        style: { edgeText: { background: { fill: 'var(--tianshu-bg-surface)' } } },
         keyboard: { enabled: false },
         history: false,
         adjustEdge: false,

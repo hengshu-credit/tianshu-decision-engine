@@ -215,7 +215,8 @@ for (const route of ['flow', 'tree']) for (const direction of ['right', 'bottom'
     const edges = ['a', 'b'].map(target => ({
       id: `root-${target}`, type: 'polyline', sourceNodeId: 'root', targetNodeId: target,
       sourceAnchorId: `root_${direction === 'right' ? 1 : 2}`,
-      targetAnchorId: `${target}_${direction === 'right' ? 3 : 0}`, properties: {}
+      targetAnchorId: `${target}_${direction === 'right' ? 3 : 0}`,
+      properties: target === 'a' ? { conditionName: '达标', conditionExpr: 'score >= 600' } : {}
     }))
     data.apiData.set(`/api/rule/definition/${id}/versions/81`, { id: 81, version: 1, modelJson: JSON.stringify({ logicflow: { nodes, edges } }) })
     const harness = await installDistRoutes(page, { apiData: data.apiData })
@@ -233,6 +234,13 @@ for (const route of ['flow', 'tree']) for (const direction of ['right', 'bottom'
     expect(positions['分支 A'][axis]).not.toBe(positions['分支 B'][axis])
     await page.getByRole('button', { name: '一键美化', exact: true }).click()
     expect(await readPositions()).toEqual(positions)
+    const label = page.locator(`.${route}-canvas .lf-line-text:not(.lf-mini-map .lf-line-text)`).filter({ hasText: '达标' })
+    await expect(label.locator('rect')).toHaveCSS('fill', 'none')
+    await label.hover()
+    await expect(label.locator('rect')).toHaveCSS('fill', 'none')
+    await label.click()
+    await expect(page.getByPlaceholder('如：是、否、金额>500')).toHaveValue('达标')
+    await expect(label.locator('rect')).toHaveCSS('fill', 'none')
     expect(data.saved).toHaveLength(0)
     harness.assertClean()
   })
