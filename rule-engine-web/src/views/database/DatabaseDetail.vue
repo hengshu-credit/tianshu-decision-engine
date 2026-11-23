@@ -879,6 +879,7 @@ export default {
       if (!this.configurationReady || this.jdbcResolutionRequired || this.saving) return
       this.$refs.form.validate(async (valid) => {
         if (!valid || !this.configurationReady || this.jdbcResolutionRequired || this.saving) return
+        if (this.skipUnchangedConfiguration(this.form.id)) return
         this.saving = true
         try {
           const data = this.normalizeForm(this.form)

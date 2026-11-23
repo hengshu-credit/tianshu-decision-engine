@@ -162,6 +162,7 @@ export default {
     },
     async save() {
       if (this.saving) return
+      if (this.skipUnchangedConfiguration(this.form.id)) return
       this.saving = true
       try {
         const valid = await this.$refs.formRef.validate().catch(() => false)

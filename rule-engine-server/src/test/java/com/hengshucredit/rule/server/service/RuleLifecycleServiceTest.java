@@ -208,6 +208,32 @@ public class RuleLifecycleServiceTest {
         Assert.assertTrue(error.getMessage().contains("APPROVED"));
     }
 
+    @Test public void designerEqualityIncludesFrozenFieldsDependenciesAndOpenApi() {
+        FixtureService service = new FixtureService();
+        RuleRevision first = service.ensureDraft(100L);
+        first.setModelJson("{\"a\":1,\"b\":[1,2]}");
+        service.submit(first.getId(), request("submit", null));
+        service.approve(first.getId(), request("approve", null));
+        service.publish(first.getId(), request("publish", null));
+        var fields = new RuleFieldAnalyzer.ResolvedFields(List.of(), List.of());
+        String fieldsDigest = com.hengshucredit.rule.server.artifact.RulePreflightValidationService.fieldDigest(fields);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "regressionEvidence", new RuleRegressionEvidenceService() {
+            @Override protected Stamp currentStamp(Long id, Long revisionId) { return new Stamp(null, "deps", null, null, null, true); }
+        });
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "publishedFields",
+                new com.hengshucredit.rule.server.artifact.PublishedRuleFieldSnapshotResolver() {
+                    @Override public RuleFieldAnalyzer.ResolvedFields resolve(Long id, Long binding) { return fields; }
+                });
+        RuleRevision draft = service.ensureDraft(100L);
+        draft.setModelJson("{ \"b\":[1,2], \"a\":1 }");
+        Assert.assertEquals("GOVERNANCE_NO_CHANGES", Assert.assertThrows(RuleGovernanceException.class,
+                () -> service.requirePublicationChange(draft, "deps", fieldsDigest)).getCode());
+        service.requirePublicationChange(draft, "changed-dependency", fieldsDigest);
+        service.requirePublicationChange(draft, "deps", "changed-fields");
+        draft.setOpenApiConfigJson("{\"enabled\":true}");
+        service.requirePublicationChange(draft, "deps", fieldsDigest);
+    }
+
     @Test
     public void governedPathPublishesAndSecondRevisionOfflinesFirst() {
         FixtureService service = new FixtureService();
@@ -220,6 +246,7 @@ public class RuleLifecycleServiceTest {
         RuleRevision second = service.ensureDraft(100L);
         Assert.assertEquals("DRAFT", second.getState());
         Assert.assertEquals("PUBLISHED", first.getState());
+        second.setModelJson("{\"rule\":2}");
         service.submit(second.getId(), request("submit 2", null));
         service.approve(second.getId(), request("approve 2", null));
         service.publish(second.getId(), request("publish 2", null));

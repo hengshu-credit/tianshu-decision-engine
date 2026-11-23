@@ -1506,6 +1506,7 @@ export default {
     },
     async handleDoEdit() {
       if (this.editLoading) return
+      if (this.finishUnchangedEdit('editVisible', this.editForm.id)) return
       this.editLoading = true
       try {
         const valid = await new Promise(resolve => this.$refs.editForm.validate(resolve))

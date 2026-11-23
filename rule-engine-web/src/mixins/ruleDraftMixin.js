@@ -862,12 +862,20 @@ export default {
         this.designerSaveRequest = { signature, requestId: Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('') }
       }
       body.requestId = this.designerSaveRequest.requestId
+      const previousState = this.designerActionState
       this.designerActionState = 'SAVING'
       let result
       try {
         result = unwrap(await definitionApi.saveDesignerDraft(definitionId, body))
         if (!result?.revision || result.revision.state !== 'DRAFT') throw new Error('草稿保存响应无效，页面修改仍保留')
       } catch (error) {
+        if (error?.response?.data?.data?.errorCode === 'GOVERNANCE_NO_CHANGES') {
+          if (this.isCurrentViewAction(action)) {
+            this.designerActionState = previousState
+            this.captureDesignerDraftState()
+          }
+          return false
+        }
         if (this.isCurrentViewAction(action)) {
           this.designerActionState = error?.response?.status === 409 ? 'SAVE_CONFLICT' : 'DIRTY'
           this.captureDesignerDraftState()

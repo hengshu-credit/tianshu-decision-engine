@@ -1184,6 +1184,7 @@ export default {
         if (this.parameterConfigError) throw new Error(this.parameterConfigError)
         params = validatedFunctionParameters(this.editParams, this.originalBuiltinCode === this.editForm.funcCode && this.editForm.scope === 'GLOBAL' ? this.originalBuiltinParams : [])
       } catch (error) { this.$message.warning(error.message); return }
+      if (this.finishUnchangedEdit('dialogVisible', this.editForm.id)) return
       const payload = { ...this.editForm, projectId: this.editForm.scope === 'GLOBAL' ? 0 : this.editForm.projectId, paramsJson: JSON.stringify(params) }
       if (payload.implType === 'SCRIPT') {
         payload.implClass = null

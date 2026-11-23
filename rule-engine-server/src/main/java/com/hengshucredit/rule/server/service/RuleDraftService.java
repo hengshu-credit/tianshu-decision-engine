@@ -13,6 +13,7 @@ import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.model.enums.RuleRevisionState;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.artifact.RuleDependencyClosureService;
+import com.hengshucredit.rule.server.artifact.RulePreflightValidationService;
 import com.hengshucredit.rule.server.artifact.RuleSchemaService;
 import com.hengshucredit.rule.server.artifact.Sha256Digests;
 import com.hengshucredit.rule.server.common.RuleGovernanceException;
@@ -98,6 +99,9 @@ public class RuleDraftService {
             throw governance(409, "FROZEN_REVISION_WRITE_REJECTED",
                     "只能保存 DRAFT 状态的规则修订");
         }
+        if (!request.getLockVersion().equals(revision.getLockVersion())) {
+            throw governance(409, "DRAFT_LOCK_CONFLICT", "草稿已被其他会话修改，请刷新后重试");
+        }
         requireLocalNamespace(definition, revision);
         ResourceCodeValidation.requireValid(ResourceCodeValidation.designer(definition.getModelType(), request.getModelJson()));
 
@@ -123,6 +127,7 @@ public class RuleDraftService {
                     request.getRevisionId()));
         }
 
+        boolean sameModel = CanonicalJson.sameDocument(revision.getModelJson(), request.getModelJson());
         revision.setModelJson(request.getModelJson());
         RuleDependencyClosureService.DependencyClosure dependencies =
                 resolveDependencies(definition, revision, fields);
@@ -164,9 +169,14 @@ public class RuleDraftService {
         revision.setModelJson(request.getModelJson());
         revision.setCompiledScript(compileResult.getCompiledScript());
         revision.setCompiledType(compileResult.getCompiledType());
+        boolean sameOpenApi = CanonicalJson.sameDocument(revision.getOpenApiConfigJson(), openApiConfigJson);
         revision.setOpenApiConfigJson(openApiConfigJson);
         revision.setInputSchemaJson(schemas.getInputSchemaJson());
         revision.setOutputSchemaJson(schemas.getOutputSchemaJson());
+        if (compileSuccess && (revision.getLockVersion() == 0 || sameModel && sameOpenApi)) {
+            lifecycleService.requirePublicationChange(revision, dependencies.getDependencyDigest(),
+                    RulePreflightValidationService.fieldDigest(fields));
+        }
         revision.setContentDigest(contentDigest(
                 definition, revision, dependencies.getDependencyDigest()));
         revision.setValidationReportDigest(

@@ -544,6 +544,9 @@ public class RuleDraftServiceTest {
         private final List<String> writeOrder = new ArrayList<>();
 
         FixtureService() {
+            ReflectionTestUtils.setField(this, "lifecycleService", new RuleLifecycleService() {
+                @Override protected RuleRevision findPublishedRevision(Long definitionId) { return null; }
+            });
             definition.setId(30L);
             definition.setProjectId(4L);
             definition.setModelType("SCRIPT");

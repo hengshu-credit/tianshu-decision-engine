@@ -24,6 +24,7 @@ import com.hengshucredit.rule.model.enums.RuleRevisionState;
 import com.hengshucredit.rule.model.enums.RuleDraftSourceType;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.artifact.DecisionArtifactService;
+import com.hengshucredit.rule.server.artifact.PublishedRuleFieldSnapshotResolver;
 import com.hengshucredit.rule.server.artifact.RulePreflightValidationService;
 import com.hengshucredit.rule.server.artifact.Sha256Digests;
 import com.hengshucredit.rule.server.common.RuleGovernanceException;
@@ -50,6 +51,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -72,6 +74,8 @@ public class RuleLifecycleService {
     private RuleDefinitionVersionMapper versionMapper;
     @Resource
     private RuleVersionBindingService versionBindingService;
+    @Resource private RuleRegressionEvidenceService regressionEvidence;
+    @Resource private PublishedRuleFieldSnapshotResolver publishedFields;
     @Resource private RulePublicationValidator publicationValidator;
     @Resource private RuleReferenceNamespaceGuard referenceNamespaceGuard;
     @Resource
@@ -318,6 +322,30 @@ public class RuleLifecycleService {
         return response;
     }
 
+    void requirePublicationChange(RuleRevision draft, String dependencyDigest, String fieldDigest) {
+        RuleRevision production;
+        if ("OVERWRITE".equals(draft.getPublishMode())) {
+            var version = versionBindingService.resolveSnapshot(draft.getDefinitionId(), draft.getTargetVersionId());
+            production = version.getRevisionId() == null ? null : loadRevision(version.getRevisionId());
+        } else {
+            production = findPublishedRevision(draft.getDefinitionId());
+        }
+        if (production == null || production.getModelJson() == null
+                || !CanonicalJson.sameDocument(production.getModelJson(), draft.getModelJson())
+                || !CanonicalJson.sameDocument(production.getOpenApiConfigJson(), draft.getOpenApiConfigJson())
+                || !Objects.equals(production.getCompiledScript(), draft.getCompiledScript())
+                || !Objects.equals(production.getCompiledType(), draft.getCompiledType())
+                || !CanonicalJson.sameDocument(production.getInputSchemaJson(), draft.getInputSchemaJson())
+                || !CanonicalJson.sameDocument(production.getOutputSchemaJson(), draft.getOutputSchemaJson())) return;
+        // Identical designer JSON can still publish a new frozen upstream dependency.
+        var frozen = regressionEvidence.currentStamp(draft.getDefinitionId(), production.getId());
+        if (frozen == null || frozen.dependencyDigest() == null || !frozen.dependencyDigest().equals(dependencyDigest)) return;
+        var fields = publishedFields.resolve(draft.getDefinitionId(), "OVERWRITE".equals(draft.getPublishMode()) ? draft.getTargetVersionId() : null);
+        if (fields.getDiagnostics().isEmpty() && RulePreflightValidationService.fieldDigest(fields).equals(fieldDigest)) {
+            throw governance(409, "GOVERNANCE_NO_CHANGES", "规则配置与目标生效版本一致，无需生成草稿或发布新版本");
+        }
+    }
+
     @Transactional
     public RuleRevision submit(Long revisionId, RuleLifecycleActionRequest request) {
         RuleRevision revision = requireState(revisionId, RuleRevisionState.DRAFT);
@@ -331,6 +359,7 @@ public class RuleLifecycleService {
         RulePreflightReport report = preflight(revisionId);
         assertPreflightValid(report);
         applyPreflight(revision, report);
+        requirePublicationChange(revision, report.getDependencyDigest(), report.getFieldDigest());
         revision.setSubmitBy(actor());
         revision.setSubmitTime(LocalDateTime.now());
         return transition(revision, RuleRevisionState.DRAFT, RuleRevisionState.REVIEW,
@@ -376,6 +405,7 @@ public class RuleLifecycleService {
             report.setBreakingChangeReasonRequired(false);
         }
         applyPreflight(revision, report);
+        requirePublicationChange(revision, report.getDependencyDigest(), report.getFieldDigest());
         persistRevisionSnapshot(revision);
         DecisionArtifact artifact = buildArtifact(revisionId, actor(), analysis);
         revision.setArtifactId(artifact.getId());

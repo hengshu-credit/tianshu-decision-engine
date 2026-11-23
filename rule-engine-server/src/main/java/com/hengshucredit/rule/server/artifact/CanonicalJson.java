@@ -26,6 +26,21 @@ public final class CanonicalJson {
     private CanonicalJson() {
     }
 
+    /** Compare JSON documents without changing stored text, literal strings or array order. */
+    public static boolean sameDocument(String left, String right) {
+        if (java.util.Objects.equals(left, right)) return true;
+        if (left == null || right == null) return false;
+        var reader = MAPPER.readerFor(com.fasterxml.jackson.databind.JsonNode.class)
+                .with(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        try {
+            var parsed = reader.readTree(left);
+            return parsed != null && !parsed.isMissingNode() && parsed.equals(reader.readTree(right));
+        } catch (IOException invalid) {
+            return false;
+        }
+    }
+
     public static byte[] writeBytes(Object value) {
         try {
             return MAPPER.writeValueAsBytes(value);

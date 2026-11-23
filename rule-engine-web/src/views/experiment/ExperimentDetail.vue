@@ -1422,6 +1422,7 @@ export default {
       return new Promise((resolve) => {
         this.$refs.form.validate(async (valid) => {
           if (!valid) return resolve(false)
+          if (this.skipUnchangedConfiguration(this.form.id)) return resolve(true)
           for (const group of this.form.groups) {
             if (!this.isConditionModeForGroup(group) || this.isFallbackGroup(group) || !group.conditionConfig) continue
             const error = this.conditionError(group)

@@ -253,6 +253,14 @@ public class OfflineResourceImportService {
             } else {
                 Map<Long, Long> appliedFields = new HashMap<>();
                 targetId = approveResource(sourceKey.type(), existingId, options, resourceTargetProjectId, snapshot, actor, appliedFields);
+                if (targetId == null) {
+                    idMap.put(resource.key(), existingId);
+                    if (sourceKey.type() == TransferResourceType.DATA_OBJECT) childMap.put(resource.key(), importedFieldIds);
+                    if (sourceKey.type() == TransferResourceType.MODEL) childMap.put(resource.key(),
+                            TransferModelFields.outputMapping(resource.configuration(), existing.configuration()));
+                    result.add(row(resource, existingId, "REUSED", null));
+                    continue;
+                }
                 if (sourceKey.type() == TransferResourceType.MODEL) {
                     var applied = adapterRegistry.require("MODEL").loadEffective(targetId);
                     childMap.put(resource.key(), TransferModelFields.outputMapping(resource.configuration(),
@@ -319,7 +327,9 @@ public class OfflineResourceImportService {
         draft.setSnapshotJson(snapshot.snapshotJson());
         draft.setEffectiveStatus("ACTIVE");
         draft.setChangeSummary("离线配置迁移");
-        var request = approvalService.createDraft(draft, actor);
+        var imported = approvalService.createImportDraft(draft, actor);
+        if (imported.isEmpty()) return null;
+        var request = imported.orElseThrow();
         approvalService.submit(request.getId(), new GovernanceSubmitRequest() {{ setComment("离线配置迁移自动提交"); }}, actor);
         var approved = approvalService.approve(request.getId(), new GovernanceReviewRequest() {{ setComment("离线配置迁移自动审批"); }}, actor,
                 applied -> appliedFields.putAll(applied.fieldIdMapping()));

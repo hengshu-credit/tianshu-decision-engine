@@ -223,8 +223,8 @@ public class OfflineProjectBindingTest {
                 }
             });
             ReflectionTestUtils.setField(service, "approvalService", new GovernanceApprovalService() {
-                @Override public GovernanceApprovalRequest createDraft(GovernanceDraftRequest draft, String actor) {
-                    drafts.add(draft); return request();
+                @Override public java.util.Optional<GovernanceApprovalRequest> createImportDraft(GovernanceDraftRequest draft, String actor) {
+                    drafts.add(draft); return java.util.Optional.of(request());
                 }
                 @Override public GovernanceApprovalRequest submit(Long id, GovernanceSubmitRequest input, String actor) { return request(); }
                 @Override public GovernanceApprovalRequest approve(Long id, GovernanceReviewRequest input, String actor,

@@ -1481,7 +1481,7 @@ export default {
       await this.$refs.modelPreflight?.runCheck?.()
     },
     async saveModelDraft() {
-      if (this.modelSaving || !this.model.id) return
+      if (this.modelSaving || !this.model.id || this.skipUnchangedConfiguration(this.model.id)) return
       this.modelSaving = true
       try {
         const snapshot = JSON.parse(JSON.stringify(this.model))

@@ -4381,6 +4381,7 @@ export default {
     /** 提交数据对象表单 */
     async handleObjectSubmit() {
       if (this.objectSubmitting) return
+      if (this.finishUnchangedEdit('objectDialogVisible', this.objectForm.id)) return
       this.objectSubmitting = true
       try {
         const valid = await new Promise(resolve => this.$refs.objForm.validate(resolve))
@@ -4760,6 +4761,7 @@ export default {
     },
     async saveFieldValidation() {
       if (this.validationSaving) return
+      if (this.finishUnchangedEdit('validationDialogVisible', this.validationForm.id)) return
       const form = this.validationForm
       const codeError = reservedCodeError(form.validationCode)
       if (codeError) { this.$message.warning(codeError); return }
@@ -4891,6 +4893,7 @@ export default {
     },
     async handleSubmit() {
       if (this.variableSubmitting) return
+      if (this.finishUnchangedEdit('dialogVisible', this.form.id)) return
       this.variableSubmitting = true
       try {
       const valid = await new Promise(resolve => this.$refs.form.validate(resolve))
@@ -5413,6 +5416,7 @@ export default {
     },
     async handleSaveOptions() {
       if (this.optionSaving) return
+      if (this.finishUnchangedEdit('optionDialogVisible', this.currentVar?.id)) return
       this.optionSaving = true
       try {
       const invalid = this.optionList.some(

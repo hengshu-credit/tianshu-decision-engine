@@ -221,7 +221,8 @@ public class GovernanceBatchImportService {
                     item.snapshot(),
                     "批量导入" + kind + " "
                             + item.snapshot().get("varCode"));
-            requestIds.add(createDraft(draft, actor).getId());
+            GovernanceApprovalRequest created = createDraft(draft, actor);
+            if (created != null) requestIds.add(created.getId());
         }
         Map<String, Object> result = success(requestIds);
         result.put(inputs ? "inputVariableCount" : "constantCount", pending.size());
@@ -314,7 +315,8 @@ public class GovernanceBatchImportService {
                     item.snapshot(),
                     "批量导入数据对象 "
                             + item.snapshot().get("objectCode"));
-            requestIds.add(createDraft(draft, actor).getId());
+            GovernanceApprovalRequest created = createDraft(draft, actor);
+            if (created != null) requestIds.add(created.getId());
         }
         Map<String, Object> result = success(requestIds);
         result.put("objectCount", pending.size());
@@ -364,7 +366,7 @@ public class GovernanceBatchImportService {
 
     protected GovernanceApprovalRequest createDraft(
             GovernanceDraftRequest draft, String actor) {
-        return approvalService.createDraft(draft, actor);
+        return approvalService.createImportDraft(draft, actor).orElse(null);
     }
 
     private ReferenceResolution resolveObjectReferences(

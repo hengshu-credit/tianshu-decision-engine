@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -242,6 +243,16 @@ public class GovernanceApprovalService {
     @Transactional
     public GovernanceApprovalRequest createDraft(GovernanceDraftRequest draft,
                                                  String actor) {
+        return createDraft(draft, actor, false);
+    }
+
+    /** A mixed import keeps processing changed resources when an entry already matches production. */
+    @Transactional
+    public Optional<GovernanceApprovalRequest> createImportDraft(GovernanceDraftRequest draft, String actor) {
+        return Optional.ofNullable(createDraft(draft, actor, true));
+    }
+
+    private GovernanceApprovalRequest createDraft(GovernanceDraftRequest draft, String actor, boolean importing) {
         if (draft == null) {
             throw new IllegalArgumentException("审批草稿不能为空");
         }
@@ -355,6 +366,8 @@ public class GovernanceApprovalService {
                     "当前资源已有其他生命周期动作的编辑中申请，请先取消该申请");
         }
         if (active != null) {
+            if (importing && matchesProduction(active, normalized, resource)) return null;
+            if (unchangedDraft(active, normalized, draft.getChangeSummary())) return active;
             normalized = saveWorkspace(active, normalized, applicant);
             active.setDraftSnapshotJson(normalized.snapshotJson());
             active.setSnapshotDigest(
@@ -400,6 +413,13 @@ public class GovernanceApprovalService {
         request.setSecretDigest(normalized.secretDigest());
         request.setChangeSummary(draft.getChangeSummary());
         request.setApplicant(applicant);
+        // Explicit historical reuse opens an editable workspace for the selected business line.
+        if (!"REUSE".equals(request.getRestoreMode()) || Objects.equals(request.getSourceVersionId(), resource.getEffectiveVersionId())) {
+            if (matchesProduction(request, normalized, resource)) {
+                if (importing) return null;
+                throw noProductionChange();
+            }
+        }
         normalized = saveWorkspace(request, normalized, applicant);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSnapshotDigest(Sha256Digests.text(normalized.snapshotJson()));
@@ -436,6 +456,7 @@ public class GovernanceApprovalService {
                         firstNotBlank(draft.getSecretDigest(),
                                 request.getSecretDigest())));
         if (consoleResources != null) request.setProjectId(consoleResources.draftProject(request.getResourceType(), request.getResourceId(), normalized.snapshotJson()));
+        if (unchangedDraft(request, normalized, draft.getChangeSummary())) return request;
         normalized = saveWorkspace(request, normalized, actor);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSnapshotDigest(
@@ -462,6 +483,7 @@ public class GovernanceApprovalService {
         requireResourcePermission(request.getResourceType(), "edit");
         ResourceSnapshot normalized = normalize(request, snapshotJson);
         if (consoleResources != null) request.setProjectId(consoleResources.draftProject(request.getResourceType(), request.getResourceId(), normalized.snapshotJson()));
+        if (unchangedDraft(request, normalized, request.getChangeSummary())) return request;
         normalized = saveWorkspace(request, normalized, actor);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSecretPayloadCiphertext(
@@ -511,6 +533,7 @@ public class GovernanceApprovalService {
         if ("CREATE".equals(request.getAction()) && (request.getResourceId() == null || request.getResourceId() <= 0)) {
             normalized = saveWorkspace(request, normalized, actor);
         }
+        requireProductionChange(request, normalized, findResource(request.getResourceType(), request.getResourceId()));
         GovernancePreflightReport report = evaluate(request, normalized);
         if (!report.valid()) {
             throw new GovernanceStateException(
@@ -580,6 +603,7 @@ public class GovernanceApprovalService {
 
         ResourceSnapshot snapshot = normalize(request,
                 request.getSubmittedSnapshotJson());
+        requireProductionChange(request, snapshot, resource);
         GovernancePreflightReport currentReport = evaluate(request, snapshot);
         if (!currentReport.valid()
                 || (!deleting && !safeEquals(request.getDependencyDigest(),
@@ -1465,6 +1489,35 @@ public class GovernanceApprovalService {
                         ? request.getSubmittedSnapshotJson()
                         : request.getDraftSnapshotJson();
         return normalize(request, snapshotJson);
+    }
+
+    private boolean unchangedDraft(GovernanceApprovalRequest request, ResourceSnapshot snapshot, String summary) {
+        return Objects.equals(request.getChangeSummary(), summary)
+                && Objects.equals(request.getSecretDigest(), snapshot.secretDigest())
+                && CanonicalJson.sameDocument(request.getDraftSnapshotJson(), snapshot.snapshotJson());
+    }
+
+    private void requireProductionChange(GovernanceApprovalRequest request, ResourceSnapshot candidate, GovernedResource resource) {
+        if (matchesProduction(request, candidate, resource)) throw noProductionChange();
+    }
+
+    private GovernanceStateException noProductionChange() {
+        return new GovernanceStateException("GOVERNANCE_NO_CHANGES", "配置与目标生效版本一致，无需生成草稿或发布新版本");
+    }
+
+    private boolean matchesProduction(GovernanceApprovalRequest request, ResourceSnapshot candidate, GovernedResource resource) {
+        if (resource == null || resource.getEffectiveVersionId() == null || "CREATE".equals(request.getAction())) return false;
+        Long baselineId = resource.getEffectiveVersionId();
+        if ("OVERWRITE".equals(request.getPublishMode())) baselineId = request.getExpectedTargetSnapshotId();
+        else if ("REUSE".equals(request.getRestoreMode())) {
+            baselineId = versionHead(request.getResourceType(), request.getResourceId(), request.getSourceVersionId()).getId();
+        }
+        GovernedResourceVersion baseline = findVersion(baselineId);
+        if (baseline == null || baseline.getSnapshotJson() == null) return false;
+        String targetStatus = effectiveStatusFromSnapshot(candidate.snapshotJson());
+        if (!"UPDATE".equals(request.getAction()) || targetStatus == null) targetStatus = requestedEffectiveStatus(request);
+        return Objects.equals(baseline.getEffectiveStatus(), targetStatus)
+                && ResourceSnapshot.sameConfiguration(request.getResourceType(), ResourceVersionLines.snapshot(baseline), candidate);
     }
 
     private void validateDraftTarget(GovernanceAction action,

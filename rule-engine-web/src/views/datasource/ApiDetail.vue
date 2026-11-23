@@ -2259,6 +2259,7 @@ export default {
     },
     handleSave() {
       if (this.initializing || this.initializationError) return
+      if (this.skipUnchangedConfiguration(this.form.id)) return
       this.$refs.form.validate(async (valid) => {
         if (!valid) return
         let data

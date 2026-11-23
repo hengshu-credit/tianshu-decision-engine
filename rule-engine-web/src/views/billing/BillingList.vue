@@ -1477,6 +1477,7 @@ export default {
     },
     async handleSaveConfig() {
       if (this.configSaving) return
+      if (this.finishUnchangedEdit('configDialogVisible', this.configForm.id)) return
       this.configSaving = true
       try {
         const valid = await new Promise(resolve => this.$refs.configForm.validate(resolve))

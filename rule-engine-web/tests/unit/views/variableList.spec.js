@@ -608,6 +608,7 @@ describe('VariableList — 变量操作', () => {
 
     expect(wrapper.vm.form.projectId).toBe(1)
     expect(wrapper.vm.getProjectName(wrapper.vm.form.projectId)).toBe('项目A')
+    wrapper.vm.form.description = '更新字段说明'
 
     wrapper.vm.handleSubmit()
     await nextTick()
@@ -749,6 +750,7 @@ describe('VariableList — 变量操作', () => {
       refVariableId: 9,
       status: 1
     }, node)
+    wrapper.vm.form.varLabel = '申请人年龄'
 
     await new Promise(resolve => setTimeout(resolve, 0))
     wrapper.vm.handleSubmit()

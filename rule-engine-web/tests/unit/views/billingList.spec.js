@@ -205,6 +205,7 @@ describe('BillingList 草稿试运行计费事实与当前状态', () => {
 
 function createContext(overrides = {}) {
   const ctx = {
+    finishUnchangedEdit: vi.fn(() => false),
     ...BillingList.data.call({ emptyConfigForm: BillingList.methods.emptyConfigForm }),
     targetOptions: [],
     targetLoading: false,
