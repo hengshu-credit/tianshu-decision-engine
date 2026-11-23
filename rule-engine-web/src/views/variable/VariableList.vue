@@ -394,8 +394,8 @@
           暂无数据对象
         </div>
         <div class="management-table-region" v-else :aria-busy="objLoading">
-          <lazy-field-table class="management-table data-object-table" data-testid="data-object-table"
-            :data="objectTableRows" row-key="key" border size="small" show-overflow-tooltip
+          <lazy-field-table ref="objectTable" class="management-table data-object-table" data-testid="data-object-table"
+            :data="objectTableRows" sticky-parents row-key="key" border size="small" show-overflow-tooltip
             :span-method="objectTableSpan" @row-click="handleObjectRowClick"
           >
             <el-table-column v-for="column in visibleObjectColumns" :key="column.key"
@@ -2800,7 +2800,7 @@ export default {
             for (let i = children.length - 1; i >= 0; i--) stack.push({ field: children[i], depth: depth + 1 })
           }
         }
-        if (this.objectFieldNeedsPaging(node)) rows.push(markRaw({ key: `pager:${id}`, node, pager: true }))
+        if (this.objectFieldNeedsPaging(node)) rows.push(markRaw({ key: `pager:${id}`, node, depth: 1, pager: true }))
       }
       return rows
     },
@@ -3861,6 +3861,7 @@ export default {
     },
     toggleObjectTableRow(item) {
       if (!item.expandable) return
+      if (item.expanded) this.$refs.objectTable?.restorePinnedPosition(item)
       if (item.field) this.handleObjectFieldExpandChange(item.node, item.field, !item.expanded)
       else this.toggleObjectExpand(item.node)
     },
@@ -5827,6 +5828,8 @@ export default {
   display: inline-flex;
   min-width: 0;
   flex-direction: column;
+  line-height: 16px;
+  vertical-align: middle;
   gap: 2px;
 }
 .reference-variable-cell strong {

@@ -296,6 +296,77 @@ for (const mode of ['FIXED', 'AUTO']) test(`大型对象在 ${mode} 模式按可
   harness.assertClean()
 })
 
+for (const mode of ['FIXED', 'AUTO']) {
+  for (const count of [12, 90]) test(`对象父行在 ${mode} 模式随分组吸顶和交接（每组 ${count} 个字段）`, async ({ page }) => {
+    const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+    const data = createDocsApiData()
+    const referenceId = data.get('/api/rule/variable/project/1')[0].id
+    const tree = data.get('/api/rule/dataobject/tree')
+    const base = tree.tree[0].object
+    let id = 0
+    function group(code) {
+      return { id: ++id, varCode: code, varLabel: code, varType: 'OBJECT',
+        children: Array.from({ length: count }, (_, i) => ({
+          id: ++id, varCode: code + '_' + i, varLabel: '字段' + i, varType: 'STRING',
+          refVariableId: code === 'Third' ? referenceId : null,
+        })) }
+    }
+    tree.tree = [
+      { object: { ...base, objectCode: 'ObjectA' }, variables: [group('First'), group('Second')] },
+      { object: { ...base, id: 999, objectCode: 'ObjectB' }, variables: [group('Third')] },
+    ]
+    const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+    await page.setViewportSize({ width: 1440, height: 560 })
+    await page.goto(origin + '/#/variable')
+    await page.getByRole('tab', { name: '数据对象', exact: true }).click()
+    if (mode === 'AUTO') await chooseMode(page, mode)
+    const table = page.getByTestId('data-object-table')
+    const toggle = code => table.getByRole('button', { name: '展开或收起 ' + code, exact: true })
+    for (const code of ['ObjectB', 'Third', 'ObjectA', 'Second', 'First']) await toggle(code).click()
+
+    const scroller = mode === 'FIXED' ? table.locator('.el-scrollbar__wrap').first() : page.locator('.layout-main')
+    const body = table.locator('.el-table__body-wrapper .el-scrollbar__view')
+    const height = await table.locator('.el-table__row').first().evaluate(el => el.getBoundingClientRect().height)
+    async function scrollTo(index) {
+      const viewport = await scroller.boundingBox()
+      const originY = (await body.boundingBox()).y
+      await scroller.evaluate((el, delta) => { el.scrollTop += delta }, originY - viewport.y + index * height)
+    }
+    async function pinned(level, code) {
+      const row = table.getByRole('row').filter({ has: page.getByRole('button', { name: '展开或收起 ' + code, exact: true }) })
+      const top = (await scroller.boundingBox()).y + level * height
+      await expect.poll(async () => Math.abs((await row.boundingBox())?.y - top)).toBeLessThan(2)
+      // 真实命中测试：吸顶行的编码与右侧操作须盖住从下方滚过的子字段。
+      for (const cell of [row.getByRole('cell').first(), row.getByRole('cell').last()]) {
+        await expect.poll(() => cell.evaluate(el => {
+          const rect = el.getBoundingClientRect()
+          const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+          return el.contains(hit) ? 'parent cell' : [el.className, hit?.className, hit?.closest('tr')?.innerText].join(' / ')
+        })).toBe('parent cell')
+      }
+    }
+    await scrollTo(count - 2)
+    await pinned(0, 'ObjectA')
+    await pinned(1, 'First')
+    await scrollTo(count + 4.5)
+    await pinned(0, 'ObjectA')
+    await pinned(1, 'Second')
+    await scrollTo(2 * count + 6.25)
+    await pinned(0, 'ObjectB')
+    await pinned(1, 'Third')
+    await expect(table.locator('.reference-variable-cell').first()).toBeAttached()
+    expect(await table.locator('.el-table__row').evaluateAll(rows =>
+      [...new Set(rows.map(row => row.getBoundingClientRect().height))])).toEqual([height])
+    await scrollTo(count - 2)
+    await pinned(0, 'ObjectA')
+    await pinned(1, 'First')
+    await toggle('First').click()
+    await expect(table.getByText('First_0', { exact: true })).toHaveCount(0)
+    await expect(toggle('First')).toHaveAttribute('aria-expanded', 'false')
+    harness.assertClean()
+  })
+}
+
 test('对象字段分页、脚本名称显示和编辑使用当前行', async ({ page }) => {
   const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
   const data = createDocsApiData()

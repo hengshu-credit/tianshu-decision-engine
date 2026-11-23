@@ -1,5 +1,7 @@
 <template>
-  <el-table ref="table" :data="visibleRows" :class="{ 'windowed-field-table': windowed }" :style="spacing">
+  <el-table ref="table" :data="visibleRows" :class="{
+    'windowed-field-table': windowed, 'uniform-field-rows': windowed || stickyParents,
+  }" :row-style="stickyParents ? parentRowStyle : undefined" :style="spacing">
     <slot />
   </el-table>
 </template>
@@ -13,22 +15,56 @@ export default {
   props: {
     data: { type: Array, required: true },
     more: Boolean,
+    stickyParents: Boolean,
   },
   emits: ['load-more'],
-  data: () => ({ start: 0, visibleCount: 32 }),
+  data: () => ({ start: 0, visibleCount: 32, topRow: 0, parentLimit: 0 }),
   computed: {
     windowed() { return this.data.length > 50 },
     first() { return this.windowed ? Math.min(this.start, Math.max(0, this.data.length - this.visibleCount)) : 0 },
-    visibleRows() { return this.windowed ? this.data.slice(this.first, this.first + this.visibleCount) : this.data },
+    // 记录每个展开分组的父行和结束位置。滚动时只沿视口首行的祖先链查找。
+    treeBounds() {
+      const parents = [], ends = [], stack = []
+      this.data.forEach((row, index) => {
+        while (stack.length && this.data[stack.at(-1)].depth >= row.depth) ends[stack.pop()] = index
+        parents[index] = stack.at(-1)
+        if (row.expandable && row.expanded) stack.push(index)
+      })
+      while (stack.length) ends[stack.pop()] = this.data.length
+      return { parents, ends }
+    },
+    pinnedIndexes() {
+      const pinned = []
+      if (!this.stickyParents || !this.parentLimit) return pinned
+      const { parents, ends } = this.treeBounds
+      let end = this.data.length
+      for (let depth = 0; depth < this.parentLimit; depth++) {
+        let index = this.topRow + depth
+        if (index >= end) break
+        while (this.data[index].depth > depth) index = parents[index]
+        if (this.data[index].depth !== depth || ends[index] == null) break
+        pinned.push(index)
+        end = ends[index]
+      }
+      return pinned
+    },
+    retainedParents() {
+      return this.pinnedIndexes.filter(index => index < this.first)
+    },
+    visibleRows() {
+      if (!this.windowed) return this.data
+      const rows = this.data.slice(this.first, this.first + this.visibleCount)
+      return this.retainedParents.map(index => this.data[index]).concat(rows)
+    },
     spacing() {
-      if (!this.windowed) return null
+      if (!this.windowed && !this.stickyParents) return null
       return {
         '--field-row-height': ROW_HEIGHT + 'px',
-        '--field-before': this.first * ROW_HEIGHT + 'px',
-        '--field-after': (this.data.length - this.first - this.visibleRows.length) * ROW_HEIGHT + 'px',
+        '--field-before': (this.first - this.retainedParents.length) * ROW_HEIGHT + 'px',
+        '--field-after': Math.max(0, this.data.length - this.first - this.visibleCount) * ROW_HEIGHT + 'px',
       }
     },
-    tracksScroll() { return this.windowed || this.more },
+    tracksScroll() { return this.windowed || this.more || this.stickyParents },
   },
   watch: {
     tracksScroll() { this.$nextTick(this.observe) },
@@ -40,6 +76,30 @@ export default {
   deactivated() { this.disconnect() },
   beforeUnmount() { this.disconnect() },
   methods: {
+    parentRowStyle({ rowIndex }) {
+      const before = this.retainedParents
+      const index = rowIndex < before.length ? before[rowIndex] : this.first + rowIndex - before.length
+      const level = this.pinnedIndexes.indexOf(index)
+      if (level < 0) return
+      // 保留原行和所有控件；当下一个同级分组接近时，在当前分组末尾让位。
+      const physicalIndex = this.first - before.length + rowIndex
+      const offset = (level - physicalIndex) * ROW_HEIGHT
+      const limit = (this.treeBounds.ends[index] - 1 - physicalIndex) * ROW_HEIGHT
+      return {
+        position: 'relative',
+        zIndex: this.pinnedIndexes.length - level + 2,
+        transform: `translateY(clamp(0px, calc(var(--field-scroll-offset, 0px) + ${offset}px), ${limit}px))`,
+      }
+    },
+    restorePinnedPosition(row) {
+      const level = this.pinnedIndexes.findIndex(index => this.data[index] === row)
+      if (level < 0 || !this.scrollView) return
+      const scroller = this.clipParents.find(el =>
+        el.scrollHeight > el.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(el).overflowY))
+      if (!scroller) return
+      const naturalOffset = (this.pinnedIndexes[level] - level) * ROW_HEIGHT
+      if (this.scrollOffset > naturalOffset) scroller.scrollTop -= this.scrollOffset - naturalOffset
+    },
     observe() {
       this.disconnect()
       const table = this.$refs.table?.$el
@@ -92,7 +152,15 @@ export default {
       }
       if (bottom <= top) return
       const origin = this.scrollView.getBoundingClientRect().top
-      this.start = Math.max(0, Math.floor((top - origin) / ROW_HEIGHT) - BUFFER)
+      const offset = Math.max(0, top - origin)
+      const topRow = Math.floor(offset / ROW_HEIGHT)
+      if (this.stickyParents) {
+        this.scrollOffset = offset
+        this.scrollView.style.setProperty('--field-scroll-offset', offset + 'px')
+        this.topRow = topRow
+        this.parentLimit = Math.max(0, Math.floor((bottom - top) / ROW_HEIGHT) - 1)
+      }
+      this.start = Math.max(0, topRow - BUFFER)
       this.visibleCount = Math.ceil((bottom - top) / ROW_HEIGHT) + 2 * BUFFER + 1
       if (this.more && bottom >= this.scrollView.getBoundingClientRect().bottom - BUFFER * ROW_HEIGHT) this.$emit('load-more')
     },
@@ -106,6 +174,6 @@ export default {
 .windowed-field-table :deep(.el-table__body-wrapper .el-scrollbar__view)::after { display: block; content: ''; }
 .windowed-field-table :deep(.el-table__body-wrapper .el-scrollbar__view)::before { height: var(--field-before); }
 .windowed-field-table :deep(.el-table__body-wrapper .el-scrollbar__view)::after { height: var(--field-after); }
-.windowed-field-table :deep(.el-table__body .el-table__row) { height: var(--field-row-height); }
-.windowed-field-table :deep(.el-table__row > .el-table__cell) { padding-block: 0; }
+.uniform-field-rows :deep(.el-table__body .el-table__row) { height: var(--field-row-height); }
+.uniform-field-rows :deep(.el-table__row > .el-table__cell) { padding-block: 0; }
 </style>
