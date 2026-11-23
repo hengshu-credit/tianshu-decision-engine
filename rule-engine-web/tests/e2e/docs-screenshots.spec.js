@@ -162,7 +162,7 @@ test('生成字段管理、规则字段、模型字段和调用详情截图', as
   let routing = await openPage(page, '/variable')
   await page.getByRole('tab', { name: '数据对象', exact: true }).click()
   await expect(page.getByText('FaceVerifyRequest', { exact: true }).first()).toBeVisible()
-  await page.locator('.data-object-table .el-table__expand-icon').first().click()
+  await page.getByRole('button', { name: '展开或收起 FaceVerifyRequest' }).click()
   await expect(page.getByText('deviceId', { exact: true }).first()).toBeVisible()
   await screenshot(page, 'project-usage-03-data-object.png')
   await page.getByRole('tab', { name: '字段校验', exact: true }).click()

@@ -5,8 +5,6 @@
 </template>
 
 <script>
-import { markRaw } from 'vue'
-
 const ROW_HEIGHT = 42
 const BUFFER = 8
 
@@ -15,43 +13,26 @@ export default {
   props: {
     data: { type: Array, required: true },
     more: Boolean,
-    expandedKeys: { type: Array, default: null },
   },
   emits: ['load-more'],
   data: () => ({ start: 0, visibleCount: 32 }),
   computed: {
-    rows() {
-      if (!this.expandedKeys) return this.data
-      const expanded = new Set(this.expandedKeys.map(String))
-      const rows = []
-      const stack = this.data.map(field => ({ field, depth: 0 })).reverse()
-      while (stack.length) {
-        const item = stack.pop()
-        item.expanded = expanded.has(String(item.field.id))
-        // 展开状态变化会重建投影；表格的深度监听无需遍历未展开的 children。
-        rows.push(markRaw(item))
-        if (!item.expanded) continue
-        const children = item.field.children || []
-        for (let i = children.length - 1; i >= 0; i--) stack.push({ field: children[i], depth: item.depth + 1 })
-      }
-      return rows
-    },
-    windowed() { return this.rows.length > 50 },
-    first() { return this.windowed ? Math.min(this.start, Math.max(0, this.rows.length - this.visibleCount)) : 0 },
-    visibleRows() { return this.windowed ? this.rows.slice(this.first, this.first + this.visibleCount) : this.rows },
+    windowed() { return this.data.length > 50 },
+    first() { return this.windowed ? Math.min(this.start, Math.max(0, this.data.length - this.visibleCount)) : 0 },
+    visibleRows() { return this.windowed ? this.data.slice(this.first, this.first + this.visibleCount) : this.data },
     spacing() {
       if (!this.windowed) return null
       return {
         '--field-row-height': ROW_HEIGHT + 'px',
         '--field-before': this.first * ROW_HEIGHT + 'px',
-        '--field-after': (this.rows.length - this.first - this.visibleRows.length) * ROW_HEIGHT + 'px',
+        '--field-after': (this.data.length - this.first - this.visibleRows.length) * ROW_HEIGHT + 'px',
       }
     },
     tracksScroll() { return this.windowed || this.more },
   },
   watch: {
     tracksScroll() { this.$nextTick(this.observe) },
-    rows() { if (this.tracksScroll) this.$nextTick(this.scheduleMeasure) },
+    data() { if (this.tracksScroll) this.$nextTick(this.scheduleMeasure) },
     more(value) { if (value) this.$nextTick(this.scheduleMeasure) },
   },
   mounted() { this.observe() },

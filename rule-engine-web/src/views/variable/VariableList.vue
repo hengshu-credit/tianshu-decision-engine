@@ -379,6 +379,7 @@
           </div>
           <variable-toolbar-actions
             :primary-create-label="primaryCreateLabel"
+            column-settings-storage-key="tianshu:table-columns:data-object-list"
             :column-settings-columns="objectColumns"
             :column-settings-model-value="objectColumnOrder"
             @import="handleImportCmd"
@@ -393,210 +394,87 @@
           暂无数据对象
         </div>
         <div class="management-table-region" v-else :aria-busy="objLoading">
-          <el-table class="management-table data-object-table"
-            data-testid="data-object-table"
-            show-overflow-tooltip
-            :data="paginatedObjectTree"
-            :row-key="objectRowKey"
-            :expand-row-keys="expandedObjectRowKeys"
-            border
-            size="small"
-            style="width: 100%"
-            @expand-change="handleObjectExpandChange"
-            @row-click="handleObjectRowClick"
+          <lazy-field-table class="management-table data-object-table" data-testid="data-object-table"
+            :data="objectTableRows" row-key="key" border size="small" show-overflow-tooltip
+            :span-method="objectTableSpan" @row-click="handleObjectRowClick"
           >
-            <el-table-column type="expand" width="48">
-              <template v-slot="{ row: node }">
-                <div v-if="node && node.object" class="object-field-expansion">
-              <lazy-field-table show-overflow-tooltip
-                :data="paginatedObjectFields(node)"
-                :expanded-keys="objectFieldExpandedKeys(node)"
-                :show-header="false"
-                :aria-label="(node.object.objectLabel || node.object.objectCode) + '的字段'"
-                max-height="480"
-                @row-click="(item, column, event) => handleObjectFieldRowClick(node, item.field, event)"
-                size="small"
-                row-key="field.id"
-                style="width: 100%"
-              >
-                <el-table-column label="字段" min-width="280">
-                  <template #default="{ row: item }">
-                    <div class="object-field-identity" :style="{ paddingInlineStart: item.depth * 20 + 'px' }">
-                      <button v-if="item.field.children?.length" type="button" class="object-field-toggle"
-                        :aria-expanded="item.expanded"
-                        :aria-label="'展开或收起 ' + item.field.varCode"
-                        @click.stop="handleObjectFieldExpandChange(node, item.field, !item.expanded)"
-                      >{{ item.expanded ? '▾' : '▸' }}</button>
-                      <span v-else class="object-field-branch" aria-hidden="true"></span>
-                      <code>{{ item.field.varCode }}</code>
-                      <span v-if="item.field.varLabel !== item.field.varCode">{{ item.field.varLabel }}</span>
-                      <el-tag size="small" :type="typeTagColor(item.field.varType)">{{ typeLabel(item.field.varType) }}</el-tag>
-                      <code v-if="item.field.originalScriptName && item.field.originalScriptName !== item.field.varCode"
-                        class="text-muted" :title="'脚本名称 ' + item.field.scriptName">{{ item.field.originalScriptName }}</code>
-                      <span v-if="item.field.refVariableId || item.field.refObjectId || item.field.refObjectCode" class="reference-variable-cell" title="字段引用">
-                        <strong>→ {{ objectFieldReferenceLabel(item.field) }}</strong>
-                        <code>{{ objectFieldReferenceScriptName(item.field) }}</code>
-                      </span>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '选项', '删除'])" align="center">
-                  <template v-slot="{ row: { field: row } }">
-                    <el-button
-                      v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
-                      link
-                      data-action="edit"
-                      size="small"
-                      type="warning"
-                      @click="editObjectFieldWorkspace(row, node)"
-                      >编辑</el-button
-                    >
-                    <el-button
-                      v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
-                      link
-                      data-action="configure"
-                      size="small"
-                      type="info"
-                      @click="handleOptions(row, true)"
-                      v-if="row.varType === 'ENUM'"
-                      >选项</el-button
-                    >
-                    <el-button
-                      v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
-                      link
-                      data-action="delete"
-                      size="small"
-                      type="danger"
-                      class="btn-delete"
-                      @click="handleDeleteObjectField(row)"
-                      >删除</el-button
-                    >
-                  </template>
-                </el-table-column>
-              </lazy-field-table>
-              <el-pagination
-                v-if="objectFieldNeedsPaging(node)"
-                style="margin-top: 8px; text-align: right"
-                :current-page="objectFieldPage(node)"
-                :page-size="objectFieldPageSize"
-                :total="objectFieldRootTotal(node)"
-                layout="total,prev,pager,next"
-                @current-change="(p) => handleObjectFieldPageChange(node, p)"
-              />
+            <el-table-column v-for="column in visibleObjectColumns" :key="column.key"
+              :column-key="column.key" :label="column.label" :min-width="column.minWidth" :width="column.width"
+              :align="column.align || 'left'"
+            >
+              <template #default="{ row: item }">
+                <el-pagination v-if="item.pager" size="small"
+                  :aria-label="item.node.object.objectCode + '的字段分页'"
+                  :current-page="objectFieldPage(item.node)" :page-size="objectFieldPageSize"
+                  :total="objectFieldRootTotal(item.node)" layout="total,prev,pager,next"
+                  @current-change="handleObjectFieldPageChange(item.node, $event)"
+                />
+                <div v-else-if="column.key === 'objectCode'" class="object-tree-code" :title="item.code" :style="{ '--tree-depth': item.depth }">
+                  <span v-if="item.depth" class="object-tree-guides" aria-hidden="true"></span>
+                  <button v-if="item.expandable" type="button" class="object-field-toggle"
+                    :aria-expanded="item.expanded" :aria-label="'展开或收起 ' + item.code"
+                    @click.stop="toggleObjectTableRow(item)"
+                  >{{ item.expanded ? '▾' : '▸' }}</button>
+                  <span v-else class="object-toggle-space" aria-hidden="true"></span>
+                  <code class="script-name-code">{{ item.code }}</code>
                 </div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="object.objectCode" label="对象编码" min-width="150" show-overflow-tooltip>
-              <template v-slot="{ row: node }">
-                <code v-if="node && node.object" class="script-name-code">{{
-                  node.object.objectCode
-                }}</code>
-              </template>
-            </el-table-column>
-            <el-table-column prop="object.objectLabel" label="对象名称" min-width="140" show-overflow-tooltip />
-            <el-table-column label="脚本名称" min-width="140" show-overflow-tooltip>
-              <template v-slot="{ row: node }">
-                <code v-if="node && node.object" class="script-name-code">{{
-                  node.object.scriptName || '—'
-                }}</code>
-              </template>
-            </el-table-column>
-            <el-table-column label="作用范围" width="90" align="center">
-              <template v-slot="{ row: node }">
-                <el-tag
-                  v-if="node && node.object"
-                  size="small"
-                  :class="node.object.scope === 'GLOBAL' ? 'el-tag--scope-global' : 'el-tag--scope-project'"
-                  >{{ node.object.scope === 'GLOBAL' ? '全局' : '项目' }}</el-tag
-                >
-              </template>
-            </el-table-column>
-            <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
-              <template v-slot="{ row: node }">
-                <span v-if="node && node.object">{{
-                  getProjectName(node.object.projectId) || '—'
-                }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="对象类型" width="130" align="center">
-              <template v-slot="{ row: node }">
-                <el-select
-                  v-if="node && node.object"
-                  v-model="node.object.objectType"
-                  :disabled="!canEditResource(node.object)"
-                  size="small"
-                  style="width: 108px"
-                  @change="onObjectTypeChange(node.object)"
-                  @click.stop
-                >
-                  <el-option label="输入对象" value="INPUT" />
-                  <el-option label="输出对象" value="OUTPUT" />
-                  <el-option label="输入输出" value="INOUT" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="来源" width="90" align="center">
-              <template v-slot="{ row: node }">
-                <el-tag v-if="node && node.object && node.object.sourceType" size="small" type="info">{{
-                  node.object.sourceType
-                }}</el-tag>
-                <span v-else-if="node && node.object" class="text-muted">—</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="字段数" width="80" align="center">
-              <template v-slot="{ row: node }">
-                <span v-if="node && node.object">{{
-                  objectFieldTotal(node)
-                }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="更新时间" min-width="165" align="center">
-              <template v-slot="{ row: node }">
-                <span v-if="node && node.object">{{
-                  formatUpdateTime(node.object.updateTime)
-                }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" min-width="160" align="center">
-              <template #default="{ row: node }">
-                <governance-resource-status v-if="node && node.object" resource-type="DATA_OBJECT" :resource-id="node.object.id" :status="node.object.status" />
+                <template v-else-if="column.key === 'objectLabel'">{{ item.field ? item.field.varLabel : item.node.object.objectLabel }}</template>
+                <code v-else-if="column.key === 'scriptName'" class="script-name-code">{{ item.scriptName }}</code>
+                <el-tag v-else-if="column.key === 'scope'" size="small"
+                  :class="item.node.object.scope === 'GLOBAL' ? 'el-tag--scope-global' : 'el-tag--scope-project'"
+                >{{ scopeTagLabel(item.node.object.scope) }}</el-tag>
+                <template v-else-if="column.key === 'projectName'">{{ item.node.object.projectName || getProjectName(item.node.object.projectId) || '—' }}</template>
+                <template v-else-if="column.key === 'objectType'">
+                  <el-tag v-if="item.field" size="small" :type="typeTagColor(item.field.varType)">{{ typeLabel(item.field.varType) }}</el-tag>
+                  <el-select v-else v-model="item.node.object.objectType" :disabled="!canEditResource(item.node.object)"
+                    size="small" style="width: 108px" @change="onObjectTypeChange(item.node.object)" @click.stop>
+                    <el-option label="输入对象" value="INPUT" />
+                    <el-option label="输出对象" value="OUTPUT" />
+                    <el-option label="输入输出" value="INOUT" />
+                  </el-select>
+                </template>
+                <template v-else-if="column.key === 'source'">
+                  <template v-if="item.field">
+                    <span v-if="item.field.refVariableId || item.field.refObjectId || item.field.refObjectCode"
+                      class="reference-variable-cell" title="字段引用">
+                      <strong>{{ objectFieldReferenceLabel(item.field) }}</strong>
+                      <code>{{ objectFieldReferenceScriptName(item.field) }}</code>
+                    </span>
+                  </template>
+                  <el-tag v-else-if="item.node.object.sourceType" size="small" type="info">{{ item.node.object.sourceType }}</el-tag>
+                </template>
+                <template v-else-if="column.key === 'fieldCount'">{{ item.field ? item.field.children?.length : objectFieldTotal(item.node) }}</template>
+                <template v-else-if="column.key === 'updateTime'">{{ formatUpdateTime((item.field || item.node.object).updateTime) }}</template>
+                <governance-resource-status v-else-if="column.key === 'status' && !item.field"
+                  resource-type="DATA_OBJECT" :resource-id="item.node.object.id" :status="item.node.object.status" />
               </template>
             </el-table-column>
             <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '添加字段', '删除'])" align="center" fixed="right">
-              <template v-slot="{ row: node }">
-                <template v-if="node && node.object">
+              <template #default="{ row: { node, field: row, pager } }">
+                <template v-if="!pager">
                   <el-button
-                    v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
-                    link
-                    data-action="edit"
-                    size="small"
-                    :icon="ElIconEdit"
-                    @click.stop="editWorkspace('DATA_OBJECT', node.object, handleEditObject, loadCurrentObject)"
-                    >编辑</el-button
-                  >
-                  <governance-publish-action v-if="node && node.object" resource-type="DATA_OBJECT" :resource-id="node.object.id" />
+                    v-permission="{ code: 'field:edit', projectId: node.object.projectId, scope: node.object.scope }"
+                    link data-action="edit" size="small" :icon="ElIconEdit"
+                    @click.stop="row ? editObjectFieldWorkspace(row, node) : editWorkspace('DATA_OBJECT', node.object, handleEditObject, loadCurrentObject)"
+                  >编辑</el-button>
+                  <el-button v-if="row?.varType === 'ENUM'"
+                    v-permission="{ code: 'field:edit', projectId: node.object.projectId, scope: node.object.scope }"
+                    link data-action="configure" size="small" @click.stop="handleOptions(row, true)"
+                  >选项</el-button>
+                  <governance-publish-action v-if="!row" resource-type="DATA_OBJECT" :resource-id="node.object.id" />
+                  <el-button v-if="!row"
+                    v-permission="{ code: 'field:edit', projectId: node.object.projectId, scope: node.object.scope }"
+                    link data-action="add" size="small" :icon="ElIconPlus" @click.stop="handleAddObjectField(node)"
+                  >添加字段</el-button>
                   <el-button
-                    v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
-                    link
-                    data-action="add"
-                    size="small"
-                    :icon="ElIconPlus"
-                    @click.stop="handleAddObjectField(node)"
-                    >添加字段</el-button
-                  >
-                  <el-button
-                    v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
-                    link
-                    data-action="delete"
-                    size="small"
-                    :icon="ElIconDelete"
-                    class="btn-delete"
-                    @click.stop="handleDeleteObject(node.object)"
+                    v-permission="{ code: 'field:edit', projectId: node.object.projectId, scope: node.object.scope }"
+                    link data-action="delete" size="small" :icon="ElIconDelete" class="btn-delete" aria-label="删除"
+                    @click.stop="row ? handleDeleteObjectField(row) : handleDeleteObject(node.object)"
                   />
                 </template>
               </template>
             </el-table-column>
-          </el-table>
+          </lazy-field-table>
           <el-pagination
             style="margin-top: 12px; text-align: right"
             :current-page="objPageNum"
@@ -2537,10 +2415,16 @@ export default {
         'varType', 'varSource', 'defaultValue', 'valueRange',
       ],
       objectColumns: [
-        { key: 'objectCode', label: '对象编码' }, { key: 'objectLabel', label: '对象名称' },
-        { key: 'scriptName', label: '脚本名称' }, { key: 'scope', label: '作用范围' },
-        { key: 'projectName', label: '项目名称' }, { key: 'objectType', label: '对象类型' },
-        { key: 'source', label: '来源' }, { key: 'fieldCount', label: '字段数' }, { key: 'updateTime', label: '更新时间' }, { key: 'status', label: '状态' },
+        { key: 'objectCode', label: '对象编码', minWidth: 280, required: true },
+        { key: 'objectLabel', label: '对象名称', minWidth: 140 },
+        { key: 'scriptName', label: '脚本名称', minWidth: 140 },
+        { key: 'scope', label: '作用范围', width: 90, align: 'center' },
+        { key: 'projectName', label: '项目名称', minWidth: 120 },
+        { key: 'objectType', label: '类型', width: 130, align: 'center' },
+        { key: 'source', label: '来源', minWidth: 100, align: 'center' },
+        { key: 'fieldCount', label: '字段数', width: 80, align: 'center' },
+        { key: 'updateTime', label: '更新时间', minWidth: 165, align: 'center' },
+        { key: 'status', label: '状态', minWidth: 160, align: 'center' },
       ],
       objectColumnOrder: [
         'objectCode', 'objectLabel', 'scriptName', 'scope', 'projectName',
@@ -2891,18 +2775,34 @@ export default {
     standaloneTotal() {
       return this.total
     },
-    paginatedObjectTree() {
-      const list = this.filteredObjectTree || []
-      const start = (this.objPageNum - 1) * this.objPageSize
-      return list.slice(start, start + this.objPageSize).map((n) => ({
-        ...n,
-        _expanded: this.objExpanded[n.object.id] === true,
-      }))
+    visibleObjectColumns() {
+      return this.objectColumnOrder.map(key => this.objectColumns.find(column => column.key === key))
     },
-    expandedObjectRowKeys() {
-      return Object.keys(this.objExpanded)
-        .filter((id) => this.objExpanded[id] === true)
-        .map((id) => Number(id))
+    objectTableRows() {
+      const start = (this.objPageNum - 1) * this.objPageSize
+      const rows = []
+      for (const node of this.filteredObjectTree.slice(start, start + this.objPageSize)) {
+        const { id, objectCode } = node.object
+        const expanded = this.objExpanded[id] === true
+        rows.push(markRaw({ key: `object:${id}`, node, code: objectCode, scriptName: node.object.scriptName,
+          depth: 0, expandable: !!node.variables?.length, expanded }))
+        if (!expanded) continue
+        const expandedKeys = new Set(this.objectFieldExpandedKeys(node).map(String))
+        const stack = this.paginatedObjectFields(node).map(field => ({ field, depth: 1 })).reverse()
+        while (stack.length) {
+          const { field, depth } = stack.pop()
+          const children = field.children || []
+          const fieldExpanded = expandedKeys.has(String(field.id))
+          rows.push(markRaw({ key: `field:${id}:${field.id}`, node, field, depth, code: field.varCode,
+            scriptName: Object.hasOwn(field, 'originalScriptName') ? field.originalScriptName : field.scriptName,
+            expandable: children.length > 0, expanded: fieldExpanded }))
+          if (fieldExpanded) {
+            for (let i = children.length - 1; i >= 0; i--) stack.push({ field: children[i], depth: depth + 1 })
+          }
+        }
+        if (this.objectFieldNeedsPaging(node)) rows.push(markRaw({ key: `pager:${id}`, node, pager: true }))
+      }
+      return rows
     },
     filteredObjectTree() {
       const { scope, projectCode, projectName, sourceType, objectCode } =
@@ -3953,25 +3853,20 @@ export default {
       this.objExpanded[node.object.id] = !this.objExpanded[node.object.id]
       this.saveCachedState()
     },
-    objectRowKey(node) {
-      return node && node.object ? node.object.id : null
+    objectTableSpan({ row, columnIndex }) {
+      if (!row.pager) return
+      const count = this.visibleObjectColumns.length
+      if (columnIndex === 0) return [1, count]
+      if (columnIndex < count) return [0, 0]
     },
-    handleObjectExpandChange(node, expandedRows) {
-      if (!node || !node.object) return
-      const expanded = Array.isArray(expandedRows)
-        ? expandedRows.some(
-            (item) => item && item.object && item.object.id === node.object.id
-          )
-        : expandedRows === true
-      this.objExpanded[node.object.id] = expanded
-      this.saveCachedState()
+    toggleObjectTableRow(item) {
+      if (!item.expandable) return
+      if (item.field) this.handleObjectFieldExpandChange(item.node, item.field, !item.expanded)
+      else this.toggleObjectExpand(item.node)
     },
-    isObjectRowControl(event) {
-      return !!(event && event.target && event.target.closest('button, a, input, select, textarea, .el-select, .el-input, [role="combobox"], .el-table__expand-icon'))
-    },
-    handleObjectRowClick(node, column, event) {
-      if (!node || !node.object || this.isObjectRowControl(event)) return
-      this.toggleObjectExpand(node)
+    handleObjectRowClick(item, column, event) {
+      if (event.target.closest('button, a, input, select, textarea, .el-select, [role="combobox"]')) return
+      this.toggleObjectTableRow(item)
     },
     objectFieldExpandedKeys(node) {
       return this.objectFieldExpandMap[node.object.id] || []
@@ -3981,10 +3876,6 @@ export default {
       if (expanded) keys.push(field.id)
       this.objectFieldExpandMap[node.object.id] = keys
       this.saveCachedState()
-    },
-    handleObjectFieldRowClick(node, field, event) {
-      if (!field.children || !field.children.length || this.isObjectRowControl(event)) return
-      this.handleObjectFieldExpandChange(node, field, !this.objectFieldExpandedKeys(node).some(id => String(id) === String(field.id)))
     },
     handleObjPageChange(p) {
       this.objPageNum = p
@@ -5908,33 +5799,29 @@ export default {
   display: block;
   color: var(--el-color-success);
 }
-.object-field-expansion {
-  position: sticky;
-  left: 0;
-  width: calc(100cqw - 2px);
-  box-sizing: border-box;
-  padding: 0 0 0 24px;
-  border-left: 2px solid var(--tianshu-border-subtle);
-  background: var(--tianshu-bg-soft);
+.data-object-table :deep(.el-table__body .el-table__row > td.el-table__cell) {
+  background: var(--tianshu-bg-surface) !important;
 }
-.data-object-table {
-  container-type: inline-size;
-}
-.data-object-table :deep(.el-table__expanded-cell) {
-  padding: 0;
-}
-.object-field-identity {
+.object-tree-code {
+  --tree-step: 16px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  white-space: nowrap;
+  gap: 4px;
+  padding-inline-start: calc(var(--tree-depth) * var(--tree-step));
 }
-.object-field-branch, .object-field-toggle { flex: 0 0 16px; }
-.object-field-branch {
-  height: 10px;
-  border-inline-start: 1px solid var(--el-border-color);
-  border-bottom: 1px solid var(--el-border-color);
-  transform: translateY(-4px);
+.object-tree-guides {
+  position: absolute;
+  inset-block: 0;
+  margin-inline-start: calc(-1 * var(--tree-depth) * var(--tree-step));
+  width: calc(var(--tree-depth) * var(--tree-step));
+  background: repeating-linear-gradient(to right, transparent 0 7px, var(--el-color-primary) 7px 9px, transparent 9px 16px);
+  pointer-events: none;
+}
+.object-field-toggle, .object-toggle-space { flex: 0 0 16px; }
+.object-tree-code code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .reference-variable-cell {
   display: inline-flex;
