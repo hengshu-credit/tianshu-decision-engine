@@ -46,6 +46,8 @@ public class DataObjectGovernedResourceAdapter
     @SuppressWarnings("unchecked")
     public ResourceSnapshot normalizeDraft(ResourceSnapshot draft) {
         Map<String, Object> value = CanonicalJson.readMap(draft.snapshotJson());
+        String rootName = stringValue(value.get("scriptName"));
+        if (rootName == null || rootName.isBlank()) value.put("scriptName", value.get("objectCode"));
         // Old versions must restore their defaults, not retain a newer projection's non-null settings.
         value.putIfAbsent("lazyLoadReferences", false);
         if (value.get("fields") instanceof List<?> fields) {

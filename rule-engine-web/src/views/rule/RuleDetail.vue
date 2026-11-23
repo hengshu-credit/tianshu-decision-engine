@@ -2023,6 +2023,7 @@ export default {
             CONSTANT: 'constant',
             DATA_OBJECT: 'object',
             DATA_OBJECT_FIELD: 'object',
+            DATA_OBJECT_ROOT: 'object',
             MODEL: 'model',
             MODEL_OUTPUT: 'model',
             EXTERNAL_API: 'external',
@@ -2030,6 +2031,9 @@ export default {
           const display = this.openApiFieldDisplay(field)
           return {
             ...field,
+            ...(refType === 'DATA_OBJECT_ROOT' && {
+              rootReference: true, objectId: field.varId, objectCode: display.fieldCode, objectLabel: display.fieldName,
+            }),
             id: field.varId,
             _varId: field.varId,
             _refType: refType,

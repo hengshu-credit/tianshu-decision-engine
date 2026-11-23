@@ -275,7 +275,7 @@ public class QLScriptFieldResolver {
             return ValidationResult.invalid(
                     "REFERENCE_TYPE_MISMATCH", "数据对象没有可用的脚本根");
         }
-        List<RuleDataObjectField> chain = new ArrayList<>();
+        Map<Long, RuleDataObjectField> chain = new LinkedHashMap<>();
         Set<Long> visited = new HashSet<>();
         RuleDataObjectField current = leaf;
         while (current != null) {
@@ -286,7 +286,7 @@ public class QLScriptFieldResolver {
                 return ValidationResult.invalid(
                         "REFERENCE_TYPE_MISMATCH", "数据对象字段父子链、状态或项目不匹配");
             }
-            chain.add(current);
+            chain.put(current.getId(), current);
             Long parentId = current.getParentFieldId();
             if (parentId == null) {
                 break;
@@ -297,24 +297,8 @@ public class QLScriptFieldResolver {
                         "REFERENCE_NOT_FOUND", "数据对象字段的父字段不存在");
             }
         }
-        Collections.reverse(chain);
-        String relativePath = null;
-        for (RuleDataObjectField field : chain) {
-            String fieldPath = firstNonBlank(field.getScriptName(), field.getVarCode());
-            if (fieldPath == null) {
-                return ValidationResult.invalid(
-                        "REFERENCE_TYPE_MISMATCH", "数据对象字段没有可用的脚本路径");
-            }
-            if (relativePath == null || fieldPath.equals(relativePath)
-                    || fieldPath.startsWith(relativePath + ".")) {
-                relativePath = fieldPath;
-            } else {
-                relativePath = relativePath + "." + fieldPath;
-            }
-        }
-        String scriptRoot = relativePath.equals(objectRoot)
-                || relativePath.startsWith(objectRoot + ".")
-                ? relativePath : objectRoot + "." + relativePath;
+        String scriptRoot = DataObjectScriptPath.resolve(objectRoot, leaf, chain::get);
+        if (scriptRoot == null) return ValidationResult.invalid("REFERENCE_TYPE_MISMATCH", "数据对象字段没有可用的脚本路径");
         return ValidationResult.valid(new ValidatedScriptReference(
                 refId, "DATA_OBJECT", scriptRoot, leaf.getVarType()));
     }
@@ -385,7 +369,7 @@ public class QLScriptFieldResolver {
             if (inputPath.equals(reference.refCode)) {
                 return reference;
             }
-            if (("VARIABLE".equals(refType) || "DATA_OBJECT".equals(refType))
+            if (("VARIABLE".equals(refType) || "DATA_OBJECT".equals(refType) || "DATA_OBJECT_ROOT".equals(refType))
                     && inputPath.startsWith(reference.refCode + ".")
                     && (longestPrefix == null
                     || reference.refCode.length() > longestPrefix.refCode.length())) {

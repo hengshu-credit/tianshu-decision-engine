@@ -30,6 +30,15 @@ public class DataObjectSchemaResolver {
         this.fieldMapper = fieldMapper;
     }
 
+    public ShapeResult resolveRoot(Long objectId, Long projectId) {
+        List<RuleValidationIssue> diagnostics = new ArrayList<>();
+        ResolutionContext context = new ResolutionContext(projectId, diagnostics);
+        Set<String> visiting = new LinkedHashSet<>();
+        List<RuleDataObjectField> roots = context.referencedRootFields(objectId, visiting);
+        NodeShape shape = roots.isEmpty() ? openFor("OBJECT") : objectFromFields(roots, context, visiting);
+        return new ShapeResult(shape.schema, diagnostics, shape.leafTypes);
+    }
+
     public ShapeResult resolveField(Long fieldId, Long projectId) {
         List<RuleValidationIssue> diagnostics = new ArrayList<>();
         if (fieldId == null) {
@@ -242,7 +251,10 @@ public class DataObjectSchemaResolver {
             return null;
         }
         String scriptName = trimToNull(field.getScriptName());
-        return scriptName != null ? scriptName : trimToNull(field.getVarCode());
+        String name = scriptName != null ? scriptName : trimToNull(field.getVarCode());
+        if (name == null) return null;
+        // 导入保存对象内相对路径；嵌套 JSON Schema 的 properties 只使用当前一级属性名。
+        return name.substring(name.lastIndexOf('.') + 1);
     }
 
     private String normalizedType(String type) {

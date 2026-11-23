@@ -85,7 +85,7 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
         anchor = parent
       }
       const source = anchor.referenceMode === 'STRUCTURE' ? null : variableById.get(String(anchor.refVariableId))
-      const fieldPath = stripPrefix(field.scriptName || field.varCode || '', objectCode)
+      const fieldPath = stripPrefix(field.referencePath || field.scriptName || field.varCode || '', objectCode)
       const refCode = [objectCode, fieldPath].filter(Boolean).join('.')
       const fieldLabel = stripPrefix(field.varLabel || field.varCode || fieldPath, objectCode)
       const displayLabel = [objectLabel, fieldLabel].filter(Boolean).join('/')

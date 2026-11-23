@@ -379,10 +379,13 @@ public class ResourceVersionService {
             JSONObject owner = JSON.parseObject(version.getSnapshotJson());
             result = versionOption(versionId, version.getVersionNo(), ownerId);
             result.put("displayVersion", version.getDisplayVersion());
-            for (RuleDataObjectField field : owner.getJSONArray("fields").toJavaList(RuleDataObjectField.class)) {
+            var members = owner.getJSONArray("fields").toJavaList(RuleDataObjectField.class);
+            var byId = DataObjectScriptPath.index(members);
+            String root = first(owner.getString("scriptName"), owner.getString("objectCode"));
+            for (RuleDataObjectField field : members) {
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("refId", String.valueOf(field.getId())); item.put("refType", type);
-                item.put("code", objectPath(owner, field)); item.put("label", field.getVarLabel()); item.put("valueType", field.getVarType());
+                item.put("code", DataObjectScriptPath.resolve(root, field, byId::get)); item.put("label", field.getVarLabel()); item.put("valueType", field.getVarType());
                 item.put("parentFieldId", field.getParentFieldId() == null ? null : String.valueOf(field.getParentFieldId()));
                 fields.add(item);
             }
@@ -533,10 +536,10 @@ public class ResourceVersionService {
         target.setSourceStates(new LinkedHashMap<>()); target.setHistoryFieldDefinitions(null);
         return target;
     }
-    private static String objectPath(JSONObject owner, RuleDataObjectField field) {
+    static String objectPath(JSONObject owner, RuleDataObjectField field) {
         String root = first(owner.getString("scriptName"), owner.getString("objectCode"));
-        String name = first(field.getScriptName(), field.getVarCode());
-        return name.equals(root) || name.startsWith(root + ".") ? name : root + "." + name;
+        var fields = DataObjectScriptPath.index(owner.getJSONArray("fields").toJavaList(RuleDataObjectField.class));
+        return DataObjectScriptPath.resolve(root, field, fields::get);
     }
     private static Object read(Object value, String path) {
         if (path == null || path.isBlank()) return value;

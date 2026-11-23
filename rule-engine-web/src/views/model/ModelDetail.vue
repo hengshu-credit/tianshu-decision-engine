@@ -1694,6 +1694,7 @@ export default {
         {
           VARIABLE: '变量',
           CONSTANT: '常量',
+          DATA_OBJECT_ROOT: '数据对象',
           DATA_OBJECT: '对象字段',
           MODEL: '模型',
         }[type] ||

@@ -282,6 +282,22 @@ public class QLScriptFieldResolverTest {
     }
 
     @Test
+    public void objectRootCanBeReadDirectlyOrAsAnAncestorWithoutUsingACollidingFieldId() {
+        var object = activeDataObject(10L, 4L, "Mixed_Request");
+        object.setObjectCode("Mixed_Request");
+        object.setScriptName(" ");
+        fixture.dataObject(10L, object);
+        fixture.dataField(10L, activeDataField(10L, 4L, 10L, null, "flag", "BOOLEAN"));
+        for (String path : List.of("Mixed_Request", "Mixed_Request.flag")) {
+            var fields = fixture.resolver.resolve(model("output = " + path + "; output",
+                    refs(ref(10L, "DATA_OBJECT_ROOT", "Mixed_Request"))), 4L);
+            assertTrue(codes(fields).toString(), fields.getDiagnostics().isEmpty());
+            assertEquals("DATA_OBJECT_ROOT", fields.getInputFields().get(0).getRefType());
+            assertEquals(Long.valueOf(10), fields.getInputFields().get(0).getVarId());
+        }
+    }
+
+    @Test
     public void topLevelDataObjectFieldUsesCanonicalObjectRoot() {
         fixture.dataObject(10L, activeDataObject(10L, 4L, "contact"));
         fixture.dataField(20L, activeDataField(20L, 4L, 10L, null, "name", "STRING"));

@@ -284,7 +284,7 @@ public class GovernanceBatchImportService {
             snapshot.put("objectLabel", firstNotBlank(
                     parsed.getObjectLabel(), parsed.getObjectCode()));
             snapshot.put("scriptName", firstNotBlank(
-                    parsed.getScriptName(), parsed.getObjectCode()));
+                    stringValue(snapshot.get("scriptName")), firstNotBlank(parsed.getScriptName(), parsed.getObjectCode())));
             if (existing == null && "JSON".equals(sourceType)) {
                 snapshot.put("exampleMode", "FIXED");
                 snapshot.put("exampleValue", sourceContent);
@@ -479,7 +479,7 @@ public class GovernanceBatchImportService {
             field.put("varLabel", firstNotBlank(
                     parsed.getFieldLabel(), parsed.getFieldName()));
             field.put("scriptName", firstNotBlank(
-                    parsed.getScriptName(), parsed.getFieldName()));
+                    stringValue(field.get("scriptName")), firstNotBlank(parsed.getScriptName(), parsed.getFieldName())));
             field.put("varType", parsed.getVarType());
             field.put("refObjectCode", parsed.getRefObjectCode());
             field.put("refObjectId", parsed.getRefObjectId());

@@ -119,7 +119,9 @@ public class RuleReferenceCatalogService {
                 Map<String, Object> value = new LinkedHashMap<>(); value.put("object", object); value.put("variables", new ArrayList<Map<String, Object>>()); return value;
             });
             @SuppressWarnings("unchecked") List<Map<String, Object>> fields = (List<Map<String, Object>>) group.get("variables");
-            fields.add(row(field, "id", "objectId", "varCode", "varLabel", "scriptName", "varType", "parentFieldId", "refVariableId", "refObjectId", "referenceMode", "genericType", "recordResult", "status"));
+            var member = row(field, "id", "objectId", "varCode", "varLabel", "scriptName", "varType", "parentFieldId", "refVariableId", "refObjectId", "referenceMode", "genericType", "recordResult", "status");
+            member.put("referencePath", snapshot.getReferencePaths().get("DATA_OBJECT:" + field.getId()));
+            fields.add(member);
         }
         catalog.getObjectTree().addAll(objects.values());
         for (var model : snapshot.getModels()) {
@@ -146,8 +148,11 @@ public class RuleReferenceCatalogService {
             } else if ("DATA_OBJECT".equals(type) || "DATA_OBJECT_ROOT".equals(type)) {
                 Map<String, Object> object = row(payload.toJavaObject(com.hengshucredit.rule.model.entity.RuleDataObject.class), "id", "objectCode", "objectLabel", "scriptName");
                 List<Map<String, Object>> fields = new ArrayList<>();
-                for (var field : payload.getJSONArray("fields").toJavaList(com.hengshucredit.rule.model.entity.RuleDataObjectField.class)) {
+                var members = payload.getJSONArray("fields").toJavaList(com.hengshucredit.rule.model.entity.RuleDataObjectField.class);
+                var byId = DataObjectScriptPath.index(members);
+                for (var field : members) {
                     Map<String, Object> value = row(field, "id", "objectId", "varCode", "varLabel", "scriptName", "varType", "parentFieldId", "genericType", "status");
+                    value.put("referencePath", DataObjectScriptPath.resolve((String) object.get("scriptName"), field, byId::get));
                     value.put("version", pinned.getInteger("version")); fields.add(value);
                 }
                 catalog.getObjectTree().add(Map.of("object", object, "variables", fields));
@@ -185,6 +190,7 @@ public class RuleReferenceCatalogService {
         var payload = pinned.getJSONObject("payload");
         var metadata = payload;
         String prefix = "";
+        String objectFieldPath = null;
         if (type != null && type.startsWith("MODEL")) {
             metadata = com.alibaba.fastjson.JSON.parseObject(payload.getString("executionSnapshotJson")).getJSONObject("model");
             if ("MODEL_OUTPUT".equals(type)) {
@@ -192,10 +198,12 @@ public class RuleReferenceCatalogService {
                 metadata = versionField(metadata.getJSONArray("outputFields"), pinned.getString("refId"), metadata);
             }
         } else if ("DATA_OBJECT".equals(type)) {
-            prefix = firstDisplayText(payload, "scriptName", "objectCode");
             metadata = versionField(payload.getJSONArray("fields"), pinned.getString("refId"), payload);
+            if (metadata != payload) objectFieldPath = ResourceVersionService.objectPath(payload,
+                    metadata.toJavaObject(com.hengshucredit.rule.model.entity.RuleDataObjectField.class));
         }
         String code = firstDisplayText(metadata, "scriptName", "varCode", "funcCode", "modelCode", "objectCode", "apiCode", "fieldName");
+        if (objectFieldPath != null) code = objectFieldPath;
         if (prefix != null && !prefix.isBlank() && code != null && !code.startsWith(prefix + ".")) code = prefix + "." + code;
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("refType", type); result.put("refId", pinned.getString("refId"));

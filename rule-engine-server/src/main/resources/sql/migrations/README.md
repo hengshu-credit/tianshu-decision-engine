@@ -4,6 +4,10 @@
 
 自动部署时在安装目录用 `bash install-release.sh 发布包.zip --migration-script /绝对路径/本次迁移.sh` 接入已选定的迁移脚本，在停应用后、替换前执行；Bash 脚本须先完成数据库备份，遇错非零退出。可通过 `TIANSHU_RELEASE_DIR` 访问本包 SQL，`TIANSHU_DEPLOY_DIR` 访问外层 `config/` 生效 env 与 `docker/` Compose，`TIANSHU_BACKUP_DIR` 记录备份与迁移结果。不要把所有历史 SQL 自动拼接运行。
 
+## 数据对象脚本名称（2026-11-23）
+
+服务端使用内置 schema 启动时会补齐历史对象的空脚本名称。使用外部初始化脚本的已有库可执行 `2026-11-23-data-object-script-name.sql`。补齐值为原样的对象编码，已有别名、字段脚本名和冻结版本均保留。
+
 ## 控制台单点登录（2026-11-21）
 
 服务端启动时会创建账户会话序号表，已有库也可执行 `2026-11-21-console-single-session.sql`。单点登录默认关闭。审批启用后，每个账户保留最近一次成功登录的会话。升级前签发的会话需重新登录。关闭后允许多处登录，已经失效的会话仍需重新登录。

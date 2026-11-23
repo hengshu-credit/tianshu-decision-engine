@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.artifact;
 
+import com.hengshucredit.rule.server.service.DataObjectScriptPath;
 import com.hengshucredit.rule.server.service.ModelFileStore;
 
 import com.alibaba.fastjson.JSON;
@@ -936,11 +937,7 @@ public class RuleDependencyClosureService {
         snapshot.put("objectCode", owner == null ? null : owner.getObjectCode());
         String objectPath = owner == null ? null : owner.getScriptName();
         if (owner != null && (objectPath == null || objectPath.isBlank())) objectPath = owner.getObjectCode();
-        String fieldPath = field.getScriptName();
-        if (fieldPath == null || fieldPath.isBlank()) fieldPath = field.getVarCode();
-        if (objectPath != null && fieldPath != null && !fieldPath.equals(objectPath) && !fieldPath.startsWith(objectPath + ".")) {
-            fieldPath = objectPath + "." + fieldPath;
-        }
+        String fieldPath = DataObjectScriptPath.resolve(objectPath, field, this::loadDataObjectField);
         snapshot.put("referencePath", fieldPath);
         if (!addJsonDependency("DATA_OBJECT:" + fieldId, "DATA_OBJECT", fieldId, null,
                 "data-object-fields/" + fieldId + ".json", "EMBEDDED", snapshot, dependencies)) return;

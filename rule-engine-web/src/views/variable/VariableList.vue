@@ -426,12 +426,7 @@
                 <template v-else-if="column.key === 'projectName'">{{ item.node.object.projectName || getProjectName(item.node.object.projectId) || '—' }}</template>
                 <template v-else-if="column.key === 'objectType'">
                   <el-tag v-if="item.field" size="small" :type="typeTagColor(item.field.varType)">{{ typeLabel(item.field.varType) }}</el-tag>
-                  <el-select v-else v-model="item.node.object.objectType" :disabled="!canEditResource(item.node.object)"
-                    size="small" style="width: 108px" @change="onObjectTypeChange(item.node.object)" @click.stop>
-                    <el-option label="输入对象" value="INPUT" />
-                    <el-option label="输出对象" value="OUTPUT" />
-                    <el-option label="输入输出" value="INOUT" />
-                  </el-select>
+                  <span v-else>{{ objTypeLabel(item.node.object.objectType) }}</span>
                 </template>
                 <template v-else-if="column.key === 'source'">
                   <template v-if="item.field">
@@ -1548,7 +1543,7 @@
         <el-form-item label="脚本名称" prop="scriptName">
           <el-input
             v-model="objectForm.scriptName"
-            placeholder="QLExpress 脚本中的引用名，如 taxRequest"
+            :placeholder="objectForm.objectCode || '留空时使用对象编码'"
           />
         </el-form-item>
         <el-form-item label="整体示例值">
@@ -2263,7 +2258,6 @@ import {
   validateDataObjectFieldReference,
   importJsonObject,
   importDdlTable,
-  updateObjectType,
   deleteDataObject,
   createDataObjectField,
   updateDataObjectField,
@@ -2784,7 +2778,7 @@ export default {
       for (const node of this.filteredObjectTree.slice(start, start + this.objPageSize)) {
         const { id, objectCode } = node.object
         const expanded = this.objExpanded[id] === true
-        rows.push(markRaw({ key: `object:${id}`, node, code: objectCode, scriptName: node.object.scriptName,
+        rows.push(markRaw({ key: `object:${id}`, node, code: objectCode, scriptName: node.object.scriptName?.trim() ? node.object.scriptName : objectCode,
           depth: 0, expandable: !!node.variables?.length, expanded }))
         if (!expanded) continue
         const expandedKeys = new Set(this.objectFieldExpandedKeys(node).map(String))
@@ -2852,7 +2846,6 @@ export default {
       const defined = scoped && !!(
         this.objectForm.objectCode &&
         this.objectForm.objectLabel &&
-        this.objectForm.scriptName &&
         this.objectForm.objectType
       )
       return [
@@ -3057,7 +3050,6 @@ export default {
   },
   methods: {
     reservedCodeError,
-    canEditResource(resource) { return hasPermission('field:edit', resource) },
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     changeVariableApi(id) {
       if (String(id || '') === String(this.form.apiConfigId || '')) return
@@ -4290,10 +4282,6 @@ export default {
         if (requestId === this.objectTreeRequestId) this.objLoading = false
       }
     },
-    async onObjectTypeChange(obj) {
-      const response = await updateObjectType(obj.id, obj.objectType)
-      this.openApproval(response, '对象类型变更已送审')
-    },
     async handleDeleteObject(obj) {
       await this.$confirm(
         `确定删除对象「${obj.objectCode}」及其字段？如有外部引用，请先删除下游内容。`,
@@ -4446,6 +4434,7 @@ export default {
         }
           const payload = {
             ...this.objectForm,
+            scriptName: this.objectForm.scriptName?.trim() ? this.objectForm.scriptName : this.objectForm.objectCode,
             sourceType,
             sourceContent: sourceType === 'API' || sourceType === 'DB'
               ? sourceContent
