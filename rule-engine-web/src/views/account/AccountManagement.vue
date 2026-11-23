@@ -1,37 +1,15 @@
 <template>
   <div class="uiue-list-page account-page management-list-page">
-    <header class="page-header">
-      <dismissible-guidance tag="p" guide-id="accounts.intro" label="账户管理说明">通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</dismissible-guidance>
-      <div v-if="activeTab !== 'logs'" class="uiue-btn-bar account-actions">
-        <div class="btn-right">
-          <table-column-settings v-model="tableColumnOrders[activeTab === 'accounts' ? 'accountColumns' : 'roleColumns']" :key="activeTab"
-            :columns="activeTab === 'accounts' ? accountColumns : roleColumns"
-            :storage-key="`tianshu:table-columns:account-management-${activeTab}`"
-          />
-          <el-button
-            v-if="activeTab === 'accounts'"
-            v-permission="'account:manage'"
-            type="primary"
-            @click="openAccountDialog()"
-          >
-            新增账户
-          </el-button>
-          <el-button
-            v-else-if="activeTab === 'roles'"
-            v-permission="'role:manage'"
-            type="primary"
-            @click="openRoleDialog()"
-          >
-            新增角色
-          </el-button>
-        </div>
-      </div>
-    </header>
+    <dismissible-guidance tag="p" guide-id="accounts.intro" label="账户管理说明">通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</dismissible-guidance>
 
     <section class="content-card management-table-region">
       <el-tabs class="management-table-region" v-model="activeTab">
         <el-tab-pane v-if="canViewAccounts" class="management-table-region" label="账户" name="accounts">
-          <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="accounts" row-key="id">
+          <account-list-toolbar keyword-placeholder="用户名、显示名称或邮箱" :roles="canLoadRoleOptions ? roles : null" @query="accountQuery = $event">
+            <table-column-settings v-model="tableColumnOrders.accountColumns" :columns="accountColumns" storage-key="tianshu:table-columns:account-management-accounts" />
+            <el-button v-permission="'account:manage'" type="primary" size="small" @click="openAccountDialog()">新增账户</el-button>
+          </account-list-toolbar>
+          <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="filteredAccounts" row-key="id">
             <template v-for="columnKey in (tableColumnOrders.accountColumns || accountColumns.map(column => column.key))" :key="columnKey">
             <el-table-column v-if="columnKey === 'account'" label="账户" min-width="180">
               <template #default="{ row }">
@@ -138,7 +116,11 @@
         </el-tab-pane>
 
         <el-tab-pane lazy v-if="canViewRoles" class="management-table-region" label="角色" name="roles">
-          <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="roles" row-key="id">
+          <account-list-toolbar keyword-placeholder="角色名称或编码" @query="roleQuery = $event">
+            <table-column-settings v-model="tableColumnOrders.roleColumns" :columns="roleColumns" storage-key="tianshu:table-columns:account-management-roles" />
+            <el-button v-permission="'role:manage'" type="primary" size="small" @click="openRoleDialog()">新增角色</el-button>
+          </account-list-toolbar>
+          <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="filteredRoles" row-key="id">
             <template v-for="columnKey in (tableColumnOrders.roleColumns || roleColumns.map(column => column.key))" :key="columnKey">
             <el-table-column v-if="columnKey === 'roleName'" prop="roleName" label="角色名称" min-width="180" />
             <el-table-column v-if="columnKey === 'roleCode'" prop="roleCode" label="角色编码" min-width="160" />
@@ -422,6 +404,7 @@ import { getCurrentUser, hasPermission } from '@/security/permissionState'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import OperationLogs from './OperationLogs.vue'
+import AccountListToolbar from './AccountListToolbar.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   changeConsoleAccountStatus,
@@ -435,6 +418,13 @@ import {
   saveConsoleAccountPermissions,
   saveConsoleRole
 } from '@/api/consoleAccount'
+
+function filterDirectory(rows, { keyword = '', status, roleId }, fields) {
+  return rows.filter(row =>
+    (status == null || row.status === status) &&
+    (roleId == null || row.roleIds?.includes(roleId)) &&
+    (!keyword || fields.some(field => row[field]?.toLowerCase().includes(keyword))))
+}
 
 function emptyAccountForm() {
   return {
@@ -469,7 +459,7 @@ export default {
     { visible: 'passwordDialogVisible', draft: vm => vm.newPassword, busy: vm => vm.accountSaving },
     { visible: 'permissionDialogVisible', draft: vm => ({ roles: vm.permissionRoleIds, projects: vm.permissionProjectIds, mode: vm.permissionProjectAccessMode, global: vm.permissionGlobalEditable, defaults: vm.overrideDraft, overrides: vm.projectOverrideDraft }), busy: vm => vm.accountSaving },
   ])],
-  components: { DismissibleGuidance, TableColumnSettings, OperationLogs },
+  components: { DismissibleGuidance, TableColumnSettings, OperationLogs, AccountListToolbar },
   name: 'AccountManagement',
   data() {
     return {
@@ -493,6 +483,8 @@ export default {
       loading: false,
       accounts: [],
       roles: [],
+      accountQuery: {},
+      roleQuery: {},
       permissionCatalog: [],
       projectOptions: [],
       accountDialogVisible: false,
@@ -516,6 +508,12 @@ export default {
     }
   },
   computed: {
+    filteredAccounts() {
+      return filterDirectory(this.accounts, this.accountQuery, ['username', 'displayName', 'email'])
+    },
+    filteredRoles() {
+      return filterDirectory(this.roles, this.roleQuery, ['roleName', 'roleCode'])
+    },
     canAssignPermissions() { return hasPermission('account:role-assign') },
     canResetPassword() { return hasPermission('account:password-reset') },
     canViewAccounts() {
@@ -779,19 +777,9 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.account-actions {
-  margin: 0 0 12px auto;
-}
 .account-page {
   color: var(--tianshu-text-primary);
 }
-.page-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 0 12px;
-}
-.page-header > .dismissible-guidance { flex: 1 1 18rem; }
 .content-card {
   padding: 16px 20px 24px;
   background: var(--tianshu-bg-surface);
