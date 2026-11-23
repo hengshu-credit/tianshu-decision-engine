@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleBillingConfig;
+import com.hengshucredit.rule.server.system.SystemBrandAssetService.StatementBrand;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
@@ -26,11 +27,13 @@ import java.util.Map;
 final class BillingStatementWorkbook {
     private final XSSFWorkbook book;
     private final BillingStatement bill;
+    private final String fontName;
     private final XSSFCellStyle header, light, white, subtotal;
     private final Map<Short, CellStyle> decimals = new java.util.HashMap<>();
 
-    private BillingStatementWorkbook(XSSFWorkbook book, BillingStatement bill) {
+    private BillingStatementWorkbook(XSSFWorkbook book, BillingStatement bill, String fontName) {
         this.book = book;
+        this.fontName = fontName;
         this.bill = bill;
         header = style(0x2934EA, true, true);
         light = style(0xEFF1FF, false, false);
@@ -38,7 +41,7 @@ final class BillingStatementWorkbook {
         subtotal = style(0xDEE3FA, true, false);
     }
 
-    static byte[] render(BillingStatement bill, byte[] logo) {
+    static byte[] render(BillingStatement bill, StatementBrand brand) {
         try (var book = new XSSFWorkbook(); var out = new ByteArrayOutputStream()) {
             // POI 新工作簿已有 xf 0，显式注册其 Excel 内置名称，供其他表格阅读器识别。
             String namespace = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -51,8 +54,8 @@ final class BillingStatementWorkbook {
                 cursor.insertAttributeWithValue("xfId", "0");
                 cursor.insertAttributeWithValue("builtinId", "0");
             }
-            var writer = new BillingStatementWorkbook(book, bill);
-            writer.catalog(logo);
+            var writer = new BillingStatementWorkbook(book, bill, brand.font().family());
+            writer.catalog(brand.logo());
             writer.monthly();
             writer.daily();
             book.write(out);
@@ -86,34 +89,41 @@ final class BillingStatementWorkbook {
         anchor.setDy2(Units.pixelToEMU(4 + Math.max(1, (int)Math.round(image.getHeight() * scale))));
         sheet.createDrawingPatriarch().createPicture(anchor, book.addPicture(logo, Workbook.PICTURE_TYPE_PNG));
         int index = 0;
-        for (var item : bill.period.byProduct.entrySet()) {
-            RuleBillingConfig config = bill.products.get(item.getKey());
-            String target = switch (config.getBillingTarget()) {
-                case "ENGINE" -> "规则引擎"; case "API" -> "外数 API"; case "DB" -> "数据库查询";
-                default -> config.getBillingTarget();
-            };
-            String type = switch (config.getChargeType()) {
-                case "SUCCESS" -> "成功计费"; case "COUNT" -> "按次"; case "FIXED" -> "固定金额"; case "DURATION" -> "按耗时";
-                default -> config.getChargeType();
-            };
-            append(sheet, band(index), ++index, bill.project, bill.projectCode, config.getBillingName(), target, type,
-                    BillingStatement.number(item.getValue().priceValue()) + " " + bill.currency);
+        for (var currency : bill.period.currencies.entrySet()) {
+            for (var item : currency.getValue().byProduct.entrySet()) {
+                RuleBillingConfig config = bill.products.get(item.getKey());
+                String target = switch (config.getBillingTarget()) {
+                    case "ENGINE" -> "规则引擎"; case "API" -> "外数 API"; case "DB" -> "数据库查询";
+                    default -> config.getBillingTarget();
+                };
+                String type = switch (config.getChargeType()) {
+                    case "SUCCESS" -> "成功计费"; case "COUNT" -> "按次"; case "FIXED" -> "固定金额"; case "DURATION" -> "按耗时";
+                    default -> config.getChargeType();
+                };
+                append(sheet, band(index), ++index, bill.project, bill.projectCode, config.getBillingName(), target, type,
+                        BillingStatement.number(item.getValue().priceValue()) + " " + currency.getKey());
+            }
         }
     }
 
     private void monthly() {
-        Sheet sheet = sheet("月度账单", 1, "统计日期", "项目名称", "计费名称", "请求次数", "调用次数", "计费次数", "计费单价", "账单费用", "备注");
-        bill.months.forEach((month, section) -> {
-            int index = 0;
+        Sheet sheet = sheet("月度账单", 1, "统计日期", "项目名称", "计费名称", "请求次数", "调用次数", "计费次数", "计费单价", "账单费用", "备注", "币种");
+        bill.months.forEach((month, sections) -> sections.currencies.forEach((currency, section) -> {
             var total = section.total;
             append(sheet, subtotal, month, bill.project, "当月合计", total.requestsValue(), total.calls, total.charged,
-                    "按产品列示", total.amount, bill.currency + " · " + section.byProduct.size() + " 项产品");
+                    "按产品列示", total.amount, section.byProduct.size() + " 项产品", currency);
+            int index = 0;
             for (var product : section.byProduct.entrySet()) {
                 var config = bill.products.get(product.getKey());
                 var line = product.getValue();
                 append(sheet, band(index++), month, bill.project, config.getBillingName(), line.requestsValue(),
-                        line.calls, line.charged, line.priceValue(), line.amount, bill.currency + " · " + config.getBillingCode());
+                        line.calls, line.charged, line.priceValue(), line.amount, config.getBillingCode(), currency);
             }
+        }));
+        bill.period.currencies.forEach((currency, section) -> {
+            var total = section.total;
+            append(sheet, subtotal, bill.begin + " 至 " + bill.end, bill.project, "本期合计", total.requestsValue(),
+                    total.calls, total.charged, "按产品列示", total.amount, section.byProduct.size() + " 项产品", currency);
         });
     }
 
@@ -121,10 +131,12 @@ final class BillingStatementWorkbook {
         Sheet sheet = sheet("日账单明细", 1, "统计日期", "项目名称", "计费名称", "请求次数", "调用次数", "计费次数", "计费价格", "账单费用", "币种");
         int index = 0;
         for (var day : bill.days.entrySet()) {
-            for (var item : day.getValue().byProduct.entrySet()) {
-                var line = item.getValue();
-                append(sheet, band(index++), day.getKey(), bill.project, bill.products.get(item.getKey()).getBillingName(),
-                        line.requestsValue(), line.calls, line.charged, line.priceValue(), line.amount, bill.currency);
+            for (var currency : day.getValue().currencies.entrySet()) {
+                for (var item : currency.getValue().byProduct.entrySet()) {
+                    var line = item.getValue();
+                    append(sheet, band(index++), day.getKey(), bill.project, bill.products.get(item.getKey()).getBillingName(),
+                            line.requestsValue(), line.calls, line.charged, line.priceValue(), line.amount, currency.getKey());
+                }
             }
         }
     }
@@ -181,7 +193,7 @@ final class BillingStatementWorkbook {
         style.setAlignment(HorizontalAlignment.CENTER);
         style.setWrapText(true);
         var font = book.createFont();
-        font.setFontName("Microsoft YaHei");
+        font.setFontName(fontName);
         font.setFontHeightInPoints((short) 10);
         font.setBold(bold);
         font.setColor(new XSSFColor(new Color(inverted ? 0xFFFFFF : 0x24344E), null));

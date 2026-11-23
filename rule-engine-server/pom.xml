@@ -156,6 +156,11 @@
                 <directory>src/main/resources</directory>
             </resource>
             <resource>
+                <directory>../rule-engine-web/public/fonts</directory>
+                <targetPath>brand/fonts</targetPath>
+                <includes><include>font.woff2</include><include>AlimamaFangYuanTiVF-*.txt</include></includes>
+            </resource>
+            <resource>
                 <directory>../rule-engine-web/src/constants</directory>
                 <includes><include>reserved-codes.json</include><include>faker-methods.json</include></includes>
             </resource>

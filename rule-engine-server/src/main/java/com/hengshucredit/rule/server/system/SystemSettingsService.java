@@ -100,6 +100,12 @@ public class SystemSettingsService {
         return ExternalCodeMapping.from(((Number) config.get("configVersion")).longValue(), config);
     }
 
+    public EngineMailFont mailFont(Map<String, Object> brand) {
+        Object value = brand.get("font");
+        return value == null || SystemFontService.DEFAULT.equals(value)
+                ? EngineMailFont.engineDefault() : fonts.mailFont(value);
+    }
+
     public Map<String, Object> publicBrand() {
         Map<String, Object> brand = get("brand");
         String logo = brandImageUrl(brand, "logo");

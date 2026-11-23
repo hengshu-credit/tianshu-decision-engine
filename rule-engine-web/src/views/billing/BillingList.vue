@@ -1548,7 +1548,7 @@ export default {
     statementSendHint(row) {
       const range = this.statementRange
       const period = range ? [range.beginDate, range.endDate].join(' 至 ') : row.summaryDate?.slice(0, 7)
-      return period + ' · 合并相同收件邮箱和抬头的产品，按本项目、账户、鉴权及币种发送'
+      return period + ' · 合并相同收件邮箱和抬头的产品，按本项目、账户及鉴权发送，各币种分别结算'
     },
     async sendStatement(row) {
       if (!row.mailAvailable || this.sendingBill !== null) return

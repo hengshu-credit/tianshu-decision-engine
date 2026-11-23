@@ -70,23 +70,21 @@ public class BillingStatementService {
         var query = new LambdaQueryWrapper<RuleBillingSummary>()
                 .eq(RuleBillingSummary::getProjectId, row.getProjectId())
                 .in(RuleBillingSummary::getBillingConfigId, eligible.keySet())
-                .eq(RuleBillingSummary::getCurrency, row.getCurrency())
                 .between(RuleBillingSummary::getSummaryDate, begin, end);
         if (row.getAuthId() == null) query.isNull(RuleBillingSummary::getAuthId);
         else query.eq(RuleBillingSummary::getAuthId, row.getAuthId());
         if (row.getActorUserId() == null) query.isNull(RuleBillingSummary::getActorUserId);
         else query.eq(RuleBillingSummary::getActorUserId, row.getActorUserId());
-        var days = summaries.selectList(query).stream().filter(day -> row.getCurrency().equals(day.getCurrency()))
-                .toList();
+        var days = summaries.selectList(query);
         if (days.stream().noneMatch(day -> Objects.equals(day.getId(), id)))
             throw new IllegalArgumentException("汇总已刷新，请重新查询后发送");
         var project = projects.browseOption(row.getProjectId());
         if (project == null) throw new IllegalArgumentException("所属项目不存在或不可访问，无法填写账单项目资料");
         String code = project.projectCode();
         String name = project.projectName();
-        var bill = new BillingStatement(name, code, company, row.getCurrency(), begin, end, eligible, days);
+        var bill = new BillingStatement(name, code, company, begin, end, eligible, days);
         mail.sendStatement(brand, config.getBillEmail(), bill.title(), name + "团队", bill.introduction(), bill.plain(),
-                bill.tablesHtml(), company, begin + "至" + end + "-账单.xlsx", BillingStatementWorkbook.render(bill, brand.logo()));
+                bill.tablesHtml(), begin + "至" + end + "-账单.xlsx", BillingStatementWorkbook.render(bill, brand));
     }
 
     private static String companyName(RuleBillingConfig config, String defaultName) {

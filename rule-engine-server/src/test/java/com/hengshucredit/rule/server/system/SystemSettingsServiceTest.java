@@ -70,6 +70,11 @@ public class SystemSettingsServiceTest {
         Map<?, ?> saved = (Map<?, ?>) service.saveBrand(brand, "admin").get("font");
         assertEquals(600.0, ((Map<?, ?>) saved.get("coordinates")).get("wght"));
         assertEquals(80.0, ((Map<?, ?>) saved.get("coordinates")).get("BEVL"));
+        var mailFont = service.mailFont(service.get("brand"));
+        assertArrayEquals(bytes, mailFont.file().getContentAsByteArray());
+        assertEquals(parsed.faces().get(0).name(), mailFont.family());
+        assertTrue(mailFont.variation().contains("'BEVL' 80.0"));
+        assertTrue(mailFont.variation().contains("'wght' 600.0"));
         new EngineFontFile(fonts.face(id, 0)).validate();
         assertArrayEquals(bytes, controller.publicFont(id, 0).getBody());
         assertThrows(IllegalArgumentException.class, () -> controller.publicFont(id, 1));
@@ -85,6 +90,7 @@ public class SystemSettingsServiceTest {
         assertThrows(IllegalArgumentException.class, () -> fonts.upload("not a font".getBytes(java.nio.charset.StandardCharsets.UTF_8), "admin"));
         var local = service.get("brand"); local.put("font", Map.of("source", "LOCAL", "family", "Microsoft YaHei", "assetId", "", "face", 0, "instance", 0));
         assertEquals("Microsoft YaHei", ((Map<?, ?>) service.saveBrand(local, "admin").get("font")).get("family"));
+        assertEquals("Microsoft YaHei", service.mailFont(service.get("brand")).family());
         assertThrows(IllegalArgumentException.class, () -> controller.publicFont(id, 0));
     }
 

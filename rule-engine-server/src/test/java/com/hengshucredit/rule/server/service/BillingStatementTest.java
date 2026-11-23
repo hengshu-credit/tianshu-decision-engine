@@ -11,6 +11,7 @@ import com.hengshucredit.rule.server.security.ConsoleProjectAccess;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
+import com.hengshucredit.rule.server.system.EngineMailFont;
 import com.hengshucredit.rule.server.system.SystemBrandAssetService;
 import com.hengshucredit.rule.server.system.SystemBrandAssetService.StatementBrand;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -38,7 +39,7 @@ public class BillingStatementTest {
         third.setBillingConfigId(8L);
         third.setSummaryDate(LocalDate.of(2026, 10, 31));
         third.setRequestCount(2L);
-        var bill = new BillingStatement("客户A", "PROJECT_A", "对账测试公司", "CNY", third.getSummaryDate(), first.getSummaryDate(),
+        var bill = new BillingStatement("客户A", "PROJECT_A", "对账测试公司", third.getSummaryDate(), first.getSummaryDate(),
                 Map.of(7L, config, 8L, another), List.of(first, second, third));
         var brand = brand();
         assertTrue(bill.tablesHtml().contains("活体&lt;核验&gt;"));
@@ -59,7 +60,7 @@ public class BillingStatementTest {
         ReflectionTestUtils.setField(service, "mailSender", transport);
         ReflectionTestUtils.setField(service, "properties", props);
         service.sendStatement(brand, "accounts@example.test", bill.title(), "客户A团队", bill.introduction(), bill.plain(),
-                bill.tablesHtml(), bill.company, "账单.xlsx", BillingStatementWorkbook.render(bill, brand.logo()));
+                bill.tablesHtml(), "账单.xlsx", BillingStatementWorkbook.render(bill, brand));
         assertEquals(1, captured.size());
         var bytes = new ByteArrayOutputStream();
         captured.get(0).writeTo(bytes);
@@ -72,9 +73,12 @@ public class BillingStatementTest {
         assertArrayEquals(brand.logo(), related.getBodyPart(1).getInputStream().readAllBytes());
         var alternatives = (MimeMultipart) related.getBodyPart(0).getContent();
         String html = (String) alternatives.getBodyPart(1).getContent();
-        for (String text : List.of("cid:tianshu-logo", brand.name(), bill.company, "尊敬的客户A团队", "本期账单合计", "0.17425"))
+        for (String text : List.of("cid:tianshu-logo", brand.name(), "上海衡枢真信科技有限公司", "https://www.hengshucredit.com", "尊敬的客户A团队", "本期账单合计", "0.17425"))
             assertTrue(text, html.contains(text));
-        assertFalse(html.contains("上海衡枢真信科技有限公司"));
+        assertFalse(html.contains(bill.company));
+        assertTrue(html.contains("cid:tianshu-font"));
+        assertTrue(html.contains("font-size:12px;line-height:1.7"));
+        assertArrayEquals(brand.font().file().getContentAsByteArray(), related.getBodyPart(2).getInputStream().readAllBytes());
         var attachment = parts.getBodyPart(1);
         assertTrue(attachment.isMimeType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
         try (var book = new XSSFWorkbook(attachment.getInputStream())) {
@@ -84,7 +88,10 @@ public class BillingStatementTest {
             assertEquals(bill.company, catalog.getRow(1).getCell(2).getStringCellValue());
             assertArrayEquals(brand.logo(), book.getAllPictures().get(0).getData());
             assertEquals(5, catalog.getLastRowNum());
-            assertEquals(5, book.getSheetAt(1).getLastRowNum());
+            assertEquals(6, book.getSheetAt(1).getLastRowNum());
+            assertEquals("本期合计", book.getSheetAt(1).getRow(6).getCell(3).getStringCellValue());
+            assertEquals(0.19825, book.getSheetAt(1).getRow(6).getCell(8).getNumericCellValue(), 1e-12);
+            assertEquals(brand.font().family(), catalog.getRow(3).getCell(1).getCellStyle().getFont().getFontName());
             assertEquals(4, book.getSheetAt(2).getLastRowNum());
             for (var sheet : book) {
                 int header = sheet == catalog ? 3 : 1;
@@ -106,6 +113,37 @@ public class BillingStatementTest {
         assertFalse(ConsoleMailService.validBillRecipient("a@example.test\r\nBcc: b@example.test"));
     }
 
+    @Test public void sameProductKeepsSeparateMonthlyAndPeriodAmountsInEachCurrency() throws Exception {
+        var octCny = day(1, "2", "10", 5);
+        var octUsd = day(1, "0.1", "0.50", 5);
+        var novCny = day(1, "3", "9", 3);
+        var novUsd = day(1, "0.2", "0.60", 3);
+        var october = LocalDate.of(2026, 10, 1);
+        octCny.setSummaryDate(october);
+        octUsd.setSummaryDate(october);
+        octUsd.setCurrency("USD");
+        novUsd.setCurrency("USD");
+        var bill = new BillingStatement("项目", "PRJ", "抬头", october, novCny.getSummaryDate(),
+                Map.of(7L, product(7, "计费A")), List.of(octCny, octUsd, novCny, novUsd));
+        for (String label : List.of("本期账单合计　CNY 19.00", "本期账单合计　USD 1.10",
+                "2026-10 月度账单　CNY 10.00", "2026-10 月度账单　USD 0.50",
+                "2026-11 月度账单　CNY 9.00", "2026-11 月度账单　USD 0.60"))
+            assertTrue(label, bill.tablesHtml().contains(label));
+        try (var book = new XSSFWorkbook(new ByteArrayInputStream(BillingStatementWorkbook.render(bill, brand())))) {
+            var amounts = new java.util.TreeMap<String, Double>();
+            var monthly = book.getSheetAt(1);
+            for (int r = 2; r <= monthly.getLastRowNum(); r++) {
+                var row = monthly.getRow(r);
+                String label = row.getCell(3).getStringCellValue();
+                if (!label.endsWith("合计")) continue;
+                String period = label.equals("本期合计") ? label : row.getCell(1).getStringCellValue();
+                assertNull(amounts.put(period + row.getCell(10).getStringCellValue(), row.getCell(8).getNumericCellValue()));
+            }
+            assertEquals(Map.of("本期合计CNY", 19d, "本期合计USD", 1.1d, "2026-10CNY", 10d, "2026-10USD", 0.5d,
+                    "2026-11CNY", 9d, "2026-11USD", 0.6d), amounts);
+        }
+    }
+
     @Test public void stylesExtendPastTheSampleAndStopAtLastDay() throws Exception {
         var start = LocalDate.of(2026, 10, 1);
         var rows = new java.util.ArrayList<RuleBillingSummary>();
@@ -114,9 +152,9 @@ public class BillingStatementTest {
             row.setSummaryDate(start.plusDays(i));
             rows.add(row);
         }
-        var bill = new BillingStatement("甲项目", "P", "系统甲", "USD", start, start.plusDays(44),
+        var bill = new BillingStatement("甲项目", "P", "系统甲", start, start.plusDays(44),
                 Map.of(7L, product(7, "服务")), rows);
-        try (var book = new XSSFWorkbook(new ByteArrayInputStream(BillingStatementWorkbook.render(bill, brand().logo())))) {
+        try (var book = new XSSFWorkbook(new ByteArrayInputStream(BillingStatementWorkbook.render(bill, brand())))) {
             var sheet = book.getSheetAt(2);
             assertEquals(46, sheet.getLastRowNum());
             assertEquals(sheet.getRow(2).getCell(1).getCellStyle(), sheet.getRow(46).getCell(1).getCellStyle());
@@ -147,7 +185,7 @@ public class BillingStatementTest {
                            (7,3,2,1,9,'USD','2026-11-01','ENGINE','V','R1',999,999),
                            (7,3,1,2,9,'USD','2026-11-01','ENGINE','V','R1',999,999),
                            (9,3,1,1,8,'USD','2026-11-01','ENGINE','V','R1',999,999),
-                           (7,3,1,1,9,'CNY','2026-11-01','ENGINE','V','R1',999,999),
+                           (7,3,1,1,9,'CNY','2026-11-01','ENGINE','V','R1',5,5),
                            (8,3,1,1,9,'USD','2026-11-01','ENGINE','OTHER','R1',999,999),
                            (10,3,1,1,8,'USD','2026-10-31','API','SCORE','R3',2,2)
                     """);
@@ -159,10 +197,14 @@ public class BillingStatementTest {
             var recipients = new java.util.ArrayList<String>();
             var mail = new ConsoleMailService() {
                 @Override public void sendStatement(StatementBrand brand, String email, String title, String recipient,
-                        String intro, String plain, String body, String signature, String filename, byte[] attachment) {
+                        String intro, String plain, String body, String filename, byte[] attachment) {
                     recipients.add(email);
-                    assertEquals(recipients.size() == 3 ? "结算专用抬头" : brand.name(), signature);
+                    try (var book = new XSSFWorkbook(new ByteArrayInputStream(attachment))) {
+                        assertEquals(recipients.size() == 3 ? "结算专用抬头" : brand.name(),
+                                book.getSheetAt(0).getRow(1).getCell(2).getStringCellValue());
+                    } catch (java.io.IOException failure) { throw new AssertionError(failure); }
                     assertTrue(plain.contains(recipients.size() == 2 ? "USD 4.40" : "USD 2.40"));
+                    assertTrue(plain.contains("CNY 5.00"));
                     assertFalse(body.contains("999"));
                     assertEquals(recipients.size() == 2, body.contains("信用评分"));
                     assertTrue(attachment.length > 0);
@@ -187,7 +229,7 @@ public class BillingStatementTest {
 
     private static StatementBrand brand() throws Exception {
         var logo = new org.springframework.core.io.ClassPathResource("brand/tianshu-logo.png").getContentAsByteArray();
-        return new StatementBrand("系统甲", "通知", logo);
+        return new StatementBrand("系统甲", "通知", logo, EngineMailFont.engineDefault());
     }
 
     private static RuleBillingConfig product(long id, String name) {

@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.consolelogin;
 
+import com.hengshucredit.rule.server.system.EngineMailFont;
 import com.hengshucredit.rule.server.system.SystemBrandAssetService;
 import com.hengshucredit.rule.server.system.SystemSettingsService;
 import jakarta.annotation.Resource;
@@ -18,6 +19,7 @@ import java.util.regex.Pattern;
 
 @Service
 public class ConsoleMailService {
+    private static final String PLAIN_FOOTER = "\n\n上海衡枢真信科技有限公司\nhttps://www.hengshucredit.com";
     @Autowired(required = false) private JavaMailSender mailSender;
     @Autowired(required = false) private SystemSettingsService settings;
     @Autowired(required = false) private SystemBrandAssetService assets;
@@ -58,25 +60,26 @@ public class ConsoleMailService {
     private void send(String email, String title, String username, String text, String link, String action, int ttl, Map<String, Object> draft) {
         if (email == null || !email.matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+")) throw new IllegalArgumentException("收件邮箱格式无效");
         if (draft == null && !configured()) throw new IllegalStateException("通知邮箱尚未配置");
-        Map<String, Object> brand = settings == null ? Map.of("systemName", "天枢决策引擎", "subtitle", "天工开物，枢衡定策") : settings.publicBrand();
+        Map<String, Object> brand = settings == null ? Map.of("systemName", "天枢决策引擎", "subtitle", "天工开物，枢衡定策") : settings.get("brand");
+        EngineMailFont font = settings == null ? EngineMailFont.engineDefault() : settings.mailFont(brand);
         Map<String, Object> config = draft == null && settings != null ? settings.mail() : draft;
         JavaMailSender sender = config == null ? mailSender : sender(config);
         String from = config == null ? properties.getMail().getFrom() : (String) config.get("email");
         String name = (String) brand.get("systemName");
         String logoSource = "cid:tianshu-logo";
         if (settings != null) {
-            String url = (String) settings.get("brand").get("logoUrl");
-            if (url != null && !url.isEmpty()) {
+            String url = (String) brand.get("logoUrl");
+            if (url != null && !url.isEmpty() && String.valueOf(brand.getOrDefault("logoId", "")).isEmpty()) {
                 if (url.startsWith("/") && !baseUrl().isBlank()) logoSource = java.net.URI.create(baseUrl()).resolve(url).toString();
                 else if (!url.startsWith("/")) logoSource = url;
             }
         }
         String plain = title + "\n\n尊敬的" + username + "：\n" + text
-                + (link == null ? "" : "\n" + link + "\n链接有效期：" + ttl + " 分钟") + "\n\n上海衡枢真信科技有限公司\nhttps://www.hengshucredit.com";
+                + (link == null ? "" : "\n" + link + "\n链接有效期：" + ttl + " 分钟") + PLAIN_FOOTER;
         try {
             deliver(sender, from, name, email, title, plain,
-                    html(name, (String) brand.get("subtitle"), title, username, text, link, action, ttl, logoSource),
-                    "cid:tianshu-logo".equals(logoSource) && assets != null ? assets.logo() : null, null, null);
+                    html(name, (String) brand.get("subtitle"), title, username, text, link, action, ttl, logoSource, font),
+                    font, "cid:tianshu-logo".equals(logoSource) && assets != null ? assets.logo() : null, null, null);
         } catch (java.io.IOException error) {
             throw new IllegalStateException("邮件模板读取失败", error);
         }
@@ -94,29 +97,30 @@ public class ConsoleMailService {
 
     public void sendStatement(SystemBrandAssetService.StatementBrand brand, String email, String title,
                               String recipientName, String introduction, String plain, String tables,
-                              String signature, String filename, byte[] attachment) {
+                              String filename, byte[] attachment) {
         if (!validBillRecipient(email)) throw new IllegalArgumentException("请先在计费配置中设置有效的账单收件邮箱");
         if (!configured()) throw new IllegalStateException("请先在系统设置中配置通知邮箱");
         Map<String, Object> config = settings == null ? null : settings.mail();
         try {
             String body = renderNotification(brand.name(), brand.subtitle(), title, recipientName, introduction,
-                    tables, "cid:tianshu-logo", signature, "");
+                    tables, "cid:tianshu-logo", brand.font());
             deliver(config == null ? mailSender : sender(config),
                     config == null ? properties.getMail().getFrom() : (String) config.get("email"),
-                    brand.name(), email, title, plain, body, brand.logo(), filename, attachment);
+                    brand.name(), email, title, plain + PLAIN_FOOTER, body, brand.font(), brand.logo(), filename, attachment);
         } catch (java.io.IOException error) {
             throw new IllegalStateException("通知邮件模板读取失败", error);
         }
     }
 
     private void deliver(JavaMailSender sender, String from, String name, String email, String title,
-                         String plain, String body, byte[] inlineLogo, String filename, byte[] attachment) {
+                         String plain, String body, EngineMailFont font, byte[] inlineLogo, String filename, byte[] attachment) {
         try {
             var message = sender.createMimeMessage();
             var helper = new MimeMessageHelper(message, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED, StandardCharsets.UTF_8.name());
             helper.setFrom(from, name); helper.setTo(email); helper.setSubject(name + " · " + title);
             helper.setText(plain, body);
             if (inlineLogo != null) helper.addInline("tianshu-logo", new ByteArrayResource(inlineLogo), "image/png");
+            helper.addInline("tianshu-font", font.file(), font.mimeType());
             if (attachment != null) helper.addAttachment(filename, new ByteArrayResource(attachment),
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             sender.send(message);
@@ -143,6 +147,11 @@ public class ConsoleMailService {
         return html(name, subtitle, title, username, text, link, action, ttl, "cid:tianshu-logo");
     }
     static String html(String name, String subtitle, String title, String username, String text, String link, String action, int ttl, String logoSource) throws java.io.IOException {
+        return html(name, subtitle, title, username, text, link, action, ttl, logoSource, EngineMailFont.engineDefault());
+    }
+
+    private static String html(String name, String subtitle, String title, String username, String text, String link,
+                               String action, int ttl, String logoSource, EngineMailFont font) throws java.io.IOException {
         if (!"cid:tianshu-logo".equals(logoSource)) SystemSettingsService.validateImageUrl(logoSource);
         if (link != null) {
             var uri = java.net.URI.create(link);
@@ -151,15 +160,14 @@ public class ConsoleMailService {
         String button = link == null ? "" : "<p style=\"padding:10px 12px;background:#f3f3ff;border-left:3px solid #2934ea\">链接有效期：" + ttl
                 + " 分钟</p><p><a href=\"" + escape(link) + "\" style=\"display:block;padding:12px;background:#2934ea;color:#fff;text-align:center;text-decoration:none;border-radius:0\">"
                 + escape(action) + "</a></p><p style=\"font-size:12px;color:#657087\">若非您本人操作，请忽略此邮件。请勿向他人转发此链接。</p>";
-        return renderNotification(name, subtitle, title, username, text, button, logoSource, "上海衡枢真信科技有限公司",
-                "<a href=\"https://www.hengshucredit.com\" style=\"color:#2934ea;text-decoration:none\">www.hengshucredit.com</a>");
+        return renderNotification(name, subtitle, title, username, text, button, logoSource, font);
     }
 
     private static String renderNotification(String name, String subtitle, String title, String username, String text,
-                                             String content, String logoSource, String signature, String website) throws java.io.IOException {
+                                             String content, String logoSource, EngineMailFont font) throws java.io.IOException {
         String template = new ClassPathResource("brand/notification.html").getContentAsString(StandardCharsets.UTF_8);
         Map<String, String> values = Map.of("name", escape(name), "subtitle", escape(subtitle), "title", escape(title),
-                "username", escape(username), "text", escape(text), "action", content, "logo", escape(logoSource), "signature", escape(signature), "website", website);
+                "username", escape(username), "text", escape(text), "action", content, "logo", escape(logoSource), "fontstyle", escape(font.inlineCss()), "fontface", font.faceCss());
         Matcher matcher = Pattern.compile("\\{\\{([a-z]+)}}").matcher(template);
         StringBuffer result = new StringBuffer();
         while (matcher.find()) matcher.appendReplacement(result, Matcher.quoteReplacement(values.getOrDefault(matcher.group(1), "")));

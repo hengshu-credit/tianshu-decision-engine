@@ -36,6 +36,21 @@ public class SystemFontService {
         if (rows.isEmpty()) throw new IllegalArgumentException("字体资源不存在，请重新上传");
         return new EngineFontFile(rows.get(0));
     }
+    EngineMailFont mailFont(Object raw) {
+        var font = resolve(raw);
+        var fallback = EngineMailFont.engineDefault();
+        if ("LOCAL".equals(font.get("source"))) {
+            return new EngineMailFont((String) font.get("family"), "normal", fallback.file(), fallback.mimeType());
+        }
+        if ("UPLOAD".equals(font.get("source"))) {
+            String id = (String) font.get("assetId");
+            int index = ((Number) font.get("face")).intValue();
+            return new EngineMailFont(faces(id).get(index).name(), EngineMailFont.axes((Map<?, ?>) font.get("coordinates")),
+                    new org.springframework.core.io.ByteArrayResource(face(id, index)), "font/sfnt");
+        }
+        return fallback;
+    }
+
     public Map<String, Object> resolve(Object raw) {
         if (!(raw instanceof Map<?, ?> value) || !value.keySet().equals(DEFAULT.keySet())) throw new IllegalArgumentException("字体配置无效");
         if (!(value.get("source") instanceof String source) || !Set.of("DEFAULT", "LOCAL", "UPLOAD").contains(source)
