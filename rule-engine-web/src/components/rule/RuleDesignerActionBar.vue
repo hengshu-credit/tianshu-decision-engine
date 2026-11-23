@@ -77,6 +77,10 @@ export default {
 .rule-designer-actions__button { min-height: 32px; width: 78px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; background: var(--tianshu-bg-surface); color: var(--tianshu-text-primary); font: inherit; cursor: pointer; }
 .rule-designer-actions__icon { flex: none; font-size: 14px; }
 .rule-designer-actions__button:hover:not(:disabled) { background: var(--tianshu-bg-muted); color: var(--tianshu-text-primary); }
+[data-brand-kind="solid"] .rule-designer-actions__publish:not(:disabled) {
+  border-width: 2px;
+  border-color: var(--tianshu-brand-foreground) !important;
+}
 .rule-designer-actions__button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 .rule-designer-actions__button:disabled { background: var(--tianshu-bg-muted); color: var(--tianshu-text-secondary); border-color: var(--tianshu-border-subtle); cursor: not-allowed; }
 .rule-designer-actions__button[aria-busy="true"] { cursor: progress; }

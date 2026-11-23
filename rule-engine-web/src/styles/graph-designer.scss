@@ -17,6 +17,7 @@
     background: var(--tianshu-bg-surface);
   }
   .#{$mode}-toolbar {
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -70,6 +71,10 @@
     overflow: visible;
     row-gap: 8px;
   }
+  .toolbar-row-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
   .toolbar-context {
     flex: 1 1 520px;
     min-width: 0;
@@ -92,19 +97,27 @@
   }
   .toolbar-row-actions > .toolbar-right {
     position: static;
-    padding-left: 8px;
+    justify-self: end;
+    max-width: 100%;
     background: transparent;
   }
   .toolbar-node-actions {
-    flex: 0 1 auto;
+    justify-content: center;
+    justify-self: center;
   }
   .toolbar-edit-actions {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex: 0 1 auto;
     flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .toolbar-node-actions :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+  .toolbar-right :deep(.rule-designer-actions__buttons) {
     justify-content: flex-end;
+    flex-wrap: wrap;
   }
   .toolbar-node-button {
     width: 90px;
@@ -166,10 +179,6 @@
   .zoom-input {
     width: 92px;
     flex: 0 0 92px;
-  }
-  .toolbar-label {
-    font-size: 12px;
-    opacity: 0.85;
   }
   .#{$mode}-toolbar :deep(.el-button:not(.is-link)) {
     min-height: 28px;
@@ -482,6 +491,29 @@
   .panel-slide-leave-to {
     width: 0;
     opacity: 0;
+  }
+  @container (max-width: 120rem) {
+    .toolbar-edit-actions {
+      gap: 4px;
+    }
+    .toolbar-edit-actions :deep(.el-button) {
+      padding-inline: 4px;
+      min-width: 28px;
+    }
+    .toolbar-node-actions .toolbar-node-button {
+      width: auto;
+      min-width: 0;
+      padding-inline: 10px;
+    }
+    .toolbar-edit-actions .zoom-input {
+      width: 74px;
+      flex-basis: 74px;
+    }
+  }
+  @container (max-width: 64rem) {
+    .toolbar-row-actions {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   @media (max-width: 1200px) {
     .#{$mode}-property {

@@ -21,6 +21,7 @@ export function applyTheme(config, root = document.documentElement) {
   )
 
   root.dataset.theme = normalized.colorScheme.toLowerCase()
+  root.dataset.brandKind = preset.kind
   root.dataset.sidebarTheme = normalized.sidebarTheme.toLowerCase()
   root.dataset.navigationLayout = normalized.navigationLayout.toLowerCase()
   root.dataset.tableScrollMode = normalized.tableScrollMode.toLowerCase()

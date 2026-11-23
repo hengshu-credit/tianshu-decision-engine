@@ -12,7 +12,7 @@ import {
 import { Dagre } from '@logicflow/layout/es/dagre/index.js'
 
 import { branchCaption, edgePriority, convertLegacyModel, FLOW_THEME_COLOR, addConnectedNode, blurActiveDesignerControl, createAnchorGesture, createDynamicGroup, createFlowNodeData, findToolbarNodePosition, getBusinessGraphData, getPersistableGraphData, isAnchorClickGesture, isDesignerInteractiveTarget, layoutGraphByAnchors, updateAnchorGesture } from '@/components/flow/flowDesignerGraph'
-import { normalizeDefaultEdgeLineType, applyGlobalEdgeTypeToInheritedEdges, mergeEdgePropertiesFromForm } from '@/components/flow/edgeLineType'
+import { changeEdgeLineType, normalizeDefaultEdgeLineType, applyGlobalEdgeTypeToInheritedEdges, mergeEdgePropertiesFromForm } from '@/components/flow/edgeLineType'
 
 import {
   createEmptyGroup,
@@ -597,14 +597,14 @@ export default {
       ? normalizeDefaultEdgeLineType(form.edgeLineType)
       : this.globalEdgeLineType
     try {
-      this.lf.changeEdgeType(edgeId, effectiveType)
+      const edge = this.lf.getEdgeModelById?.(edgeId)
+      const source = edge && this.lf.getNodeModelById?.(edge.sourceNodeId)
+      this.lf.updateText(edgeId, source?.type === 'exclusive-gateway' ? branchCaption(props) : form.conditionName || '')
     } catch (e) {
       /* ignore */
     }
     try {
-      const edge = this.lf.getEdgeModelById?.(edgeId)
-      const source = edge && this.lf.getNodeModelById?.(edge.sourceNodeId)
-      this.lf.updateText(edgeId, source?.type === 'exclusive-gateway' ? branchCaption(props) : form.conditionName || '')
+      changeEdgeLineType(this.lf, edgeId, effectiveType)
     } catch (e) {
       /* ignore */
     }

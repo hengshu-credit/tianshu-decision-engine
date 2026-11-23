@@ -203,6 +203,70 @@ for (const route of ['table', 'flow', 'tree', 'script']) {
   })
 }
 
+for (const route of ['flow', 'tree']) {
+  test(`${route} 切换全局或单边线型时标签随实际路径移动并随草稿保存`, async ({ page }) => {
+    const [, id] = designers.find(item => item[0] === route)
+    const data = fixtures(id)
+    const nodes = [
+      { id: 'source', type: 'exclusive-gateway', x: 200, y: 200 },
+      { id: 'a', type: 'script-task', x: 600, y: 380 },
+      { id: 'b', type: 'script-task', x: 600, y: 100 },
+    ]
+    const edges = ['a', 'b'].map(target => ({
+      id: target + '-edge', type: 'polyline', sourceNodeId: 'source', targetNodeId: target,
+      sourceAnchorId: 'source_1', targetAnchorId: target + '_0',
+      text: { value: target, x: 330, y: target === 'a' ? 260 : 140 },
+      properties: { conditionName: target, ...(target === 'b' ? { edgeLineType: 'polyline' } : {}) },
+    }))
+    data.apiData.set(`/api/rule/definition/${id}/versions/81`, { id: 81, version: 1, modelJson: JSON.stringify({ logicflow: { nodes, edges } }) })
+    const harness = await installDistRoutes(page, { apiData: data.apiData })
+    await page.goto(`http://tianshu.local/index.html#/designer/${route}/${id}`)
+    const edge = target => page.locator(`.${route}-canvas .lf-edge:not(.lf-mini-map .lf-edge)`)
+      .filter({ has: page.locator(`[marker-end="url(#marker-end-${target}-edge)"]`) })
+    const geometry = target => edge(target).evaluate(element => {
+      const label = element.querySelector('.lf-line-text text')
+      const x = Number(label.getAttribute('x')), y = Number(label.getAttribute('y'))
+      const shape = element.querySelector('[marker-end]')
+      const length = shape.getTotalLength()
+      let distance = Infinity
+      for (let i = 0; i <= 512; i++) {
+        const point = shape.getPointAtLength(length * i / 512)
+        distance = Math.min(distance, Math.hypot(x - point.x, y - point.y))
+      }
+      return { x, y, tag: shape.tagName, distance }
+    })
+    const choose = async (select, name) => {
+      await select.click()
+      const list = await select.getByRole('combobox').getAttribute('aria-controls')
+      await page.locator(`[id="${list}"]`).getByRole('option', { name, exact: true }).click()
+    }
+    const globalSelect = page.locator('.toolbar-edge-select')
+    const pinned = await geometry('b')
+    for (const [name, tag] of [['直线', 'line'], ['弧线', 'path'], ['折线', 'polyline']]) {
+      await choose(globalSelect, name)
+      const position = await geometry('a')
+      expect(position.tag).toBe(tag)
+      expect(position.distance).toBeLessThan(1)
+      expect(await geometry('b')).toEqual(pinned)
+    }
+
+    await edge('b').locator('.lf-line-text').click()
+    const singleSelect = page.locator('.edge-properties-editor:visible .el-select').first()
+    for (const [name, tag] of [['弧线', 'path'], ['跟随全局', 'polyline']]) {
+      await choose(singleSelect, name)
+      const position = await geometry('b')
+      expect(position.tag).toBe(tag)
+      expect(position.distance).toBeLessThan(1)
+    }
+    const saved = await geometry('b')
+    await page.locator('main .rule-designer-actions [data-action="save"]').click()
+    await expect(page).toHaveURL(/sourceId=9001/)
+    await page.reload()
+    expect(await geometry('b')).toEqual(saved)
+    harness.assertClean()
+  })
+}
+
 for (const route of ['flow', 'tree']) for (const direction of ['right', 'bottom']) {
   test(`${route} ${direction} 美化后分支在实际网格画布中等距居中`, async ({ page }) => {
     const [, id] = designers.find(item => item[0] === route)
