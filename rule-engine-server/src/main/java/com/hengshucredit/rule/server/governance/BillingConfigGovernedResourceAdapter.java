@@ -99,6 +99,7 @@ public class BillingConfigGovernedResourceAdapter
         value.put("scope", scope);
         put(value, "billingCode", source.get("billingCode"));
         put(value, "billingName", source.get("billingName"));
+        put(value, "billEmail", stringValue(source.get("billEmail")));
         value.put("billingTarget",
                 upper(source.get("billingTarget"), "ENGINE"));
         putLong(value, "targetRefId", source.get("targetRefId"));
@@ -179,6 +180,10 @@ public class BillingConfigGovernedResourceAdapter
         if (status == null || (status != 0 && status != 1)) {
             issues.add(error("BILLING_STATUS_INVALID",
                     "计费配置状态只能是启用或停用", id, "$.status"));
+        }
+        String email = stringValue(value.get("billEmail"));
+        if (hasText(email) && !com.hengshucredit.rule.server.consolelogin.ConsoleMailService.validBillRecipient(email)) {
+            issues.add(error("BILLING_MAIL_INVALID", "请输入一个有效的账单收件邮箱", id, "$.billEmail"));
         }
         validateTimeRange(value, id, issues);
 

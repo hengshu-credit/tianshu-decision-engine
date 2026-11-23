@@ -71,14 +71,47 @@ public class ConsoleMailService {
                 else if (!url.startsWith("/")) logoSource = url;
             }
         }
+        String plain = title + "\n\n尊敬的" + username + "：\n" + text
+                + (link == null ? "" : "\n" + link + "\n链接有效期：" + ttl + " 分钟") + "\n\n上海衡枢真信科技有限公司\nhttps://www.hengshucredit.com";
+        try {
+            deliver(sender, from, name, email, title, plain,
+                    html(name, (String) brand.get("subtitle"), title, username, text, link, action, ttl, logoSource),
+                    "cid:tianshu-logo".equals(logoSource), null, null);
+        } catch (java.io.IOException error) {
+            throw new IllegalStateException("邮件模板读取失败", error);
+        }
+    }
+
+    public static boolean validBillRecipient(String email) {
+        if (email == null || email.length() > 254 || !email.matches("[^\\s@,;<>]+@[^\\s@,;<>]+\\.[^\\s@,;<>]+")) return false;
+        try {
+            new jakarta.mail.internet.InternetAddress(email, true).validate();
+            return true;
+        } catch (jakarta.mail.internet.AddressException invalid) {
+            return false;
+        }
+    }
+
+    public void sendStatement(String email, String title, String plain, String body, String filename, byte[] attachment) {
+        if (!validBillRecipient(email)) throw new IllegalArgumentException("请先在计费配置中设置有效的账单收件邮箱");
+        if (!configured()) throw new IllegalStateException("请先在系统设置中配置通知邮箱");
+        Map<String, Object> config = settings == null ? null : settings.mail();
+        deliver(config == null ? mailSender : sender(config),
+                config == null ? properties.getMail().getFrom() : (String) config.get("email"),
+                settings == null ? "天枢决策引擎" : (String) settings.publicBrand().get("systemName"),
+                email, title, plain, body, false, filename, attachment);
+    }
+
+    private void deliver(JavaMailSender sender, String from, String name, String email, String title,
+                         String plain, String body, boolean inlineLogo, String filename, byte[] attachment) {
         try {
             var message = sender.createMimeMessage();
             var helper = new MimeMessageHelper(message, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED, StandardCharsets.UTF_8.name());
             helper.setFrom(from, name); helper.setTo(email); helper.setSubject(name + " · " + title);
-            String plain = title + "\n\n尊敬的" + username + "：\n" + text
-                    + (link == null ? "" : "\n" + link + "\n链接有效期：" + ttl + " 分钟") + "\n\n上海衡枢真信科技有限公司\nhttps://www.hengshucredit.com";
-            helper.setText(plain, html(name, (String) brand.get("subtitle"), title, username, text, link, action, ttl, logoSource));
-            if (assets != null && "cid:tianshu-logo".equals(logoSource)) helper.addInline("tianshu-logo", new ByteArrayResource(assets.logo()), "image/png");
+            helper.setText(plain, body);
+            if (assets != null && inlineLogo) helper.addInline("tianshu-logo", new ByteArrayResource(assets.logo()), "image/png");
+            if (attachment != null) helper.addAttachment(filename, new ByteArrayResource(attachment),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             sender.send(message);
         } catch (org.springframework.mail.MailException | jakarta.mail.MessagingException | java.io.IOException error) {
             throw new IllegalStateException("邮件发送失败，请检查服务器地址、端口、加密方式及授权码", error);

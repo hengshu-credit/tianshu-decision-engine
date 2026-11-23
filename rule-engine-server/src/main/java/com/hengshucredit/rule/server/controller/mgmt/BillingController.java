@@ -107,6 +107,15 @@ public class BillingController {
                 authType, authCode, beginDate, endDate));
     }
 
+    @Resource private com.hengshucredit.rule.server.service.BillingStatementService statements;
+
+    @PostMapping("/summary/{id:\\d+}/send")
+    @com.hengshucredit.rule.server.security.RequirePermission("billing:edit")
+    public ApiResponse<Void> sendStatement(@PathVariable long id) {
+        statements.send(id);
+        return ApiResponse.ok();
+    }
+
     @PostMapping("/summary/refresh")
     public ApiResponse<RuleBillingSummaryTask> refreshSummary(@RequestBody(required = false) Map<String, String> body) {
         String dateText = body == null ? null : body.get("summaryDate");

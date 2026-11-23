@@ -2,7 +2,7 @@ import BillingList from '@/views/billing/BillingList.vue'
 import { nextTick } from 'vue'
 import { shallowMount, mount, flushPromises } from '@test-utils'
 import * as billingApi from '@/api/billing'
-import { listDefinitions, getDefinition } from '@/api/definition'
+import { listProjectDefinitions, getDefinition } from '@/api/definition'
 import { listApiConfigs, getApiConfigTrial } from '@/api/datasource'
 import { ElTable, ElTableColumn } from 'element-plus/es/components/table/index.mjs'
 import { ElButton } from 'element-plus/es/components/button/index.mjs'
@@ -242,7 +242,7 @@ function createContext(overrides = {}) {
 describe('BillingList target selector', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    for (const api of [listDefinitions, listApiConfigs, listDbDatasources,
+    for (const api of [listProjectDefinitions, listApiConfigs, listDbDatasources,
       billingApi.listBillingConfigs, billingApi.listBillingRecords, billingApi.listBillingSummaries]) {
       api.mockReset().mockResolvedValue({ data: { records: [], total: 0 } })
     }
@@ -250,7 +250,7 @@ describe('BillingList target selector', () => {
 
   test('切换计费类型时清空旧候选，迟到的规则响应不能覆盖数据库候选', async () => {
     const oldRequest = deferred(), currentRequest = deferred()
-    listDefinitions.mockReturnValueOnce(oldRequest.promise)
+    listProjectDefinitions.mockReturnValueOnce(oldRequest.promise)
     listDbDatasources.mockReturnValueOnce(currentRequest.promise)
     const ctx = createContext({ targetOptions: [{ id: 8, ruleName: '旧规则' }] })
     const first = ctx.loadTargetOptions()
@@ -267,7 +267,7 @@ describe('BillingList target selector', () => {
 
   test('切换项目后旧请求失败不能结束新请求的加载状态', async () => {
     const oldRequest = deferred(), currentRequest = deferred()
-    listDefinitions.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(currentRequest.promise)
+    listProjectDefinitions.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(currentRequest.promise)
     const ctx = createContext()
     const first = ctx.loadTargetOptions()
     ctx.configForm.projectId = 9
@@ -282,7 +282,7 @@ describe('BillingList target selector', () => {
   })
 
   test('候选加载失败明确提示并可重试，不能保留旧选项', async () => {
-    listDefinitions.mockRejectedValueOnce(new Error('网络异常'))
+    listProjectDefinitions.mockRejectedValueOnce(new Error('网络异常'))
       .mockResolvedValueOnce({ data: { records: [{ id: 44, ruleName: '重试成功' }] } })
     const ctx = createContext({ targetOptions: [{ id: 8 }] })
     await ctx.loadTargetOptions()
@@ -296,7 +296,7 @@ describe('BillingList target selector', () => {
 
   test('关闭配置弹窗使未完成的候选查询失效', async () => {
     const oldRequest = deferred()
-    listDefinitions.mockReturnValueOnce(oldRequest.promise)
+    listProjectDefinitions.mockReturnValueOnce(oldRequest.promise)
     const ctx = createContext()
     const loading = ctx.loadTargetOptions()
     ctx.closeConfigDialog()
@@ -382,22 +382,22 @@ describe('BillingList target selector', () => {
   })
 
   test('loadTargetOptions loads rule definitions for ENGINE target', async () => {
-    listDefinitions.mockResolvedValue({ data: { records: [{ id: 11, ruleName: 'Rule A', ruleCode: 'rule_a' }] } })
+    listProjectDefinitions.mockResolvedValue({ data: { records: [{ id: 11, ruleName: 'Rule A', ruleCode: 'rule_a' }] } })
     const ctx = createContext()
 
     await ctx.loadTargetOptions()
 
-    expect(listDefinitions).toHaveBeenCalledWith({ pageNum: 1, pageSize: 20, status: 1, projectId: 7 })
+    expect(listProjectDefinitions).toHaveBeenCalledWith(7, { pageNum: 1, pageSize: 20 })
     expect(ctx.targetOptions).toEqual([{ id: 11, ruleName: 'Rule A', ruleCode: 'rule_a' }])
     expect(ctx.targetLoading).toBe(false)
   })
 
   test('指定对象支持第 26 页和搜索，并按 ID 回显不在本页的旧选择', async () => {
-    listDefinitions.mockResolvedValue({ data: { records: [{ id: 501, ruleName: '目标规则' }], total: 1001 } })
+    listProjectDefinitions.mockResolvedValue({ data: { records: [{ id: 501, ruleName: '目标规则' }], total: 1001 } })
     getDefinition.mockResolvedValue({ data: { id: 900, ruleName: '已选择规则', ruleCode: 'Keep_Code' } })
     const ctx = createContext({ configForm: { scope: 'PROJECT', projectId: 7, billingTarget: 'ENGINE', targetRefId: 900 } })
     const response = await ctx.loadTargetOptions({ query: '目标规则', pageNum: 26, pageSize: 20 })
-    expect(listDefinitions).toHaveBeenCalledWith({ pageNum: 26, pageSize: 20, status: 1, projectId: 7, keyword: '目标规则' })
+    expect(listProjectDefinitions).toHaveBeenCalledWith(7, { pageNum: 26, pageSize: 20, keyword: '目标规则' })
     expect(response.data.total).toBe(1001)
     expect(getDefinition).toHaveBeenCalledWith(900)
     expect(BillingList.computed.selectedTargetOption.call(ctx)).toMatchObject({ id: 900, displayName: '已选择规则 / Keep_Code' })

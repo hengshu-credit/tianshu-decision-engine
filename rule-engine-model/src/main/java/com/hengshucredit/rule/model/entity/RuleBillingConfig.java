@@ -20,11 +20,16 @@ public class RuleBillingConfig {
     private String billingCode;
     private String billingName;
     private String billingTarget;
+    @TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     private Long targetRefId;
+    @TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
+    private String billEmail;
     private String chargeType;
     private BigDecimal unitPrice;
     private String currency;
+    @TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     private LocalDateTime effectiveTime;
+    @TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
     private LocalDateTime expireTime;
     private String description;
     private Integer status;

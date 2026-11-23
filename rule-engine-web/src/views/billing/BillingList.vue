@@ -565,8 +565,8 @@
           <span>{{ summaryRefreshError }}</span>
           <el-button size="small" @click="summaryRefreshTask ? pollSummaryRefresh() : loadSummaryRefreshTask()">重试查询</el-button>
         </el-alert>
-        <el-alert v-else-if="summaryRefreshTask" :title="summaryRefreshTitle" :description="summaryRefreshHint"
-          :type="summaryRefreshTask.status === 'FAILED' ? 'error' : summaryRefreshTask.status === 'SUCCEEDED' ? 'success' : 'info'"
+        <el-alert v-else-if="summaryRefreshTask && summaryRefreshTask.status !== 'SUCCEEDED'" :title="summaryRefreshTitle" :description="summaryRefreshHint"
+          :type="summaryRefreshTask.status === 'FAILED' ? 'error' : 'info'"
           :closable="false" show-icon class="summary-refresh-status" data-testid="summary-refresh-status" />
 
         <el-table class="management-table" show-overflow-tooltip
@@ -648,6 +648,15 @@
             align="right"
           />
           </template>
+          <el-table-column v-if="!summaryQuery.ruleId" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" fixed="right" align="center">
+            <template #default="{ row }">
+              <el-tooltip :content="row.mailAvailable ? '发送此项目、计费项及鉴权范围当月已汇总的账单' : '请检查收件邮箱和计费配置关联，再刷新对应日期的汇总'">
+                <span><el-button v-permission="{ code: 'billing:edit', projectId: row.projectId }"
+                  link type="primary" data-action="execute" :disabled="!row.mailAvailable || sendingBill !== null"
+                  :loading="sendingBill === row.id" @click="sendStatement(row)">发送</el-button></span>
+              </el-tooltip>
+            </template>
+          </el-table-column>
         </el-table>
         <el-pagination
           v-show="!summaryError"
@@ -718,7 +727,7 @@
     <el-dialog
       :title="configForm.id ? '编辑计费配置' : '新建计费配置'"
       v-model="configDialogVisible"
-      width="680px"
+      width="min(720px, calc(100vw - 24px))"
       append-to-body
       :close-on-click-modal="false"
       :close-on-press-escape="!configSaving"
@@ -735,7 +744,7 @@
         size="small"
       >
         <el-row :gutter="12">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="作用范围">
               <el-select
                 v-model="configForm.scope"
@@ -748,14 +757,14 @@
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item
               v-if="configForm.scope === 'PROJECT'"
               label="所属项目"
               prop="projectId"
             >
               <project-resource-select
-                v-model:value="configForm.projectId"
+                v-model="configForm.projectId"
                 :disabled="!!configForm.id"
                 style="width: 100%"
                 @change="onBillingProjectChange"
@@ -764,7 +773,7 @@
           </el-col>
         </el-row>
         <el-row :gutter="12">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="计费编码" prop="billingCode">
               <el-input
                 v-model="configForm.billingCode"
@@ -773,7 +782,7 @@
               />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="计费名称" prop="billingName">
               <el-input
                 v-model="configForm.billingName"
@@ -783,7 +792,7 @@
           </el-col>
         </el-row>
         <el-row :gutter="12">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="计费对象">
               <el-select
                 v-model="configForm.billingTarget"
@@ -799,7 +808,7 @@
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="计费方式" :prop="policyApiId ? undefined : 'chargeType'">
               <div v-if="policyApiId" class="billing-api-policy" data-testid="billing-api-policy">
                 <el-input :model-value="policyLabel" readonly aria-label="接口计费方式（只读）" />
@@ -842,6 +851,7 @@
               <remote-filter-select
                 :key="`${configForm.billingTarget}:${configForm.scope}:${configForm.projectId}`"
                 v-model:value="configForm.targetRefId"
+                :disabled="configForm.scope === 'PROJECT' && !configForm.projectId"
                 :fetch-options="loadTargetOptions"
                 :content-type="({ ENGINE: 'RULE', API: 'EXTERNAL_API', DB: 'DATABASE' })[configForm.billingTarget]"
                 :show-value-type="configForm.billingTarget !== 'API'"
@@ -859,7 +869,7 @@
           </el-col>
         </el-row>
         <el-row :gutter="12">
-          <el-col :span="8">
+          <el-col :xs="24" :sm="8">
             <el-form-item label="单价" prop="unitPrice">
               <el-input-number
                 v-model="configForm.unitPrice"
@@ -870,12 +880,12 @@
               />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :xs="24" :sm="8">
             <el-form-item label="币种" prop="currency">
               <el-input v-model="configForm.currency" placeholder="CNY" />
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :xs="24" :sm="8">
             <el-form-item v-if="configForm.id" label="状态" label-width="56px">
               <el-switch
                 v-model="configForm.status"
@@ -888,7 +898,7 @@
           </el-col>
         </el-row>
         <el-row :gutter="12">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="生效时间">
               <el-date-picker
                 v-model="configForm.effectiveTime"
@@ -899,7 +909,7 @@
               />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12">
             <el-form-item label="失效时间">
               <el-date-picker
                 v-model="configForm.expireTime"
@@ -911,6 +921,10 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="账单收件邮箱" prop="billEmail">
+          <el-input v-model.trim="configForm.billEmail" type="email" maxlength="254" clearable
+            placeholder="选填，审批生效后可在计费汇总发送月度账单" />
+        </el-form-item>
         <el-form-item label="说明">
           <el-input
             v-model="configForm.description"
@@ -963,12 +977,13 @@ import {
   listBillingRecords,
   listBillingSummaries,
   refreshBillingSummary,
+  sendBillingStatement,
   getBillingSummaryRefreshTask,
   getLatestBillingSummaryRefresh,
   updateBillingConfigDraft,
   changeBillingConfigStatusDraft,
 } from '@/api/billing'
-import { listDefinitions, getDefinition } from '@/api/definition'
+import { listDefinitions, listProjectDefinitions, getDefinition } from '@/api/definition'
 import { listApiConfigs, getApiConfig, getApiConfigTrial } from '@/api/datasource'
 import { listDbDatasources, getDbDatasource } from '@/api/database'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
@@ -1060,6 +1075,7 @@ export default {
       },
       configForm: this.emptyConfigForm(),
       configRules: {
+        billEmail: [{ type: 'email', message: '请输入有效的收件邮箱', trigger: 'blur' }],
         billingCode: [
           reservedCodeRule,
           { required: true, message: '请输入计费编码', trigger: 'blur' },
@@ -1113,6 +1129,7 @@ export default {
       summaryTotal: 0,
       summaryLoading: false,
       summaryRequestId: 0,
+      sendingBill: null,
       summaryError: '',
       summaryDateRange: [],
       summaryQuery: {
@@ -1137,7 +1154,6 @@ export default {
       summaryRefreshError: '',
       summaryRefreshRequestId: 0,
       summaryRefreshTimer: null,
-      summaryRefreshNotify: false,
       billingTargetOptions: [
         { label: '规则引擎', value: 'ENGINE' },
         { label: '外数 API', value: 'API' },
@@ -1185,7 +1201,8 @@ export default {
       const task = this.summaryRefreshTask
       if (!task) return ''
       if (task.status === 'FAILED') return task.errorMessage || '汇总处理失败，原汇总保留，可重新刷新'
-      if (task.status === 'SUCCEEDED') return `已汇总 ${task.recordCount ?? 0} 条明细，生成 ${task.summaryCount ?? 0} 条汇总。后续到达的明细可再次刷新。`
+      if (task.status === 'SUCCEEDED' && (task.recordCount == null || task.summaryCount == null)) return ''
+      if (task.status === 'SUCCEEDED') return `已汇总 ${task.recordCount ?? 0} 条明细，生成 ${task.summaryCount ?? 0} 条汇总。`
       return '后台处理期间保留上次成功的汇总。离开页面后任务仍会继续，再次进入可查看进度。'
     },
   },
@@ -1329,6 +1346,7 @@ export default {
         effectiveTime: '',
         expireTime: '',
         description: '',
+        billEmail: '',
         status: 1,
       }
     },
@@ -1521,6 +1539,16 @@ export default {
         })
         .catch(() => {})
     },
+    async sendStatement(row) {
+      if (!row.mailAvailable || this.sendingBill !== null) return
+      this.sendingBill = row.id
+      try {
+        await sendBillingStatement(row.id)
+        this.$message.success('账单邮件已发送')
+      } finally {
+        this.sendingBill = null
+      }
+    },
     async handleRefreshSummary() {
       if (this.summaryRefreshSubmitting || this.summaryRefreshActive || this.summaryRefreshError) return
       this.stopSummaryRefresh()
@@ -1528,7 +1556,6 @@ export default {
       const requestId = this.summaryRefreshRequestId
       this.summaryRefreshSubmitting = true
       this.summaryRefreshError = ''
-      this.summaryRefreshNotify = true
       try {
         const res = await refreshBillingSummary({ summaryDate: this.refreshDate })
         if (requestId !== this.summaryRefreshRequestId) return
@@ -1549,7 +1576,6 @@ export default {
       this.stopSummaryRefresh()
       const requestId = this.summaryRefreshRequestId
       this.summaryRefreshTask = null
-      this.summaryRefreshNotify = false
       this.summaryRefreshError = ''
       try {
         const res = await getLatestBillingSummaryRefresh({ summaryDate: this.refreshDate })
@@ -1582,10 +1608,9 @@ export default {
         this.summaryRefreshTimer = setTimeout(() => this.pollSummaryRefresh(), 1500)
       } else {
         if (task.status === 'SUCCEEDED' && refreshOnSuccess) {
-          if (this.summaryRefreshNotify) this.$message.success(`${task.summaryDate} 汇总已完成，共生成 ${task.summaryCount ?? 0} 条`)
+          this.$message.success([this.summaryRefreshTitle, this.summaryRefreshHint].filter(Boolean).join('。'))
           await this.loadSummaries()
         }
-        this.summaryRefreshNotify = false
       }
     },
     onConfigScopeChange(scope) {
@@ -1624,7 +1649,10 @@ export default {
         }
         let res
         if (this.configForm.billingTarget === 'ENGINE') {
-          res = await listDefinitions({ ...baseParams, ...(query ? { keyword: query } : {}) })
+          const params = { pageNum, pageSize, ...(query ? { keyword: query } : {}) }
+          if (this.configForm.scope === 'GLOBAL') res = await listDefinitions({ ...params, scope: 'GLOBAL' })
+          else if (baseParams.projectId) res = await listProjectDefinitions(baseParams.projectId, params)
+          else res = { data: { records: [], total: 0 } }
         } else if (this.configForm.billingTarget === 'API') {
           res = await listApiConfigs({ pageNum, pageSize, status: 1, ...(query ? { apiName: query } : {}) })
         } else if (this.configForm.billingTarget === 'DB') {

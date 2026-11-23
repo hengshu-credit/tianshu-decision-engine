@@ -21,6 +21,12 @@ public class RuleBillingSummary implements AccountOwnedRecord {
     private LocalDate summaryDate;
     private Long projectId;
     private String projectCode;
+    private Long billingConfigId;
+    private Long requestCount;
+    private Long chargedCount;
+    private BigDecimal billedUnitPrice;
+    @TableField(exist = false)
+    private boolean mailAvailable;
     private String billingCode;
     private String billingTarget;
     private Long targetRefId;

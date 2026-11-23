@@ -250,7 +250,22 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         wrapper.orderByDesc(RuleBillingSummary::getSummaryDate)
                 .orderByAsc(RuleBillingSummary::getProjectCode)
                 .orderByAsc(RuleBillingSummary::getBillingCode);
-        return summaryMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        IPage<RuleBillingSummary> page = summaryMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        var configIds = page.getRecords().stream().map(RuleBillingSummary::getBillingConfigId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (!configIds.isEmpty()) {
+            var enabled = list(new LambdaQueryWrapper<RuleBillingConfig>()
+                    .select(RuleBillingConfig::getId, RuleBillingConfig::getProjectId, RuleBillingConfig::getScope)
+                    .in(RuleBillingConfig::getId, configIds)
+                    .eq(RuleBillingConfig::getStatus, 1).isNotNull(RuleBillingConfig::getBillEmail))
+                    .stream().collect(java.util.stream.Collectors.toMap(RuleBillingConfig::getId, config -> config));
+            for (var row : page.getRecords()) {
+                var config = enabled.get(row.getBillingConfigId());
+                row.setMailAvailable(row.getProjectId() != null && config != null && ("GLOBAL".equals(config.getScope())
+                        || java.util.Objects.equals(row.getProjectId(), config.getProjectId())));
+            }
+        }
+        return page;
     }
 
     public void saveConfigWithDefaults(RuleBillingConfig config) {
@@ -474,6 +489,7 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             RuleBillingRecord record = buildApiRecord(apiConfig, datasource, project, config.getBillingCode(),
                     config.getBillingName(), config.getUnitPrice(), config.getCurrency(), success, costTimeMs,
                     errorMessage, now, config.getTargetRefId());
+            record.setBillingConfigId(config.getId());
             record.setQuantity(resolveQuantity(config.getChargeType(), success, costTimeMs));
             record.setAmount(record.getQuantity().multiply(record.getUnitPrice()).setScale(6, RoundingMode.HALF_UP));
             persistApiBillingRecord(record);

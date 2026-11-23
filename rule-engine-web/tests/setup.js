@@ -356,6 +356,7 @@ vi.mock('@/api/billing', () => ({
   listBillingRecords: vi.fn(),
   listBillingSummaries: vi.fn(),
   refreshBillingSummary: vi.fn(),
+  sendBillingStatement: vi.fn(),
     getBillingSummaryRefreshTask: vi.fn(),
     getLatestBillingSummaryRefresh: vi.fn().mockResolvedValue({ data: null }),
   __esModule: true
