@@ -64,6 +64,7 @@
 </template>
 
 <script>
+import { autoUpdate } from '@floating-ui/dom'
 import AppLoadingIcon from '@/components/common/AppLoadingIcon.vue'
 import ContentReference from '@/components/common/ContentReference.vue'
 import { $emit } from '../utils/gogocodeTransfer'
@@ -105,7 +106,16 @@ export default {
       suggestionPopperOptions: {
         modifiers: [
           { name: 'offset', options: { offset: [0, suggestionGap] } },
-          { name: 'filterSuggestions', enabled: true, phase: 'beforeRead', fn: this.fitSuggestionPanel },
+          {
+            name: 'filterSuggestions', enabled: true, phase: 'beforeRead', fn: this.fitSuggestionPanel,
+            effect({ state, instance }) {
+              // Popper 负责滚动和窗口缩放，另跟踪已打开候选框的输入锚点尺寸与位置变化。
+              if (!state.orderedModifiers.some(modifier => modifier.name === 'eventListeners')) return
+              return autoUpdate(state.elements.reference, state.elements.popper, instance.update, {
+                ancestorResize: false, ancestorScroll: false,
+              })
+            },
+          },
         ],
       },
       dropdownWrap: null,

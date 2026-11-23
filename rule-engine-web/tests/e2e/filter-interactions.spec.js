@@ -146,8 +146,21 @@ test('执行日志规则候选在工具栏换行、滚动和视口变化后紧�
   await page.setViewportSize({ width: 3000, height: 310 })
   await expect(panel).toHaveAttribute('data-popper-placement', 'top-start')
   await expectAttached(page, input)
-  // 换行后查询按钮落到候选层正下方时，改在输入框上方显示。
-  await page.setViewportSize({ width: 2560, height: 900 })
+  // 字体度量决定工具栏的换行断点。先确认查询按钮实际进入下拉区域，再验证向上避让。
+  await page.evaluate(() => document.fonts.ready)
+  let overlapsQuery = false
+  for (const width of [2560, 2240, 1920, 1700, 1600, 1440, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    const [anchor, action, menu] = await Promise.all([
+      input.locator('xpath=ancestor::*[contains(@class,"el-input__wrapper")][1]').boundingBox(),
+      queryButton.boundingBox(), panel.boundingBox(),
+    ])
+    const gap = action.y - anchor.y - anchor.height
+    overlapsQuery = action.x < anchor.x + anchor.width && action.x + action.width > anchor.x &&
+      gap >= 0 && gap < menu.height
+    if (overlapsQuery) break
+  }
+  expect(overlapsQuery, '查询按钮应位于输入框下方的候选区域内').toBe(true)
   await expect(panel).toHaveAttribute('data-popper-placement', 'top-start')
   await expectAttached(page, input)
   await page.setViewportSize({ width: 390, height: 760 })

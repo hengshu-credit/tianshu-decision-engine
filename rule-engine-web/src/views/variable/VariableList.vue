@@ -408,10 +408,6 @@
             <el-table-column type="expand" width="48">
               <template v-slot="{ row: node }">
                 <div v-if="node && node.object" class="object-field-expansion">
-                  <div v-if="paginatedObjectFields(node).some(field => field.children?.length)" class="object-field-expansion__actions">
-                    <el-button link size="small" @click="setObjectFieldExpansion(node, true)">展开全部</el-button>
-                    <el-button link size="small" :disabled="!objectFieldExpandedKeys(node).length" @click="setObjectFieldExpansion(node, false)">收起全部</el-button>
-                  </div>
               <lazy-field-table show-overflow-tooltip
                 :data="paginatedObjectFields(node)"
                 :expanded-keys="objectFieldExpandedKeys(node)"
@@ -3980,13 +3976,6 @@ export default {
     objectFieldExpandedKeys(node) {
       return this.objectFieldExpandMap[node.object.id] || []
     },
-    objectFieldBranchIds(node) {
-      return this.flattenObjectFields(this.paginatedObjectFields(node)).filter(field => field.children && field.children.length).map(field => field.id)
-    },
-    setObjectFieldExpansion(node, expanded) {
-      this.objectFieldExpandMap[node.object.id] = expanded ? this.objectFieldBranchIds(node) : []
-      this.saveCachedState()
-    },
     handleObjectFieldExpandChange(node, field, expanded) {
       const keys = this.objectFieldExpandedKeys(node).filter(id => String(id) !== String(field.id))
       if (expanded) keys.push(field.id)
@@ -5915,12 +5904,6 @@ export default {
   padding-bottom: 6px;
   border-bottom: 1px solid var(--tianshu-border-subtle);
 }
-.object-field-expansion__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-}
 .reference-validation-success {
   display: block;
   color: var(--el-color-success);
@@ -5939,10 +5922,6 @@ export default {
 }
 .data-object-table :deep(.el-table__expanded-cell) {
   padding: 0;
-}
-.object-field-expansion__actions {
-  justify-content: flex-end;
-  padding: 2px 12px;
 }
 .object-field-identity {
   display: flex;
