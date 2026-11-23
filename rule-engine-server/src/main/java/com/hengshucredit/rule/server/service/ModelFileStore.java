@@ -38,6 +38,12 @@ public final class ModelFileStore {
     private final long cacheLimit;
     private final Map<String, byte[]> cache = new LinkedHashMap<>(16, 0.75f, true);
     private long cachedBytes;
+    private final VerifiedFileCache largeFiles = new VerifiedFileCache();
+    @Value("${rule-engine.model.local-file-cache-bytes:1073741824}")
+    private long localFileCacheBytes;
+
+    @jakarta.annotation.PreDestroy
+    void closeLocalCache() { largeFiles.close(); }
 
     public ModelFileStore(String directory, long fileLimit, long cacheLimit, UploadSecurity security) {
         this(directory, fileLimit, cacheLimit, security, "FILESYSTEM", null);
@@ -182,10 +188,36 @@ public final class ModelFileStore {
     }
 
     public byte[] artifactContent(DecisionArtifactPackage pack, byte[] bytes) {
-        boolean models = pack.getComponents().values().stream().anyMatch(c -> "MODEL".equals(c.getMetadata().get("resourceType"))
+        if (!hasStoredModels(pack)) return bytes;
+        if (shared == null) return savePackage(bytes).getBytes(StandardCharsets.UTF_8);
+        Map<String, String> originals = originalDigests(pack);
+        String digest = Sha256Digests.bytes(bytes);
+        String ref = key("packages", "snapshot.zip", digest);
+        shared.put(ref, digest, bytes, true, originals);
+        if (cacheLimit > 0 && bytes.length > cacheLimit / 4) largeFiles.put(ref, bytes, localFileCacheBytes);
+        return ref.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private boolean hasStoredModels(DecisionArtifactPackage pack) {
+        return pack.getComponents().values().stream().anyMatch(c -> "MODEL".equals(c.getMetadata().get("resourceType"))
                 || c.getPath().startsWith("resources/versions/MODEL-")
                 || c.getPath().startsWith("resources/versions/MODEL_OUTPUT-"));
-        return models ? savePackage(bytes).getBytes(StandardCharsets.UTF_8) : bytes;
+    }
+
+    public boolean storesSharedArchive(DecisionArtifactPackage pack) { return shared != null && hasStoredModels(pack); }
+
+    public byte[] storeArchive(DecisionArtifactPackage pack, Path archive, String digest, int length) {
+        String ref = key("packages", "snapshot.zip", digest);
+        shared.putArchive(ref, digest, archive, length, originalDigests(pack));
+        return ref.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private Map<String, String> originalDigests(DecisionArtifactPackage pack) {
+        Map<String, String> originals = new LinkedHashMap<>();
+        for (var component : pack.getComponents().values()) {
+            if ("MODEL".equals(component.getMetadata().get("resourceType"))) originals.put(component.getPath(), component.digest());
+        }
+        return originals;
     }
 
     public byte[] model(Long projectId, String fileName, String content, String expectedDigest) {
@@ -292,6 +324,10 @@ public final class ModelFileStore {
             byte[] found = cache.get(ref);
             if (found != null) return found.clone();
         }
+        if (shared != null && cacheLimit > 0 && localFileCacheBytes > 0) {
+            byte[] local = largeFiles.read(ref, digest);
+            if (local != null) return local;
+        }
         try {
             long limit = ref.startsWith(PREFIX + "models/") ? fileLimit : 512L * 1024 * 1024;
             byte[] bytes;
@@ -302,7 +338,9 @@ public final class ModelFileStore {
                 bytes = readFile(ref, limit);
             }
             checkDigest(bytes, digest);
-            if (bytes.length <= cacheLimit) synchronized (cache) {
+            if (shared != null && cacheLimit > 0 && bytes.length > cacheLimit / 4 && localFileCacheBytes >= bytes.length)
+                largeFiles.put(ref, bytes, localFileCacheBytes);
+            else if (bytes.length <= cacheLimit) synchronized (cache) {
                 if (cache.put(ref, bytes.clone()) == null) cachedBytes += bytes.length;
                 while (cachedBytes > cacheLimit) {
                     var iterator = cache.entrySet().iterator();

@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.governance;
 
+import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.server.service.BuiltinFunctionCatalog;
 
 import com.alibaba.fastjson.JSON;
@@ -519,6 +520,17 @@ public class GovernanceApprovalService {
     public GovernanceApprovalRequest submit(Long requestId,
                                             GovernanceSubmitRequest submit,
                                             String actor) {
+        return submit(requestId, submit, actor, null);
+    }
+
+    /** Used only by the native rule submission, immediately after its locked preflight. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public GovernanceApprovalRequest submitReviewedRule(Long requestId, GovernanceSubmitRequest submit, String actor,
+                                                         RuleRevision reviewed) {
+        return submit(requestId, submit, actor, java.util.Objects.requireNonNull(reviewed));
+    }
+
+    private GovernanceApprovalRequest submit(Long requestId, GovernanceSubmitRequest submit, String actor, RuleRevision reviewed) {
         GovernanceApprovalRequest request = requireMutableRequest(requestId);
         requireResourcePermission(request.getResourceType(), "submit");
         requireStatus(request, GovernanceRequestStatus.EDITING);
@@ -534,7 +546,7 @@ public class GovernanceApprovalService {
             normalized = saveWorkspace(request, normalized, actor);
         }
         requireProductionChange(request, normalized, findResource(request.getResourceType(), request.getResourceId()));
-        GovernancePreflightReport report = evaluate(request, normalized);
+        GovernancePreflightReport report = reviewed == null ? evaluate(request, normalized) : evaluate(request, normalized, reviewed);
         if (!report.valid()) {
             throw new GovernanceStateException(
                     "GOVERNANCE_PREFLIGHT_FAILED",
@@ -1199,10 +1211,15 @@ public class GovernanceApprovalService {
     protected GovernancePreflightReport evaluate(
             GovernanceApprovalRequest request,
             ResourceSnapshot snapshot) {
-        GovernedResourceAdapter adapter =
-                requireAdapter(request.getResourceType());
-        List<GovernanceIssue> issues = new ArrayList<>(
-                adapter.validate(snapshot, request.getAction()));
+        return evaluate(request, snapshot, null);
+    }
+
+    private GovernancePreflightReport evaluate(GovernanceApprovalRequest request, ResourceSnapshot snapshot,
+                                                RuleRevision reviewed) {
+        GovernedResourceAdapter adapter = requireAdapter(request.getResourceType());
+        List<GovernanceIssue> issues = new ArrayList<>(reviewed != null && adapter instanceof RuleGovernedResourceAdapter rules
+                ? rules.validateSubmitted(snapshot, request.getAction(), reviewed)
+                : adapter.validate(snapshot, request.getAction()));
         for (var issue : codeIssues(request, snapshot))
             issues.add(GovernanceIssue.error("RESERVED_CONTENT_CODE", issue.message(), request.getResourceType(),
                     request.getResourceId(), issue.path()));

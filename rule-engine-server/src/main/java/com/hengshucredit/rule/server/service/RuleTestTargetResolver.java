@@ -38,6 +38,15 @@ public class RuleTestTargetResolver {
 
     public Target resolve(Long definitionId, RuleTestExecutionSource source, String modelJson,
                           String modelType, Long executionProjectId) {
+        return resolve(definitionId, source, modelJson, modelType, executionProjectId, false);
+    }
+
+    Target resolveReferenceCatalog(Long definitionId, RuleTestExecutionSource source) {
+        return resolve(definitionId, source, null, null, null, true);
+    }
+
+    private Target resolve(Long definitionId, RuleTestExecutionSource source, String modelJson,
+                           String modelType, Long executionProjectId, boolean catalog) {
         if (source == null) throw new IllegalArgumentException("请明确选择测试来源");
         source.validate(modelJson);
         RuleDefinition definition = definitionService.getById(definitionId);
@@ -112,7 +121,8 @@ public class RuleTestTargetResolver {
         RuleFieldAnalyzer.ResolvedFields fields = fieldSnapshotResolver.resolveRevision(revision, artifact);
         var error = fields.getDiagnostics().stream().filter(issue -> "ERROR".equals(issue.getSeverity())).findFirst();
         if (error.isPresent()) throw new IllegalArgumentException("所选修订无法执行：" + error.get().getMessage());
-        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = runtimeSnapshots.loadFromArtifact(artifact, definitionId, projectId);
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = catalog ? runtimeSnapshots.loadVerifiedMetadata(artifact, definitionId, projectId)
+                : runtimeSnapshots.loadFromArtifact(artifact, definitionId, projectId);
         if (snapshot.getCompiledScript() == null || snapshot.getCompiledScript().isBlank()
                 || snapshot.getModelJson() == null || snapshot.getModelJson().isBlank())
             throw new IllegalArgumentException("所选修订的制品缺少完整执行内容，不能改用当前规则执行");

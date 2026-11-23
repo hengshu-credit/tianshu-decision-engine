@@ -24,6 +24,19 @@ public class ModelFileStoreTest {
         return new ModelFileStore(root.toString(), 1024 * 1024, 0, scanner);
     }
 
+    @Test public void localFileCacheEvictsByBytesAndDiscardsCorruptHits() {
+        try (var files = new VerifiedFileCache()) {
+            byte[] bytes = {1, 2, 3};
+            String sha = com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(bytes);
+            files.put("one", bytes, 3);
+            assertArrayEquals(bytes, files.read("one", sha));
+            files.put("two", bytes, 3);
+            assertNull(files.read("one", sha));
+            assertNull(files.read("two", "wrong"));
+            assertNull(files.read("two", sha));
+        }
+    }
+
     @Test public void originalSurvivesConcurrentUploadsAndPinsHistoricalBytes() throws Exception {
         Path root = temp.getRoot().toPath();
         var store = store(root, "CLEAN");

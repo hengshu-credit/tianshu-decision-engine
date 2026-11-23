@@ -32,7 +32,7 @@ import java.util.zip.InflaterInputStream;
 @Component
 public final class MysqlModelBlobStore {
     private static final int PACKET_OVERHEAD = 256;
-    private static final int READ_WINDOW = 1024 * 1024;
+    private static final int READ_WINDOW = 8 * 1024 * 1024;
     private final JdbcTemplate db;
     @org.springframework.beans.factory.annotation.Value("${rule-engine.model.write-payload-limit:0}")
     private long writePayloadLimit;
@@ -55,20 +55,50 @@ public final class MysqlModelBlobStore {
     }
 
     public void put(String ref, String digest, byte[] data, boolean archive) {
+        put(ref, digest, data, archive, java.util.Map.of());
+    }
+
+    void put(String ref, String digest, byte[] data, boolean archive, java.util.Map<String, String> modelDigests) {
         if (data.length == 0 || !Sha256Digests.bytes(data).equals(digest)) throw new IllegalArgumentException("共享文件为空或摘要不匹配");
+        put(ref, digest, data.length, archive, sink -> {
+            if (archive) writeArchive(data, sink, modelDigests);
+            else deflate(data, sink);
+        });
+    }
+
+    void putArchive(String ref, String digest, java.nio.file.Path archive, int length, java.util.Map<String, String> modelDigests) {
+        put(ref, digest, length, true, sink -> {
+            try (var zip = new ZipFile(archive.toFile()); var file = new java.io.RandomAccessFile(archive.toFile(), "r")) {
+                if (file.length() != length) throw new IOException("发布制品长度已变化");
+                MessageDigest archiveDigest = sha256();
+                archiveSegments(zip, length, modelDigests, (start, end, original) -> {
+                    byte[] segment = new byte[end - start];
+                    file.seek(start);
+                    file.readFully(segment);
+                    archiveDigest.update(segment);
+                    if (original == null || !sink.reuseOriginal(original, segment, 0, segment.length))
+                        sink.append(segment, 0, segment.length);
+                });
+                if (!HexFormat.of().formatHex(archiveDigest.digest()).equals(digest)) throw new IOException("发布制品摘要已变化");
+            }
+        });
+    }
+
+    @FunctionalInterface private interface WriteParts { void write(PayloadWriter writer) throws IOException; }
+
+    private void put(String ref, String digest, int length, boolean archive, WriteParts parts) {
         write.executeWithoutResult(tx -> {
             db.update("INSERT INTO rule_file_object(digest,byte_size,encoding) VALUES(?,?,?) ON DUPLICATE KEY UPDATE digest=rule_file_object.digest",
-                    digest,data.length,archive ? "IDENTITY" : "DEFLATE");
+                    digest,length,archive ? "IDENTITY" : "DEFLATE");
             var header = db.queryForMap("SELECT part_count,byte_size FROM rule_file_object WHERE digest=? FOR UPDATE", digest);
-            if (((Number)header.get("byte_size")).longValue()!=data.length) throw new IllegalStateException("共享文件摘要与长度不匹配");
+            if (((Number)header.get("byte_size")).longValue()!=length) throw new IllegalStateException("共享文件摘要与长度不匹配");
             if (((Number)header.get("part_count")).intValue()==0) {
                 long packet = db.queryForObject("SELECT @@session.max_allowed_packet", Long.class);
                 long budget = packet - PACKET_OVERHEAD;
                 if (writePayloadLimit > 0) budget = Math.min(budget, writePayloadLimit);
                 PayloadWriter sink = new PayloadWriter(digest, Math.toIntExact(budget));
                 try {
-                    if (archive) writeArchive(data,sink);
-                    else deflate(data,sink);
+                    parts.write(sink);
                 } catch (IOException e) { throw new IllegalStateException("无法写入共享文件",e); }
                 db.update("UPDATE rule_file_object SET stored_size=?,part_count=? WHERE digest=?",sink.total,sink.count,digest);
             }
@@ -88,26 +118,37 @@ public final class MysqlModelBlobStore {
         sink.append(payload, 0, payload.length);
     }
 
-    private void writeArchive(byte[] bytes, PayloadWriter sink) throws IOException {
+    private void writeArchive(byte[] bytes, PayloadWriter sink, java.util.Map<String, String> modelDigests) throws IOException {
+        try (var zip = new ZipFile(new SeekableInMemoryByteChannel(bytes))) {
+            archiveSegments(zip, bytes.length, modelDigests, (start, end, original) -> {
+                if (original == null || !sink.reuseOriginal(original, bytes, start, end))
+                    sink.append(bytes, start, end-start);
+            });
+        }
+    }
+
+    @FunctionalInterface private interface SegmentWriter { void write(int start, int end, String original) throws IOException; }
+
+    private void archiveSegments(ZipFile zip, int length, java.util.Map<String,String> modelDigests, SegmentWriter writer) throws IOException {
         // Keep every original ZIP byte, including metadata and signatures. Split at embedded model boundaries
         // so an identical compressed payload reuses the same chunks even if other components change.
         SortedSet<Integer> boundaries = new TreeSet<>();
-        try (var zip = new ZipFile(new SeekableInMemoryByteChannel(bytes))) {
-            var entries = zip.getEntriesInPhysicalOrder();
-            while (entries.hasMoreElements()) {
-                var entry = entries.nextElement();
-                String name = entry.getName().toLowerCase(Locale.ROOT);
-                if (!name.endsWith(".pmml") && !name.endsWith(".onnx")) continue;
-                long start = entry.getDataOffset(), size = entry.getCompressedSize();
-                if (start<0 || size<0 || start>bytes.length || size>bytes.length-start) throw new IOException("制品中的模型数据范围无效");
-                boundaries.add((int)start);
-                boundaries.add((int)(start+size));
-            }
+        var originalAt = new java.util.HashMap<Integer, String>();
+        var entries = zip.getEntriesInPhysicalOrder();
+        while (entries.hasMoreElements()) {
+            var entry = entries.nextElement();
+            String name = entry.getName().toLowerCase(Locale.ROOT);
+            if (!name.endsWith(".pmml") && !name.endsWith(".onnx")) continue;
+            long start = entry.getDataOffset(), size = entry.getCompressedSize();
+            if (start<0 || size<0 || start>length || size>length-start) throw new IOException("制品中的模型数据范围无效");
+            if (modelDigests.containsKey(entry.getName())) originalAt.put((int)start, modelDigests.get(entry.getName()));
+            boundaries.add((int)start);
+            boundaries.add((int)(start+size));
         }
-        boundaries.add(bytes.length);
+        boundaries.add(length);
         int start = 0;
         for (int end : boundaries) {
-            sink.append(bytes, start, end-start);
+            writer.write(start, end, originalAt.get(start));
             start = end;
         }
     }
@@ -134,6 +175,27 @@ public final class MysqlModelBlobStore {
             }
         }
 
+        // An earlier node may have used a smaller packet budget. Reuse its actual chunks
+        // only after matching the exact compressed bytes now present in this ZIP entry.
+        private boolean reuseOriginal(String digest, byte[] bytes, int start, int end) {
+            var chunks = db.query("""
+                    SELECT c.digest,OCTET_LENGTH(c.content) FROM rule_file_object_part p
+                    JOIN rule_file_chunk c ON c.digest=p.chunk_digest
+                    WHERE p.object_digest=? ORDER BY p.part_no
+                    """, (rs,n) -> new Payload(rs.getString(1), rs.getLong(2)), digest);
+            int position = start;
+            for (Payload chunk : chunks) {
+                if (chunk.size <= 0 || chunk.size > end - position) return false;
+                MessageDigest md = sha256();
+                md.update(bytes, position, (int)chunk.size);
+                if (!HexFormat.of().formatHex(md.digest()).equals(chunk.digest)) return false;
+                position += (int)chunk.size;
+            }
+            if (position != end || chunks.isEmpty()) return false;
+            for (Payload chunk : chunks) link(chunk.digest, (int)chunk.size);
+            return true;
+        }
+
         private void save(byte[] bytes, int offset, int size) {
             var md = sha256();
             md.update(bytes, offset, size);
@@ -150,6 +212,10 @@ public final class MysqlModelBlobStore {
                     return null;
                 });
             }
+            link(hash, size);
+        }
+
+        private void link(String hash, int size) {
             db.update("INSERT INTO rule_file_object_part(object_digest,part_no,chunk_digest) VALUES(?,?,?)",object,count,hash);
             count++;
             total += size;

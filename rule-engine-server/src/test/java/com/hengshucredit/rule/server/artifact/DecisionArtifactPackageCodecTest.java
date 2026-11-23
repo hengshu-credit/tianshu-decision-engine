@@ -73,6 +73,26 @@ public class DecisionArtifactPackageCodecTest {
         Assert.assertTrue(error.getMessage().contains("解压大小超过限制"));
     }
 
+    @Test
+    public void fieldProjectionVerifiesAndDiscardsModelWeights() {
+        DecisionArtifactPackage pack = new DecisionArtifactPackage();
+        pack.addComponent("rule/fields.json", "application/json", bytes("[]"));
+        pack.addComponent("models/face.onnx", "application/octet-stream", bytes("weights"), Map.of("resourceType", "MODEL"));
+        var encoded = codec.encodePackage(pack, true);
+        var paths = java.util.Set.of("rule/fields.json");
+        var fields = codec.decode(encoded.bytes(), paths);
+        Assert.assertEquals(encoded.artifactDigest(), fields.getArtifactDigest());
+        Assert.assertEquals(paths, fields.getArtifactPackage().getComponents().keySet());
+        var catalog = codec.decodeCatalog(encoded.bytes());
+        var model = catalog.getArtifactPackage().getComponent("models/face.onnx");
+        Assert.assertEquals("MODEL", model.getMetadata().get("resourceType"));
+        Assert.assertEquals(Sha256Digests.bytes(bytes("weights")), model.digest());
+        Assert.assertThrows(IllegalStateException.class, model::getContent);
+        byte[] corrupt = ZipTestSupport.replaceEntry(encoded.bytes(), "models/face.onnx", bytes("changed"));
+        Assert.assertThrows(IllegalArgumentException.class, () -> codec.decode(corrupt, paths));
+        Assert.assertThrows(IllegalArgumentException.class, () -> codec.decodeCatalog(corrupt));
+    }
+
     private static byte[] bytes(String value) {
         return value.getBytes(StandardCharsets.UTF_8);
     }

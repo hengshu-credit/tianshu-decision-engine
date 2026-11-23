@@ -69,3 +69,4 @@ export function parseMetadataResponse(data) {
 }
 
 export const metadataResponse = { transformResponse: [parseMetadataResponse] }
+export const publicationRequest = { ...metadataResponse, timeout: 180000 }

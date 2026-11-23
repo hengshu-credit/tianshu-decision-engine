@@ -941,7 +941,7 @@ public class RuleLifecycleService {
     }
 
     protected DecisionArtifact buildArtifact(Long revisionId, String actor, RulePreflightValidationService.Analysis analysis) {
-        return artifactService.buildApprovedArtifact(revisionId, actor, analysis);
+        return artifactService.buildApprovedArtifact(revisionId, actor, analysis, false);
     }
 
     protected void activateArtifact(RuleRevision revision, String actor) {
@@ -950,9 +950,9 @@ public class RuleLifecycleService {
         if (definition == null || artifact == null) {
             throw new IllegalStateException("发布激活所需的规则或制品不存在");
         }
-        DecisionArtifactService.RuntimeProjection projection =
-                artifactService.loadRuntimeProjection(artifact.getId());
-        scriptPreparationService.prepareArtifact(artifact.getId(), definition.getId(), definition.getProjectId());
+        var prepared = scriptPreparationService.prepareForActivation(artifact, definition.getId(), definition.getProjectId());
+        var projection = new DecisionArtifactService.RuntimeProjection(prepared.getModelJson(), prepared.getCompiledScript(),
+                prepared.getOpenApiConfigJson(), revision.getInputSchemaJson(), revision.getOutputSchemaJson());
         RuleDefinitionVersion version = new RuleDefinitionVersion();
         version.setModelJson(projection.getModelJson());
         version.setCompiledScript(projection.getCompiledScript());

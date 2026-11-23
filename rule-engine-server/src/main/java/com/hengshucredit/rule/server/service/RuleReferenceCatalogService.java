@@ -81,7 +81,7 @@ public class RuleReferenceCatalogService {
 
         try {
             // Namespace proof controls re-editing only. The selected artifact is the historical fact.
-            RuleTestTargetResolver.Target target = targetResolver.resolve(definitionId, source, null, null, null);
+            RuleTestTargetResolver.Target target = targetResolver.resolveReferenceCatalog(definitionId, source);
             catalog.setExecutionIdentity(target.identity()); catalog.setSelectedArtifactImported(target.snapshot().isImported());
             projectSnapshot(catalog, target.snapshot());
             if (accessGuard != null) {

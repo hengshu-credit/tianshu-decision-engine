@@ -729,7 +729,8 @@ public class RuleDependencyClosureService {
             if (snapshot.get("unavailableReasons") instanceof List<?> reasons && !reasons.isEmpty()) {
                 throw new IllegalArgumentException("模型版本依赖未完整冻结: " + reasons);
             }
-            var decoded = new DecisionArtifactPackageCodec().decode(ModelFileStore.snapshotBytes(modelFiles, snapshot));
+            var codec = new DecisionArtifactPackageCodec();
+            var decoded = codec.decodeCatalog(ModelFileStore.snapshotBytes(modelFiles, snapshot));
             if (!decoded.getArtifactDigest().equals(snapshot.get("artifactDigest"))
                     || !decoded.getPackageDigest().equals(snapshot.get("packageDigest"))) {
                 throw new IllegalArgumentException("模型版本制品摘要不匹配");
@@ -748,8 +749,12 @@ public class RuleDependencyClosureService {
                         throw new IllegalArgumentException("同一模型依赖出现不同版本: " + id);
                     }
                 }
-                ArtifactDependency frozen = new ArtifactDependency(key, type, id, number, component.getPath(), component.getMediaType(),
-                        String.valueOf(metadata.get("embeddingMode")), Sha256Digests.bytes(component.getContent()), component.getContent(), metadata);
+                ArtifactDependency frozen = ArtifactDependency.frozen(key, type, id, number,
+                        String.valueOf(metadata.get("embeddingMode")), component, metadata,
+                        "MODEL".equals(type) ? () -> codec.readVerifiedModel(ModelFileStore.snapshotBytes(modelFiles, snapshot), component)
+                                : component::immutableContent,
+                        "MODEL".equals(type) ? sink -> codec.writeVerifiedModel(ModelFileStore.snapshotBytes(modelFiles, snapshot), component, sink)
+                                : null);
                 mergeDependency(frozen, dependencies);
             }
         } catch (RuntimeException error) {

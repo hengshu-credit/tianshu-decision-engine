@@ -108,7 +108,7 @@ public class PublishedRuleFieldSnapshotResolver {
         DecisionArtifactPackageCodec.DecodedPackage decoded;
         try {
             // 复用执行路径已有的有界解包缓存；仍核对本次实际字节，字段对象在下方重新解析。
-            decoded = runtimeSnapshots.decodeVerified(artifact);
+            decoded = runtimeSnapshots.decodeVerified(artifact, Set.of(INPUT_FIELDS_PATH, OUTPUT_FIELDS_PATH, FIELD_RESOLUTION_PATH));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return invalid(published, "字段快照制品包校验失败");
         }

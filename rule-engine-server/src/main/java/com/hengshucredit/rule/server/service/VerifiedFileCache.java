@@ -1,0 +1,74 @@
+package com.hengshucredit.rule.server.service;
+
+import com.hengshucredit.rule.server.artifact.Sha256Digests;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.util.LinkedHashMap;
+
+/** Bounded local copies of immutable database files too large for the heap cache. */
+final class VerifiedFileCache implements AutoCloseable {
+    private record Entry(FileChannel file, int size) { }
+    private final LinkedHashMap<String, Entry> entries = new LinkedHashMap<>(16, 0.75f, true);
+    private long bytes;
+
+    synchronized byte[] read(String key, String digest) {
+        Entry entry = entries.get(key);
+        if (entry == null) return null;
+        try {
+            byte[] result = new byte[entry.size()];
+            ByteBuffer buffer = ByteBuffer.wrap(result);
+            while (buffer.hasRemaining()) {
+                if (entry.file().read(buffer, buffer.position()) <= 0) break;
+            }
+            if (!buffer.hasRemaining() && Sha256Digests.bytes(result).equals(digest)) return result;
+        } catch (IOException unavailable) {
+            // The authoritative object can still be read from MySQL.
+        }
+        remove(key);
+        return null;
+    }
+
+    synchronized void put(String key, byte[] content, long limit) {
+        if (content.length == 0 || content.length > limit || entries.containsKey(key)) return;
+        while (entries.size() >= 64 || !entries.isEmpty() && bytes > limit - content.length) remove(entries.keySet().iterator().next());
+        Path path = null;
+        FileChannel file = null;
+        try {
+            path = Files.createTempFile("tianshu-verified-", ".cache");
+            file = FileChannel.open(path, StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.DELETE_ON_CLOSE);
+            var buffer = ByteBuffer.wrap(content);
+            while (buffer.hasRemaining()) file.write(buffer);
+            entries.put(key, new Entry(file, content.length));
+            bytes += content.length;
+            file = null; // Ownership passes to the LRU until eviction or shutdown.
+        } catch (IOException unavailable) {
+            // A full or read-only temporary directory only disables this cache write.
+        } finally {
+            if (file != null) close(file);
+            if (path != null && !entries.containsKey(key)) {
+                try { Files.deleteIfExists(path); } catch (IOException ignored) { }
+            }
+        }
+    }
+
+    private void remove(String key) {
+        Entry entry = entries.remove(key);
+        bytes -= entry.size();
+        close(entry.file());
+    }
+
+    private static void close(FileChannel file) {
+        try { file.close(); } catch (IOException ignored) { }
+    }
+
+    @Override public synchronized void close() {
+        entries.values().forEach(entry -> close(entry.file()));
+        entries.clear();
+        bytes = 0;
+    }
+}

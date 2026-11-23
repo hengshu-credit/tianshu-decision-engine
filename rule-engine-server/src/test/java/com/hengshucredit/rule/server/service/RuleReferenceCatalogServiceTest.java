@@ -143,7 +143,7 @@ public class RuleReferenceCatalogServiceTest {
                 @Override public NamespaceProof inspectNamespace(RuleDefinition current, String type, Long id) { return new NamespaceProof(foreignOrigin, foreignOrigin ? revision : null); }
             });
             ReflectionTestUtils.setField(service, "targetResolver", new RuleTestTargetResolver() {
-                @Override public Target resolve(Long id, com.hengshucredit.rule.model.dto.RuleTestExecutionSource source, String json, String type, Long project) {
+                @Override public Target resolveReferenceCatalog(Long id, com.hengshucredit.rule.model.dto.RuleTestExecutionSource source) {
                     resolvedTargets++; assertEquals("201", source.getSourceId());
                     if (invalidArtifact) throw new IllegalArgumentException("制品摘要不一致");
                     var identity = new RuleTestExecutionIdentity(); identity.setDefinitionId("101"); identity.setSourceType("REVISION"); identity.setSourceId("201");

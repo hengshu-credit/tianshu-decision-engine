@@ -31,7 +31,7 @@ public class RuleScriptPreparationServiceTest {
         var snapshot = new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
         ReflectionTestUtils.setField(snapshot, "compiledScript", "return versioned();");
         ReflectionTestUtils.setField(service, "snapshots", new ArtifactRuntimeSnapshotService() {
-            @Override public RuntimeSnapshot load(Long artifact, Long definition, Long project) { return snapshot; }
+            @Override public RuntimeSnapshot loadVerifiedMetadata(Long artifact, Long definition, Long project) { return snapshot; }
         });
         assertThrows(IllegalStateException.class, () -> service.prepareArtifact(1L, 2L, 3L));
         snapshot.getFunctions().add(function);
@@ -47,7 +47,7 @@ public class RuleScriptPreparationServiceTest {
         snapshot.getVariables().add(constant);
         ReflectionTestUtils.setField(snapshot, "compiledScript", "LIMIT = 1;");
         ReflectionTestUtils.setField(service, "snapshots", new ArtifactRuntimeSnapshotService() {
-            @Override public RuntimeSnapshot load(Long artifact, Long definition, Long project) { return snapshot; }
+            @Override public RuntimeSnapshot loadVerifiedMetadata(Long artifact, Long definition, Long project) { return snapshot; }
         });
         assertThrows(IllegalStateException.class, () -> service.prepareArtifact(1L, 2L, 3L));
         int[] calls = {0};

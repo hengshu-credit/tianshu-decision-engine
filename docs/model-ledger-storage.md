@@ -13,6 +13,8 @@
 
 上传先经过真实扫描和模型格式校验，再按内容摘要在事务中安装。并发写入相同文件由数据库唯一键与行锁串行化。读取时在同一 BLOB 上按小窗口传输，依次核对载荷摘要，最后校验解压长度与原始文件摘要。每个 JVM 的字节缓存和运行时模型用于加速执行，Redis 传递发布通知。清空缓存、重启容器或更换宿主机后仍能从同一管理库恢复。[文件仓库](../rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/ModelFileStore.java) · [MySQL 二进制读写](../rule-engine-server/src/main/java/com/hengshucredit/rule/server/service/MysqlModelBlobStore.java)
 
+规则制品复用已校验的模型压缩块，即使原件写入时使用了不同的分块大小，也会逐块核对摘要。MySQL 模式下，大于堆缓存预算四分之一的文件可使用进程临时目录作为读取缓存。每个 server 默认最多使用 1 GiB，命中时校验 SHA-256，淘汰或进程退出时释放文件。设置 Spring 属性 `rule-engine.model.local-file-cache-bytes=0` 可停用临时文件缓存。
+
 原件只按内容保存一份。历史审批证据、签名 ZIP 和向外部系统导出的可携带制品有各自的保真要求。ZIP 按嵌入的 PMML/ONNX 条目边界划分，可复用相同的压缩数据块，取回时包摘要保持不变。旧签名包中内嵌的 Base64 JSON 或不同编码的历史证据仍可能占用空间。数据库副本和备份也属于独立的恢复副本。
 
 ## 部署与迁移

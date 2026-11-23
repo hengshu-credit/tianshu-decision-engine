@@ -39,16 +39,16 @@ describe('definition API', () => {
       url: '/rule/definition/16/revisions/draft', method: 'post'
     })
     expect(request).toHaveBeenNthCalledWith(2, {
-      ...metadataResponse,
+      ...metadataResponse, timeout: 180000,
       url: '/rule/definition/16/revisions/3/preflight', method: 'post'
     })
     expect(request).toHaveBeenNthCalledWith(3, {
-      ...metadataResponse,
+      ...metadataResponse, timeout: 180000,
       url: '/rule/definition/16/revisions/3/approve', method: 'post',
       data: { forcePublishReason: '兼容窗口已通知' }
     })
     expect(request).toHaveBeenNthCalledWith(4, {
-      ...metadataResponse,
+      ...metadataResponse, timeout: 180000,
       url: '/rule/definition/16/revisions/3/publish', method: 'post',
       data: { comment: '发布' }
     })
@@ -108,7 +108,7 @@ describe('definition API', () => {
     await getDesignerCompileTask(16, 'task-1')
 
     expect(request).toHaveBeenNthCalledWith(1, {
-      url: '/rule/definition/16/designer/compile', method: 'post', headers: { Prefer: 'wait=1' }, data: payload, acceptExecutionFailure: true
+      url: '/rule/definition/16/designer/compile', method: 'post', headers: { Prefer: 'wait=1' }, timeout: 180000, data: payload, acceptExecutionFailure: true
     })
     expect(request).toHaveBeenNthCalledWith(2, {
       url: '/rule/definition/16/designer/compile/task-1', method: 'get', acceptExecutionFailure: true

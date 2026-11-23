@@ -133,9 +133,18 @@ public class RuleVersionBindingService {
     }
 
     public List<Map<String, Object>> publishedVersions(Long definitionId) {
+        return publishedVersions(definitionId, true);
+    }
+
+    public List<Map<String, Object>> publishedVersions(Long definitionId, boolean includeFields) {
         List<Map<String, Object>> result = new ArrayList<>();
         Map<Long, RuleDefinitionVersion> snapshots = new HashMap<>();
-        history(definitionId).forEach(value -> snapshots.put(value.getId(), value));
+        for (RuleDefinitionVersion version : versionMapper.selectList(new LambdaQueryWrapper<RuleDefinitionVersion>()
+                .select(RuleDefinitionVersion::getId, RuleDefinitionVersion::getRevisionId, RuleDefinitionVersion::getArtifactId,
+                        RuleDefinitionVersion::getArtifactDigest, RuleDefinitionVersion::getPublishTime)
+                .eq(RuleDefinitionVersion::getDefinitionId, definitionId))) {
+            snapshots.put(version.getId(), version);
+        }
         for (RuleVersionBinding binding : bindings(definitionId)) {
             RuleDefinitionVersion snapshot = snapshots.get(binding.getSnapshotId());
             if (snapshot == null || !Integer.valueOf(1).equals(binding.getStatus())) continue;
@@ -145,7 +154,7 @@ public class RuleVersionBindingService {
             row.put("revisionId", snapshot.getRevisionId()); row.put("publishTime", snapshot.getPublishTime());
             boolean available = snapshot.getArtifactId() != null && snapshot.getRevisionId() != null;
             row.put("available", available);
-            if (available && fieldSnapshotResolver != null) {
+            if (includeFields && available && fieldSnapshotResolver != null) {
                 RulePublished published = new RulePublished();
                 published.setDefinitionId(definitionId); published.setRevisionId(snapshot.getRevisionId());
                 published.setArtifactId(snapshot.getArtifactId()); published.setArtifactDigest(snapshot.getArtifactDigest());

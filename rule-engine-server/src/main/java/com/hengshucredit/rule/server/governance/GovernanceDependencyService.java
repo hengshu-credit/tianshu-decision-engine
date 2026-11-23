@@ -264,7 +264,9 @@ public class GovernanceDependencyService {
 
     protected GovernedResourceVersion findVersion(Long versionId) {
         return versionMapper == null || versionId == null
-                ? null : versionMapper.selectById(versionId);
+                ? null : versionMapper.selectOne(new LambdaQueryWrapper<GovernedResourceVersion>()
+                        .select(GovernedResourceVersion::getId, GovernedResourceVersion::getSnapshotDigest)
+                        .eq(GovernedResourceVersion::getId, versionId));
     }
 
     private GovernancePreflightReport.ResolvedDependency resolve(

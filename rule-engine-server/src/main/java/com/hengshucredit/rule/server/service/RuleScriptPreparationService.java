@@ -45,7 +45,17 @@ public class RuleScriptPreparationService implements ApplicationRunner {
     private String lastWarmupFailureMessage;
 
     public QLExpressEngine.PreparedScript prepareArtifact(Long artifactId, Long definitionId, Long projectId) {
-        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = snapshots.load(artifactId, definitionId, projectId);
+        return prepareSnapshot(snapshots.loadVerifiedMetadata(artifactId, definitionId, projectId));
+    }
+
+    ArtifactRuntimeSnapshotService.RuntimeSnapshot prepareForActivation(com.hengshucredit.rule.model.entity.DecisionArtifact artifact,
+                                                                       Long definitionId, Long projectId) {
+        var snapshot = snapshots.loadVerifiedMetadata(artifact, definitionId, projectId);
+        prepareSnapshot(snapshot);
+        return snapshot;
+    }
+
+    private QLExpressEngine.PreparedScript prepareSnapshot(ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
         runtimeInvoker.register(engine.getRunner());
         var bindings = functionRegistrar.prepareFunctions(snapshot.getFunctions(), engine.getRunner());
         var prepared = engine.prepare(snapshot.getCompiledScript(), constantNames(snapshot.getVariables()));
