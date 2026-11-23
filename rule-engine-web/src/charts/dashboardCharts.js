@@ -169,7 +169,7 @@ export function regionalApplicationOption(regions = [], options = {}) {
     return cumulative
   })
   return {
-    color: palette.chartColors.slice(0, 3),
+    color: [palette.primary, '#DB2777', palette.primaryLight3],
     tooltip: {
       ...tooltip(palette),
       renderMode: 'richText',
@@ -216,7 +216,7 @@ export function regionalApplicationOption(regions = [], options = {}) {
     },
     series: [
       { name: '进件数', type: 'bar', xAxisIndex: 0, data: counts, barMaxWidth: 24, itemStyle: { borderRadius: [0, 5, 5, 0] } },
-      { name: '占比', type: 'line', xAxisIndex: 1, data: rates, smooth: false, symbol: 'circle', symbolSize: 6 },
+      { name: '占比', type: 'line', xAxisIndex: 1, data: rates, smooth: false, symbol: 'circle', symbolSize: 6, lineStyle: { type: 'dashed' } },
       { name: '累计占比', type: 'line', xAxisIndex: 1, data: cumulativeRates, smooth: false, symbol: 'none', areaStyle: { opacity: 0.16 } }
     ]
   }

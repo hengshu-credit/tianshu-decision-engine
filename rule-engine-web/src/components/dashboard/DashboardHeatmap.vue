@@ -51,7 +51,7 @@ const ready = ref(false)
 const error = ref('')
 const hovered = shallowRef(null)
 const panelOnRight = ref(false)
-const worldSource = { label: '本地全球边界', url: 'https://github.com/JayMuShui/chinese-global-compliant-geodata' }
+const worldSource = { label: '本地全球边界', url: 'https://github.com/JayMuShui/chinese-global-compliant-geodata', note: '部分沿海陆地补充自 geoBoundaries gbOpen · CC BY 4.0' }
 const hoverSource = computed(() => hovered.value?.properties.contextCountry ? worldSource : props.source || worldSource)
 const hoverPath = computed(() => {
   const p = hovered.value?.properties

@@ -44,6 +44,8 @@ describe('dashboard charts', () => {
     expect(option.series.map(series => series.name)).toEqual(['进件数', '占比', '累计占比'])
     expect(option.series[0].data).toEqual([6, 4])
     expect(option.series[1].data).toEqual([60, 40])
+    expect(option.color[1]).toBe('#DB2777')
+    expect(option.series[1].lineStyle.type).toBe('dashed')
     expect(option.series[2].data).toEqual([60, 100])
     for (const series of option.series.slice(1)) {
       expect(series).toMatchObject({ type: 'line', smooth: false, xAxisIndex: 1 })

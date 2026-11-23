@@ -2,6 +2,7 @@ import polygonClipping from 'polygon-clipping'
 
 export const CHINA_MAP_BOUNDS = [[72, 55], [137, 2]]
 const CHINA_CODES = new Set(['CHN', 'TWN', 'HKG', 'MAC'])
+const MULTI_ISLAND_VIEWS = new Set(['MYS', 'IDN', 'PHL'])
 const CHINA_MAP_LAYERS = {
   code: 'CHN',
   name: '中国',
@@ -64,7 +65,9 @@ export function dashboardCountryBounds(geoJson) {
   for (const feature of geoJson.features) {
     const ring = largestRing(feature)
     if (!ring.length) continue
-    bounds[feature.properties.worldKey || feature.properties.ADM0_A3] = paddedBounds(geometryBounds(ring), 0.1)
+    const code = feature.properties.worldKey || feature.properties.ADM0_A3
+    const coordinates = MULTI_ISLAND_VIEWS.has(code) ? feature.geometry.coordinates : ring
+    bounds[code] = paddedBounds(geometryBounds(coordinates), 0.1)
   }
   return bounds
 }
@@ -79,6 +82,15 @@ export function dashboardCountryOptions(catalog, worldCountries) {
       ? layers : [{ level: 'ADM0' }, ...layers] })
   }
   return [CHINA_MAP_LAYERS, ...Array.from(countries.values()).sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))]
+}
+
+// 当前智利 ADM1 快照把 UTF-8 名称当作 Latin-1 保存。限定到该源的已知字节对。
+export function normalizeChileRegionNames(geoJson) {
+  return { ...geoJson, features: geoJson.features.map(feature => {
+    const name = feature.properties.shapeName
+    const label = name?.replace(/\u00c3([\u0080-\u00bf])/g, (_, byte) => String.fromCharCode(byte.charCodeAt(0) + 64))
+    return label === name ? feature : { ...feature, properties: { ...feature.properties, shapeName: label } }
+  }) }
 }
 
 export function prioritizeChinaBoundary(geoJson, chinaGeometry) {

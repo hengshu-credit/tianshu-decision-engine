@@ -31,6 +31,17 @@ const world = {
   }).filter(feature => feature.geometry.coordinates.length)
 }
 world.features.push({ ...china, properties: chinaProperties })
+// 以同版 gbOpen 一级行政区补齐粗分辨率全球底图漏掉的沿海陆地。
+// 先扣除其他国家和地区已占的范围，保留原有国际陆界和中国边界优先级。
+for (const [code, iso] of Object.entries({ NGA: 'NG-LA', IND: 'IN-MH', PHL: 'PH-11', IDN: 'ID-PA' })) {
+  const regions = await read(`${code}-ADM1.json`)
+  const coast = regions.features.find(f => f.properties.shapeISO === iso && f.properties.shapeGroup === code)
+  if (!coast) throw new Error(`Missing coastal region: ${iso}`)
+  const country = world.features.find(f => f.properties.ADM0_A3 === code)
+  const neighbors = world.features.filter(f => f !== country).map(f => f.geometry.coordinates)
+  const extraLand = polygonClipping.difference(coast.geometry.coordinates, ...neighbors)
+  country.geometry.coordinates = polygonClipping.union(country.geometry.coordinates, extraLand)
+}
 await write('dashboard-world.geojson', world)
 await write('dashboard-china-land.geojson', { type: 'FeatureCollection', features: [chinaLand] })
 const context = { ...china, properties: { shapeID: 'CHN-outline', shapeName: '中国', mapRole: 'outline' } }
