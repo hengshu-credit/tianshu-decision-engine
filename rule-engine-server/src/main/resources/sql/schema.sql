@@ -2037,6 +2037,8 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   `billing_config_id` BIGINT DEFAULT NULL COMMENT '汇总明细共同引用的计费配置主键，历史或混合来源可为空',
   `request_count` BIGINT DEFAULT NULL COMMENT '当日按请求标识去重的请求数，缺少标识时为空',
   `charged_count` BIGINT DEFAULT NULL COMMENT '当日计费数量大于零的明细条数',
+  `min_unit_price` DECIMAL(18,6) DEFAULT NULL COMMENT '该日汇总所含计费明细的最低实际单价',
+  `max_unit_price` DECIMAL(18,6) DEFAULT NULL COMMENT '该日汇总所含计费明细的最高实际单价',
   `billed_unit_price` DECIMAL(18,6) DEFAULT NULL COMMENT '计费明细的共同单价，存在多种单价时为空',
   `billing_code`    VARCHAR(128) NOT NULL                COMMENT '计费项编码',
   `billing_target`  VARCHAR(32)  NOT NULL                COMMENT '计费对象：ENGINE=规则引擎，API=外数接口，DB=数据库查询',

@@ -22,13 +22,13 @@ public interface RuleBillingSummaryMapper extends BaseMapper<RuleBillingSummary>
             INSERT INTO rule_billing_summary
               (actor_user_id, summary_date, project_id, project_code, billing_code, billing_target, target_ref_id,
                auth_id, auth_code, auth_type, currency, total_count, success_count, fail_count,
-               total_quantity, total_amount, avg_cost_time_ms, billing_config_id, request_count, charged_count, billed_unit_price)
+               total_quantity, total_amount, avg_cost_time_ms, billing_config_id, request_count, charged_count, billed_unit_price, min_unit_price, max_unit_price)
             SELECT grouped.actor_user_id, #{date}, grouped.project_id, grouped.project_code, grouped.billing_code,
                    grouped.billing_target, grouped.target_ref_id, grouped.auth_id,
                    first_record.auth_code, first_record.auth_type, grouped.currency,
                    grouped.total_count, grouped.success_count, grouped.fail_count,
                    grouped.total_quantity, grouped.total_amount, grouped.avg_cost_time_ms, grouped.config_id,
-                   grouped.request_count, grouped.charged_count, grouped.unit_price
+                   grouped.request_count, grouped.charged_count, grouped.unit_price, grouped.min_unit_price, grouped.max_unit_price
             FROM (
               SELECT actor_user_id, project_id, CAST(project_code AS BINARY) AS project_code,
                      CAST(billing_code AS BINARY) AS billing_code,
@@ -38,6 +38,7 @@ public interface RuleBillingSummaryMapper extends BaseMapper<RuleBillingSummary>
                           THEN MIN(billing_config_id) END AS config_id,
                      CASE WHEN COUNT(NULLIF(request_id,''))=COUNT(*) THEN COUNT(DISTINCT CAST(request_id AS BINARY)) END AS request_count,
                      SUM(CASE WHEN quantity>0 THEN 1 ELSE 0 END) AS charged_count,
+                     MIN(unit_price) AS min_unit_price, MAX(unit_price) AS max_unit_price,
                      CASE WHEN MIN(unit_price)=MAX(unit_price) THEN MIN(unit_price) END AS unit_price,
                      COUNT(*) AS total_count, SUM(CASE WHEN success=1 THEN 1 ELSE 0 END) AS success_count,
                      SUM(CASE WHEN success=1 THEN 0 ELSE 1 END) AS fail_count,

@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
 
 @Service
 public class ConsoleMailService {
-    private static final String PLAIN_FOOTER = "\n\n上海衡枢真信科技有限公司\nhttps://www.hengshucredit.com";
+    private static final String PLAIN_FOOTER = "\n\n如有任何问题，欢迎随时沟通。\n\n顺颂商祺！\nhscredit@hengshucredit.com\n上海衡枢真信科技有限公司\n\nHENGSHU CREDIT · 鉴真伪，斟信用，衡风险，枢定策\nhttps://www.hengshucredit.com";
     @Autowired(required = false) private JavaMailSender mailSender;
     @Autowired(required = false) private SystemSettingsService settings;
     @Autowired(required = false) private SystemBrandAssetService assets;

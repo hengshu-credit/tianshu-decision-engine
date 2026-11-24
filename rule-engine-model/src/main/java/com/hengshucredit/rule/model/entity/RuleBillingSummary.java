@@ -25,6 +25,8 @@ public class RuleBillingSummary implements AccountOwnedRecord {
     private Long requestCount;
     private Long chargedCount;
     private BigDecimal billedUnitPrice;
+    private BigDecimal minUnitPrice;
+    private BigDecimal maxUnitPrice;
     @TableField(exist = false)
     private boolean mailAvailable;
     private String billingCode;

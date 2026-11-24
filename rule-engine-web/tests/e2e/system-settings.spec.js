@@ -331,8 +331,9 @@ test('对外 code 允许多对一，经页面保存草稿、提交审批并查�
 
 test('通知邮箱预览与实际通知类型保持一致，页脚只保留一份公司信息', async ({ page }) => {
   const data = fixture()
-  const { assertClean } = await installDistRoutes(page, { apiData: data.apiData })
-  await page.goto('http://tianshu.local/index.html#/system/settings')
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data.apiData })
+  await page.goto(origin + '/index.html#/system/settings')
   await page.getByRole('tab', { name: '通知邮箱', exact: true }).click()
   const letter = page.locator('.mail-letter')
   await expect(letter.locator('.preview-button')).toHaveText('设置新密码')
@@ -342,6 +343,12 @@ test('通知邮箱预览与实际通知类型保持一致，页脚只保留一�
   await expect(letter.locator('header > strong')).toHaveText('系统配置变更通知')
   await expect(letter.locator('.preview-button')).toHaveCount(0)
   await expect(letter.locator('.mail-note')).toHaveCount(0)
+  const footer = letter.locator('footer')
+  await expect(footer).toContainText('如有任何问题，欢迎随时沟通。')
+  await expect(footer).toContainText('顺颂商祺！')
+  await expect(footer.getByRole('link', { name: 'hscredit@hengshucredit.com' })).toHaveAttribute('href', 'mailto:hscredit@hengshucredit.com')
+  await expect(footer.locator('.mail-brand-line')).toContainText('HENGSHU CREDIT')
+  await expect(footer.getByRole('link', { name: 'www.hengshucredit.com' })).toHaveAttribute('href', 'https://www.hengshucredit.com')
   await expect(letter.getByText('上海衡枢真信科技有限公司', { exact: true })).toHaveCount(1)
   await expect(page.getByText('SMTP 认证设置', { exact: true })).toHaveCount(0)
   assertClean()

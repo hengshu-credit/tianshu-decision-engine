@@ -16,9 +16,7 @@ final class BillingStatement {
     final String project, projectCode, company;
     final LocalDate begin, end;
     final Map<Long, RuleBillingConfig> products;
-    final CurrencySections period = new CurrencySections();
-    final Map<YearMonth, CurrencySections> months = new TreeMap<>(Comparator.reverseOrder());
-    final Map<LocalDate, CurrencySections> days = new TreeMap<>(Comparator.reverseOrder());
+    final Map<String, CurrencyBill> currencies = new TreeMap<>();
 
     BillingStatement(String project, String projectCode, String company, LocalDate begin, LocalDate end,
                      Map<Long, RuleBillingConfig> products, List<RuleBillingSummary> rows) {
@@ -30,9 +28,7 @@ final class BillingStatement {
         this.products = products;
         for (var row : rows) {
             required(products.get(row.getBillingConfigId()).getBillingName(), "计费名称");
-            period.add(row);
-            months.computeIfAbsent(YearMonth.from(row.getSummaryDate()), key -> new CurrencySections()).add(row);
-            days.computeIfAbsent(row.getSummaryDate(), key -> new CurrencySections()).add(row);
+            currencies.computeIfAbsent(required(row.getCurrency(), "币种"), key -> new CurrencyBill()).add(row);
         }
     }
 
@@ -45,8 +41,8 @@ final class BillingStatement {
         Long requests = 0L;
         long calls, charged;
         BigDecimal amount = BigDecimal.ZERO;
-        private BigDecimal price;
-        private boolean hasRows, multiplePrices;
+        private BigDecimal lowest, highest;
+        private boolean missingPrice;
 
         void add(RuleBillingSummary row) {
             if (row.getTotalCount() == null || row.getChargedCount() == null || row.getTotalAmount() == null)
@@ -56,21 +52,32 @@ final class BillingStatement {
             calls += row.getTotalCount();
             charged += row.getChargedCount();
             amount = amount.add(row.getTotalAmount());
-            BigDecimal next = row.getBilledUnitPrice();
-            if (next == null || (hasRows && price != null && price.compareTo(next) != 0)) multiplePrices = true;
-            if (!hasRows) price = next;
-            hasRows = true;
+            BigDecimal min = row.getMinUnitPrice() == null ? row.getBilledUnitPrice() : row.getMinUnitPrice();
+            BigDecimal max = row.getMaxUnitPrice() == null ? row.getBilledUnitPrice() : row.getMaxUnitPrice();
+            if (min == null || max == null) {
+                missingPrice = true;
+            } else {
+                lowest = lowest == null ? min : lowest.min(min);
+                highest = highest == null ? max : highest.max(max);
+            }
         }
 
         Object requestsValue() { return requests == null ? "未记录" : requests; }
-        Object priceValue() { return multiplePrices ? "多档单价" : price; }
+        Object priceValue() {
+            if (missingPrice) return "历史单价未记录";
+            return lowest.compareTo(highest) == 0 ? lowest : number(lowest) + "–" + number(highest);
+        }
     }
 
-    static final class CurrencySections {
-        final Map<String, Section> currencies = new TreeMap<>();
+    static final class CurrencyBill {
+        final Section period = new Section();
+        final Map<YearMonth, Section> months = new TreeMap<>(Comparator.reverseOrder());
+        final Map<LocalDate, Section> days = new TreeMap<>(Comparator.reverseOrder());
 
         void add(RuleBillingSummary row) {
-            currencies.computeIfAbsent(required(row.getCurrency(), "币种"), key -> new Section()).add(row);
+            period.add(row);
+            months.computeIfAbsent(YearMonth.from(row.getSummaryDate()), key -> new Section()).add(row);
+            days.computeIfAbsent(row.getSummaryDate(), key -> new Section()).add(row);
         }
     }
 
@@ -90,8 +97,8 @@ final class BillingStatement {
 
     String introduction() {
         return "您好！随信附上" + project + "从 " + begin + " 到 " + end + " 已汇总的数据服务账单，"
-                + "共 " + period.currencies.values().stream().flatMap(s -> s.byProduct.keySet().stream()).distinct().count()
-                + " 项产品，结算币种为 " + String.join("、", period.currencies.keySet()) + "。请核对下列费用，逐日明细见附件。";
+                + "共 " + currencies.values().stream().flatMap(s -> s.period.byProduct.keySet().stream()).distinct().count()
+                + " 项产品，结算币种为 " + String.join("、", currencies.keySet()) + "。请核对下列费用，逐日明细见附件。";
     }
 
     static String number(Object value) {
@@ -108,53 +115,48 @@ final class BillingStatement {
 
     String plain() {
         StringBuilder out = new StringBuilder("尊敬的").append(project).append("团队：\n").append(introduction()).append('\n');
-        appendText(out, "本期合计", period);
-        months.forEach((month, section) -> appendText(out, month + " 月度合计", section));
+        currencies.forEach((unit, bill) -> {
+            out.append('\n').append(unit).append(" 账单\n本期合计　").append(money(unit, bill.period.total.amount)).append('\n');
+            bill.months.forEach((month, section) -> {
+                out.append("  ").append(month).append(" 月度合计　").append(money(unit, section.total.amount)).append('\n');
+                section.byProduct.forEach((id, line) -> out.append("    ").append(products.get(id).getBillingName())
+                        .append("　").append(money(unit, line.amount)).append("（调用 ").append(line.calls)
+                        .append(" 次，计费 ").append(line.charged).append(" 次，单价 ").append(number(line.priceValue())).append("）\n"));
+            });
+        });
         return out.toString();
     }
 
-    private void appendText(StringBuilder out, String title, CurrencySections sections) {
-        sections.currencies.forEach((currency, section) -> {
-            out.append('\n').append(title).append("　").append(money(currency, section.total.amount)).append('\n');
-            section.byProduct.forEach((id, totals) -> out.append(products.get(id).getBillingName()).append("　")
-                    .append(money(currency, totals.amount)).append("（调用 ").append(totals.calls).append(" 次，计费 ")
-                    .append(totals.charged).append(" 次）\n"));
-        });
-    }
-
     String tablesHtml() {
-        StringBuilder html = new StringBuilder();
-        appendTable(html, "本期账单合计", period);
-        months.forEach((month, section) -> appendTable(html, month + " 月度账单", section));
-        html.append("<p style='font-size:12px;color:#59647a'>请求次数按各产品的日汇总累加。</p>");
-        if (period.currencies.values().stream().anyMatch(section -> section.total.requests == null))
-            html.append("<p style='font-size:12px;color:#59647a'>部分明细缺少请求标识，对应请求次数标为“未记录”。</p>");
-        return html.toString();
+        StringBuilder out = new StringBuilder();
+        currencies.forEach((unit, bill) -> {
+            out.append("<h3 style='margin:20px 0 8px;font-size:13px'>").append(HtmlUtils.htmlEscape(unit, "UTF-8")).append(" 账单</h3>")
+                    .append("<table width='100%' cellspacing='0' cellpadding='5' style='border-collapse:collapse;font-size:12px'>")
+                    .append("<thead style='background:#2934ea;color:white'><tr>");
+            for (String label : List.of("月份 / 产品", "请求次数", "调用次数", "计费次数", "计费单价", "账单费用"))
+                out.append("<th scope='col'>").append(label).append("</th>");
+            out.append("</tr></thead><tbody>");
+            appendRow(out, "本期合计", bill.period.total, "background:#dee3fa;font-weight:bold", false);
+            bill.months.forEach((month, section) -> {
+                appendRow(out, month + " 月度合计", section.total, "background:#f0f2fc;font-weight:bold", false);
+                section.byProduct.forEach((id, line) -> appendRow(out, products.get(id).getBillingName(), line, "", true));
+            });
+            out.append("</tbody></table>");
+        });
+        out.append("<p style='font-size:12px;color:#59647a'>请求次数按各产品的日汇总累加。</p>");
+        if (currencies.values().stream().anyMatch(section -> section.period.total.requests == null))
+            out.append("<p style='font-size:12px;color:#59647a'>部分明细缺少请求标识，对应请求次数标为“未记录”。</p>");
+        return out.toString();
     }
 
-    private void appendTable(StringBuilder out, String heading, CurrencySections sections) {
-        sections.currencies.forEach((currency, section) -> appendCurrencyTable(out, heading, currency, section));
-    }
-
-    private void appendCurrencyTable(StringBuilder out, String heading, String currency, Section section) {
-        out.append("<h3 style='margin:20px 0 8px;font-size:13px'>").append(heading).append("　")
-                .append(HtmlUtils.htmlEscape(money(currency, section.total.amount))).append("</h3>")
-                .append("<table width='100%' cellspacing='0' cellpadding='5' style='border-collapse:collapse;font-size:12px'>")
-                .append("<thead style='background:#2934ea;color:white'><tr>");
-        for (String label : List.of("计费名称", "请求次数", "调用次数", "计费次数", "计费单价", "账单费用"))
-            out.append("<th scope='col'>").append(label).append("</th>");
-        out.append("</tr></thead><tbody>");
-        section.byProduct.forEach((id, totals) -> appendRow(out, products.get(id).getBillingName(), totals, false));
-        appendRow(out, "合计", section.total, true);
-        out.append("</tbody></table>");
-    }
-
-    private static void appendRow(StringBuilder out, String name, Totals totals, boolean total) {
-        out.append(total ? "<tr style='background:#eff1ff;font-weight:bold'>" : "<tr>");
-        for (Object field : List.of(name, totals.requestsValue(), totals.calls, totals.charged,
-                total ? "按产品列示" : totals.priceValue(), amountText(totals.amount))) {
-            out.append("<td style='text-align:center;border-bottom:1px solid #d9dfee'>")
-                    .append(HtmlUtils.htmlEscape(number(field))).append("</td>");
+    private static void appendRow(StringBuilder out, String label, Totals totals, String style, boolean product) {
+        out.append("<tr style='").append(style).append("'><th scope='row' style='text-align:left;font-weight:inherit;")
+                .append(product ? "padding-left:24px;" : "").append("border-bottom:1px solid #d9dfee'>")
+                .append(HtmlUtils.htmlEscape(label, "UTF-8")).append("</th>");
+        for (Object value : List.of(totals.requestsValue(), totals.calls, totals.charged,
+                product ? totals.priceValue() : "—", amountText(totals.amount))) {
+            out.append("<td style='text-align:right;border-bottom:1px solid #d9dfee'>")
+                    .append(HtmlUtils.htmlEscape(number(value), "UTF-8")).append("</td>");
         }
         out.append("</tr>");
     }

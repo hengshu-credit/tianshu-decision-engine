@@ -42,7 +42,18 @@
             <el-form-item label="邮箱授权码 / SMTP 密码"><el-input v-model="mailPassword" type="password" show-password autocomplete="new-password" :placeholder="mailPasswordConfigured ? '已设置，留空保留' : '请输入邮箱授权码'" /><small>填写替换，留空保留；授权码不在浏览器持久保存。</small></el-form-item>
             <el-button :disabled="!canTestMail" @click="openMailTest">发送测试邮件</el-button><small v-if="mailResult" role="status">{{ mailResult }}</small>
           </el-form>
-          <div class="mail-preview"><div class="mail-preview-heading"><small>邮件效果预览</small><el-select v-model="mailTemplate" size="small"><el-option label="密码重置" value="reset" /><el-option label="注册验证" value="verify" /><el-option label="系统通知" value="notice" /></el-select></div><article class="mail-letter"><header><strong>{{ mailPreview.title }}</strong><div class="mail-brand"><img :src="brand.logoUrl" :alt="brand.systemName" /><div><b>{{ brand.systemName }}</b><small>{{ brand.subtitle }}</small></div></div></header><p>尊敬的{{ mailTemplate === 'notice' ? '管理员' : '用户' }}：</p><p>{{ mailPreview.text }}</p><div v-if="mailPreview.highlight" class="mail-highlight">{{ mailPreview.highlight }}</div><span v-if="mailPreview.action" class="preview-button">{{ mailPreview.action }}</span><p v-if="mailPreview.action" class="mail-note">若非您本人操作，请忽略此邮件。请勿转发验证或重置链接。</p><footer><span>上海衡枢真信科技有限公司</span><a href="https://www.hengshucredit.com" target="_blank" rel="noopener noreferrer">www.hengshucredit.com</a></footer></article></div>
+          <div class="mail-preview"><div class="mail-preview-heading"><small>邮件效果预览</small><el-select v-model="mailTemplate" size="small"><el-option label="密码重置" value="reset" /><el-option label="注册验证" value="verify" /><el-option label="系统通知" value="notice" /></el-select></div><article class="mail-letter"><header><strong>{{ mailPreview.title }}</strong><div class="mail-brand"><img :src="brand.logoUrl" :alt="brand.systemName" /><div><b>{{ brand.systemName }}</b><small>{{ brand.subtitle }}</small></div></div></header><p>尊敬的{{ mailTemplate === 'notice' ? '管理员' : '用户' }}：</p><p>{{ mailPreview.text }}</p><div v-if="mailPreview.highlight" class="mail-highlight">{{ mailPreview.highlight }}</div><span v-if="mailPreview.action" class="preview-button">{{ mailPreview.action }}</span><p v-if="mailPreview.action" class="mail-note">若非您本人操作，请忽略此邮件。请勿转发验证或重置链接。</p><footer>
+            <p>如有任何问题，欢迎随时沟通。</p>
+            <div class="mail-signature">
+              <p>顺颂商祺！</p>
+              <a href="mailto:hscredit@hengshucredit.com">hscredit@hengshucredit.com</a><br>
+              <span>上海衡枢真信科技有限公司</span>
+            </div>
+            <div class="mail-brand-line">
+              <span>HENGSHU CREDIT · 鉴真伪，斟信用，衡风险，枢定策</span>
+              <a href="https://www.hengshucredit.com" target="_blank" rel="noopener noreferrer">www.hengshucredit.com</a>
+            </div>
+          </footer></article></div>
         </div>
       </el-tab-pane>
       <el-tab-pane lazy label="登录与安全" name="access">
@@ -246,7 +257,8 @@ export default {
 .mail-brand small { font-size: 11px; margin: 0; }
 .mail-highlight { padding: 10px; border-left: 3px solid var(--el-color-primary); background: var(--tianshu-primary-soft-bg); }
 .mail-note { color: var(--tianshu-text-tertiary); font-size: 12px; }
-.mail-letter footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--tianshu-border-subtle); padding-top: 12px; font-size: 11px; color: var(--tianshu-text-tertiary); }
+.mail-signature { border-top: 2px solid var(--el-color-primary); padding: 0 0 18px; font-size: 12px; line-height: 1.7; }
+.mail-brand-line { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--tianshu-border-subtle); padding-top: 12px; font-size: 11px; color: var(--tianshu-text-tertiary); }
 .mail-letter a { color: var(--el-color-primary); }
 .code-toolbar { margin-top: 14px; gap: 16px; }
 .code-filters, .code-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

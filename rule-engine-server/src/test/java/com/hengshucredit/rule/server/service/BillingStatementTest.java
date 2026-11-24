@@ -43,9 +43,10 @@ public class BillingStatementTest {
                 Map.of(7L, config, 8L, another), List.of(first, second, third));
         var brand = brand();
         assertTrue(bill.tablesHtml().contains("活体&lt;核验&gt;"));
-        assertTrue(bill.tablesHtml().contains("CNY 0.19825"));
-        assertTrue(bill.tablesHtml().contains("2026-10 月度账单"));
-        assertTrue(bill.tablesHtml().contains("2026-11 月度账单"));
+        assertTrue(bill.tablesHtml().contains("CNY 账单"));
+        assertTrue(bill.tablesHtml().contains(">0.19825</td>"));
+        assertTrue(bill.tablesHtml().contains("2026-10 月度合计"));
+        assertTrue(bill.tablesHtml().contains("2026-11 月度合计"));
         assertFalse(bill.tablesHtml().contains("减免"));
 
         var captured = new java.util.ArrayList<MimeMessage>();
@@ -73,7 +74,7 @@ public class BillingStatementTest {
         assertArrayEquals(brand.logo(), related.getBodyPart(1).getInputStream().readAllBytes());
         var alternatives = (MimeMultipart) related.getBodyPart(0).getContent();
         String html = (String) alternatives.getBodyPart(1).getContent();
-        for (String text : List.of("cid:tianshu-logo", brand.name(), "上海衡枢真信科技有限公司", "https://www.hengshucredit.com", "尊敬的客户A团队", "本期账单合计", "0.17425"))
+        for (String text : List.of("cid:tianshu-logo", brand.name(), "上海衡枢真信科技有限公司", "https://www.hengshucredit.com", "尊敬的客户A团队", "本期合计", "0.17425", "顺颂商祺！", "mailto:hscredit@hengshucredit.com"))
             assertTrue(text, html.contains(text));
         assertFalse(html.contains(bill.company));
         assertTrue(html.contains("cid:tianshu-font"));
@@ -89,8 +90,8 @@ public class BillingStatementTest {
             assertArrayEquals(brand.logo(), book.getAllPictures().get(0).getData());
             assertEquals(5, catalog.getLastRowNum());
             assertEquals(6, book.getSheetAt(1).getLastRowNum());
-            assertEquals("本期合计", book.getSheetAt(1).getRow(6).getCell(3).getStringCellValue());
-            assertEquals(0.19825, book.getSheetAt(1).getRow(6).getCell(8).getNumericCellValue(), 1e-12);
+            assertEquals("本期合计", book.getSheetAt(1).getRow(2).getCell(4).getStringCellValue());
+            assertEquals(0.19825, book.getSheetAt(1).getRow(2).getCell(9).getNumericCellValue(), 1e-12);
             assertEquals(brand.font().family(), catalog.getRow(3).getCell(1).getCellStyle().getFont().getFontName());
             assertEquals(4, book.getSheetAt(2).getLastRowNum());
             for (var sheet : book) {
@@ -100,12 +101,12 @@ public class BillingStatementTest {
                         assertFalse(sheet.getRow(r).getCell(c).toString().isBlank());
                 }
             }
-            var monthly = book.getSheet("月度账单").getRow(2);
-            assertEquals("未记录", monthly.getCell(4).getStringCellValue());
-            assertEquals(4, monthly.getCell(5).getNumericCellValue(), 0);
-            assertEquals(3, monthly.getCell(6).getNumericCellValue(), 0);
-            assertEquals(0.17425, monthly.getCell(8).getNumericCellValue(), 1e-12);
-            assertEquals("多档单价", book.getSheetAt(1).getRow(3).getCell(7).getStringCellValue());
+            var monthly = book.getSheet("月度账单").getRow(3);
+            assertEquals("未记录", monthly.getCell(5).getStringCellValue());
+            assertEquals(4, monthly.getCell(6).getNumericCellValue(), 0);
+            assertEquals(3, monthly.getCell(7).getNumericCellValue(), 0);
+            assertEquals(0.17425, monthly.getCell(9).getNumericCellValue(), 1e-12);
+            assertEquals("0.037125–0.1", book.getSheetAt(1).getRow(4).getCell(8).getStringCellValue());
             assertEquals(0.037125, book.getSheet("日账单明细").getRow(2).getCell(7).getNumericCellValue(), 1e-12);
             assertEquals(0.1, book.getSheetAt(2).getRow(3).getCell(8).getNumericCellValue(), 1e-12);
         }
@@ -125,19 +126,35 @@ public class BillingStatementTest {
         novUsd.setCurrency("USD");
         var bill = new BillingStatement("项目", "PRJ", "抬头", october, novCny.getSummaryDate(),
                 Map.of(7L, product(7, "计费A")), List.of(octCny, octUsd, novCny, novUsd));
-        for (String label : List.of("本期账单合计　CNY 19.00", "本期账单合计　USD 1.10",
-                "2026-10 月度账单　CNY 10.00", "2026-10 月度账单　USD 0.50",
-                "2026-11 月度账单　CNY 9.00", "2026-11 月度账单　USD 0.60"))
-            assertTrue(label, bill.tablesHtml().contains(label));
+        var doc = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(
+                new ByteArrayInputStream(("<root>" + bill.tablesHtml() + "</root>").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertEquals(2, doc.getElementsByTagName("table").getLength());
+        for (int c = 0; c < 2; c++) {
+            String unit = c == 0 ? "CNY" : "USD";
+            assertEquals(unit + " 账单", doc.getElementsByTagName("h3").item(c).getTextContent());
+            var rows = ((org.w3c.dom.Element)doc.getElementsByTagName("tbody").item(c)).getElementsByTagName("tr");
+            var names = List.of("本期合计", "2026-11 月度合计", "计费A", "2026-10 月度合计", "计费A");
+            var amounts = c == 0 ? List.of("19.00","9.00","9.00","10.00","10.00") : List.of("1.10","0.60","0.60","0.50","0.50");
+            assertEquals(names.size(), rows.getLength());
+            for (int i = 0; i < rows.getLength(); i++) {
+                assertEquals(names.get(i), rows.item(i).getFirstChild().getTextContent());
+                assertEquals(amounts.get(i), rows.item(i).getLastChild().getTextContent());
+            }
+        }
         try (var book = new XSSFWorkbook(new ByteArrayInputStream(BillingStatementWorkbook.render(bill, brand())))) {
+            assertEquals("2–3", book.getSheetAt(0).getRow(4).getCell(7).getStringCellValue());
+            assertEquals("USD", book.getSheetAt(0).getRow(5).getCell(8).getStringCellValue());
             var amounts = new java.util.TreeMap<String, Double>();
             var monthly = book.getSheetAt(1);
             for (int r = 2; r <= monthly.getLastRowNum(); r++) {
                 var row = monthly.getRow(r);
-                String label = row.getCell(3).getStringCellValue();
+                assertEquals(r < 7 ? "CNY" : "USD", row.getCell(1).getStringCellValue());
+                assertEquals(List.of("本期合计","当月合计","计费A","当月合计","计费A").get((r-2)%5), row.getCell(4).getStringCellValue());
+                assertEquals(List.of(0,1,2,1,2).get((r-2)%5).intValue(), row.getOutlineLevel());
+                String label = row.getCell(4).getStringCellValue();
                 if (!label.endsWith("合计")) continue;
-                String period = label.equals("本期合计") ? label : row.getCell(1).getStringCellValue();
-                assertNull(amounts.put(period + row.getCell(10).getStringCellValue(), row.getCell(8).getNumericCellValue()));
+                String period = label.equals("本期合计") ? label : row.getCell(2).getStringCellValue();
+                assertNull(amounts.put(period + row.getCell(1).getStringCellValue(), row.getCell(9).getNumericCellValue()));
             }
             assertEquals(Map.of("本期合计CNY", 19d, "本期合计USD", 1.1d, "2026-10CNY", 10d, "2026-10USD", 0.5d,
                     "2026-11CNY", 9d, "2026-11USD", 0.6d), amounts);
@@ -179,7 +196,8 @@ public class BillingStatementTest {
             db.jdbc.update("""
                     INSERT INTO rule_billing_record(billing_config_id,actor_user_id,project_id,auth_id,target_ref_id,
                          currency,occur_time,billing_target,billing_code,request_id,amount,unit_price)
-                    VALUES (7,3,1,1,9,'USD','2026-11-01','ENGINE','V','R1',1.20,1.20),
+                    VALUES (7,3,1,1,9,'USD','2026-11-01','ENGINE','V','R1',0.80,0.80),
+                           (7,3,1,1,9,'USD','2026-11-01','ENGINE','V','R2',0.40,0.40),
                            (7,3,1,1,9,'USD','2026-11-02','ENGINE','V','R2',1.20,1.20),
                            (7,4,1,1,9,'USD','2026-11-01','ENGINE','V','R1',999,999),
                            (7,3,2,1,9,'USD','2026-11-01','ENGINE','V','R1',999,999),
@@ -191,6 +209,11 @@ public class BillingStatementTest {
                     """);
             var first = LocalDate.of(2026,11,1);
             for (var date : List.of(first.minusDays(1), first, first.plusDays(1))) db.service.refreshSummary(date);
+            var prices = db.jdbc.queryForMap("SELECT min_unit_price, max_unit_price, billed_unit_price FROM rule_billing_summary "
+                    + "WHERE summary_date='2026-11-01' AND actor_user_id=3 AND project_id=1 AND auth_id=1 AND billing_config_id=7 AND currency='USD'");
+            assertNull(prices.get("billed_unit_price"));
+            assertEquals(new BigDecimal("0.400000"), prices.get("min_unit_price"));
+            assertEquals(new BigDecimal("0.800000"), prices.get("max_unit_price"));
             long id = db.jdbc.queryForObject("SELECT id FROM rule_billing_summary WHERE summary_date='2026-11-02'", Long.class);
             db.sessions.getConfiguration().addMapper(ConsoleUserProjectMapper.class);
             db.sessions.getConfiguration().addMapper(RuleBillingConfigMapper.class);
@@ -205,6 +228,7 @@ public class BillingStatementTest {
                     } catch (java.io.IOException failure) { throw new AssertionError(failure); }
                     assertTrue(plain.contains(recipients.size() == 2 ? "USD 4.40" : "USD 2.40"));
                     assertTrue(plain.contains("CNY 5.00"));
+                    assertTrue(body.contains("0.4–1.2"));
                     assertFalse(body.contains("999"));
                     assertEquals(recipients.size() == 2, body.contains("信用评分"));
                     assertTrue(attachment.length > 0);

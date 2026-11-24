@@ -28,7 +28,7 @@ final class BillingStatementWorkbook {
     private final XSSFWorkbook book;
     private final BillingStatement bill;
     private final String fontName;
-    private final XSSFCellStyle header, light, white, subtotal;
+    private final XSSFCellStyle header, light, white, subtotal, periodTotal;
     private final Map<Short, CellStyle> decimals = new java.util.HashMap<>();
 
     private BillingStatementWorkbook(XSSFWorkbook book, BillingStatement bill, String fontName) {
@@ -38,6 +38,7 @@ final class BillingStatementWorkbook {
         header = style(0x2934EA, true, true);
         light = style(0xEFF1FF, false, false);
         white = style(0xFFFFFF, false, false);
+        periodTotal = style(0x344797, true, true);
         subtotal = style(0xDEE3FA, true, false);
     }
 
@@ -66,7 +67,7 @@ final class BillingStatementWorkbook {
     }
 
     private void catalog(byte[] logo) throws IOException {
-        Sheet sheet = sheet("计费产品清单", 3, "序号", "项目名称", "项目编码", "计费名称", "计费对象", "计费方式", "单价");
+        Sheet sheet = sheet("计费产品清单", 3, "序号", "项目名称", "项目编码", "计费名称", "计费对象", "计费方式", "单价", "币种");
         Row title = sheet.createRow(1);
         title.setHeightInPoints(36);
         var heading = title.createCell(2);
@@ -89,8 +90,8 @@ final class BillingStatementWorkbook {
         anchor.setDy2(Units.pixelToEMU(4 + Math.max(1, (int)Math.round(image.getHeight() * scale))));
         sheet.createDrawingPatriarch().createPicture(anchor, book.addPicture(logo, Workbook.PICTURE_TYPE_PNG));
         int index = 0;
-        for (var currency : bill.period.currencies.entrySet()) {
-            for (var item : currency.getValue().byProduct.entrySet()) {
+        for (var currency : bill.currencies.entrySet()) {
+            for (var item : currency.getValue().period.byProduct.entrySet()) {
                 RuleBillingConfig config = bill.products.get(item.getKey());
                 String target = switch (config.getBillingTarget()) {
                     case "ENGINE" -> "规则引擎"; case "API" -> "外数 API"; case "DB" -> "数据库查询";
@@ -101,38 +102,44 @@ final class BillingStatementWorkbook {
                     default -> config.getChargeType();
                 };
                 append(sheet, band(index), ++index, bill.project, bill.projectCode, config.getBillingName(), target, type,
-                        BillingStatement.number(item.getValue().priceValue()) + " " + currency.getKey());
+                        item.getValue().priceValue(), currency.getKey());
             }
         }
     }
 
     private void monthly() {
-        Sheet sheet = sheet("月度账单", 1, "统计日期", "项目名称", "计费名称", "请求次数", "调用次数", "计费次数", "计费单价", "账单费用", "备注", "币种");
-        bill.months.forEach((month, sections) -> sections.currencies.forEach((currency, section) -> {
-            var total = section.total;
-            append(sheet, subtotal, month, bill.project, "当月合计", total.requestsValue(), total.calls, total.charged,
-                    "按产品列示", total.amount, section.byProduct.size() + " 项产品", currency);
-            int index = 0;
-            for (var product : section.byProduct.entrySet()) {
-                var config = bill.products.get(product.getKey());
-                var line = product.getValue();
-                append(sheet, band(index++), month, bill.project, config.getBillingName(), line.requestsValue(),
-                        line.calls, line.charged, line.priceValue(), line.amount, config.getBillingCode(), currency);
-            }
-        }));
-        bill.period.currencies.forEach((currency, section) -> {
-            var total = section.total;
-            append(sheet, subtotal, bill.begin + " 至 " + bill.end, bill.project, "本期合计", total.requestsValue(),
-                    total.calls, total.charged, "按产品列示", total.amount, section.byProduct.size() + " 项产品", currency);
+        Sheet sheet = sheet("月度账单", 1, "币种", "统计日期", "项目名称", "计费名称", "请求次数", "调用次数", "计费次数", "计费单价", "账单费用", "备注");
+        sheet.setRowSumsBelow(false);
+        bill.currencies.forEach((unit, currency) -> {
+            var period = currency.period;
+            var total = period.total;
+            append(sheet, periodTotal, unit, bill.begin + " 至 " + bill.end, bill.project, "本期合计", total.requestsValue(),
+                    total.calls, total.charged, "—", total.amount, period.byProduct.size() + " 项产品");
+            int firstMonthRow = sheet.getLastRowNum() + 1;
+            currency.months.forEach((month, section) -> {
+                var line = section.total;
+                append(sheet, subtotal, unit, month, bill.project, "当月合计", line.requestsValue(), line.calls, line.charged,
+                        "—", line.amount, section.byProduct.size() + " 项产品");
+                int firstProductRow = sheet.getLastRowNum() + 1;
+                int index = 0;
+                for (var product : section.byProduct.entrySet()) {
+                    var config = bill.products.get(product.getKey());
+                    var detail = product.getValue();
+                    append(sheet, band(index++), unit, month, bill.project, config.getBillingName(), detail.requestsValue(),
+                            detail.calls, detail.charged, detail.priceValue(), detail.amount, config.getBillingCode());
+                }
+                sheet.groupRow(firstProductRow, sheet.getLastRowNum());
+            });
+            sheet.groupRow(firstMonthRow, sheet.getLastRowNum());
         });
     }
 
     private void daily() {
         Sheet sheet = sheet("日账单明细", 1, "统计日期", "项目名称", "计费名称", "请求次数", "调用次数", "计费次数", "计费价格", "账单费用", "币种");
         int index = 0;
-        for (var day : bill.days.entrySet()) {
-            for (var currency : day.getValue().currencies.entrySet()) {
-                for (var item : currency.getValue().byProduct.entrySet()) {
+        for (var currency : bill.currencies.entrySet()) {
+            for (var day : currency.getValue().days.entrySet()) {
+                for (var item : day.getValue().byProduct.entrySet()) {
                     var line = item.getValue();
                     append(sheet, band(index++), day.getKey(), bill.project, bill.products.get(item.getKey()).getBillingName(),
                             line.requestsValue(), line.calls, line.charged, line.priceValue(), line.amount, currency.getKey());
