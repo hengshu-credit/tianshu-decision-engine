@@ -51,6 +51,7 @@ node scripts/package-deployment.mjs --with-tests
 |---|---|
 | `PACKAGE_CONFIG_DIR` | 显式携带指定目录的 `.env.server` 和 `.env.client`；默认不携带凭据。包含凭据的 ZIP 仅供私下交付 |
 | `PACKAGE_RUN_TESTS=true` | 等同 `--with-tests` |
+| `PACKAGE_TEST_WORKERS` | 容器内 Vitest 的并发进程数，默认 8。内存较小的构建机可降低此值；全部用例、超时和断言保持原设置 |
 | `PACKAGE_MAVEN_IMAGE` / `PACKAGE_NODE_IMAGE` | 覆盖构建镜像，默认 `maven:3.9.9-eclipse-temurin-17` / `node:26-bookworm` |
 | `PACKAGE_PLATFORM` | 默认 `linux/amd64`，可选 `linux/arm64` |
 | `PACKAGE_SKIP_JAVA=true` | 仅在明确需要复用本地可执行 JAR 时使用，不重建或测试后端；本次正式包不使用 |

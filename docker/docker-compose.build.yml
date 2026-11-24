@@ -7,6 +7,7 @@ services:
     entrypoint: []
     environment:
       HOME: /root
+      VITEST_MAX_WORKERS: ${PACKAGE_TEST_WORKERS:-8}
     volumes:
       - type: bind
         source: ${PACKAGE_SOURCE_DIR:?Set by package-deployment.mjs}
