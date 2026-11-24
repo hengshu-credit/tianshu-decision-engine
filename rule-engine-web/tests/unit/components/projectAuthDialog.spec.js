@@ -214,6 +214,28 @@ describe('ProjectAuthDialog', () => {
     wrapper.unmount()
   })
 
+  test('从鉴权配置生成临时 Token 并在关闭后清除完整值', async () => {
+    const wrapper = await mountDialog()
+    const auth = wrapper.vm.authList[0]
+    let finish
+    projectApi.issueProjectAuthToken.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+
+    const pending = wrapper.vm.issueToken(auth)
+    await wrapper.vm.issueToken(auth)
+    expect(projectApi.issueProjectAuthToken).toHaveBeenCalledTimes(1)
+    expect(projectApi.issueProjectAuthToken).toHaveBeenCalledWith(7, 11)
+    finish({ data: { accessToken: 'temporary-value', expireTime: '2026-11-24 15:00:00' } })
+    await pending
+    expect(wrapper.vm.activeTab).toBe('auth')
+    expect(wrapper.vm.fullTokenDialogVisible).toBe(true)
+    expect(wrapper.vm.fullToken).toMatchObject({ authCode: 'BASIC_MAIN', accessToken: 'temporary-value' })
+
+    wrapper.vm.fullTokenDialogVisible = false
+    await nextTick()
+    expect(wrapper.vm.fullToken).toBeNull()
+    wrapper.unmount()
+  })
+
   test('Token 列表和撤销操作都绑定当前鉴权', async () => {
     const wrapper = await mountDialog()
     projectApi.listProjectAuthTokens.mockResolvedValue({

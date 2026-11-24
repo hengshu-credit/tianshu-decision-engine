@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.dto.ProjectTokenResponse;
+import com.hengshucredit.rule.model.dto.ProjectAuthTokenDTO;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleProjectAuth;
 import com.hengshucredit.rule.model.entity.RuleProjectAuthToken;
@@ -23,6 +24,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 
 public class ProjectAuthTokenServiceTest {
 
@@ -75,6 +77,32 @@ public class ProjectAuthTokenServiceTest {
         assertEquals("Bearer", first.getTokenType());
         assertEquals("BASIC_MAIN", first.getAuthCode());
         assertEquals("credit", first.getProjectCode());
+    }
+
+    @Test
+    public void consoleIssuedTokenAuthenticatesWithSelectedProjectAndLifetime() {
+        ProjectAuthTokenDTO issued = service.issueManagementToken(7L, 11L);
+        ProjectAuthContext context = service.authenticate(bearerRequest(issued.getAccessToken()));
+
+        assertNotNull(context);
+        assertEquals(Long.valueOf(7), context.getProjectId());
+        assertEquals(Long.valueOf(11), context.getAuthId());
+        assertEquals(issued.getId(), context.getTokenId());
+        assertEquals(issued.getTokenCode(), context.getTokenCode());
+        assertEquals(NOW.plusSeconds(7200), issued.getExpireTime());
+        assertEquals(NOW.plusSeconds(7800), issued.getGraceExpireTime());
+        assertNotEquals(issued.getAccessToken(), issued.getTokenMasked());
+    }
+
+    @Test
+    public void consoleRequiresMatchingProjectAndEnabledConfigurationBeforeIssuing() {
+        assertThrows(IllegalArgumentException.class, () -> service.issueManagementToken(8L, 11L));
+        auth.setStatus(0);
+        assertThrows(IllegalArgumentException.class, () -> service.issueManagementToken(7L, 11L));
+        auth.setStatus(1);
+        service.project.setStatus(0);
+        assertThrows(IllegalArgumentException.class, () -> service.issueManagementToken(7L, 11L));
+        assertEquals(0, service.tokens.size());
     }
 
     @Test

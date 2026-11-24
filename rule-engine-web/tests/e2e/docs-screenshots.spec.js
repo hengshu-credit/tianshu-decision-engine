@@ -100,7 +100,7 @@ test('生成鉴权、开放接口、外数、分流和账单关键业务状态�
   await expect(authDialog).toBeVisible()
   await screenshot(page, 'project-usage-02-project-auth.png')
   const authRow = authDialog.getByRole('row').filter({ hasText: 'FACE_API_MAIN' })
-  await authRow.getByRole('button', { name: 'Token', exact: true }).click()
+  await authRow.getByRole('button', { name: 'Token 记录', exact: true }).click()
   await expect(authDialog.getByText('TOKEN_FACE_20260724', { exact: true })).toBeVisible()
   await screenshot(page, 'project-usage-02-project-auth-token.png')
   await authDialog.getByRole('tab', { name: '访问审计', exact: true }).click()

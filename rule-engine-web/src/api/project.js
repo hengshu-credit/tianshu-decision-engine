@@ -93,6 +93,10 @@ export function listProjectAuthTokens(projectId, authId, params) {
   return request({ url: `/rule/project/${projectId}/auth/${authId}/tokens`, method: 'get', params })
 }
 
+export function issueProjectAuthToken(projectId, authId) {
+  return request({ url: `/rule/project/${projectId}/auth/${authId}/tokens`, method: 'post' })
+}
+
 export function getProjectAuthTokenFull(projectId, authId, tokenId) {
   return request({ url: `/rule/project/${projectId}/auth/${authId}/tokens/${tokenId}/full`, method: 'get' })
 }

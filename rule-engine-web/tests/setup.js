@@ -283,6 +283,7 @@ vi.mock('@/api/project', () => {
     getProjectAuthFull: vi.fn(),
     regenerateProjectAuthSecret: vi.fn(),
     listProjectAuthTokens: vi.fn(),
+    issueProjectAuthToken: vi.fn(),
     getProjectAuthTokenFull: vi.fn(),
     revokeProjectAuthToken: vi.fn(),
     listProjectAuthAccessLogs: vi.fn(),

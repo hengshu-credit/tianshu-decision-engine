@@ -105,6 +105,19 @@ public class ProjectAuthController {
         return execute(() -> projectAuthService.pageTokens(projectId, authId, pageNum, pageSize));
     }
 
+    @PostMapping("/{authId:\\d+}/tokens")
+    public ApiResponse<ProjectAuthTokenDTO> issueToken(@PathVariable Long projectId,
+                                                      @PathVariable Long authId,
+                                                      HttpServletRequest request,
+                                                      HttpServletResponse response) {
+        noStore(response);
+        return execute(() -> {
+            ProjectAuthTokenDTO token = projectAuthService.issueManagementToken(projectId, authId);
+            projectAuthService.recordManagementAccess(request, projectId, authId, token.getId());
+            return token;
+        });
+    }
+
     @GetMapping("/{authId:\\d+}/tokens/{tokenId:\\d+}/full")
     public ApiResponse<ProjectAuthTokenDTO> getFullToken(@PathVariable Long projectId,
                                                @PathVariable Long authId,

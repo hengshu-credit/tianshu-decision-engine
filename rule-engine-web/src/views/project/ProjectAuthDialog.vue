@@ -16,8 +16,7 @@
         <div class="project-code">{{ project.projectCode }}</div>
       </div>
       <div class="project-help">
-        每种鉴权独立统计；临时 Token
-        到期前可续期，过期后仍保留配置的冗余有效时间。
+        可为外部调用方生成临时 Token。有效时长和冗余时长由所选鉴权配置决定。
       </div>
     </div>
 
@@ -96,7 +95,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['完整值', '编辑', '重置密钥', '删除'])" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['完整值', '编辑', '重置密钥', '生成临时 Token', 'Token 记录', '停用'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <div class="auth-row-actions">
                 <el-button
@@ -137,11 +136,20 @@
                   >重置令牌</el-button
                 >
                 <el-button
+                  v-permission="{ code: 'project:edit', projectId: project.id, scope: 'PROJECT' }"
+                  link
+                  size="small"
+                  type="primary"
+                  :loading="issuingAuth?.id === row.id"
+                  :disabled="!canIssueToken(row)"
+                  @click="issueToken(row)"
+                >生成临时 Token</el-button>
+                <el-button
                   link
                   size="small"
                   type="info"
                   @click="openTokens(row)"
-                  >Token</el-button
+                  >Token 记录</el-button
                 >
                 <el-button
                   v-permission="'project:edit'"
@@ -159,16 +167,29 @@
       </el-tab-pane>
 
       <el-tab-pane label="临时 Token" name="tokens">
-        <div v-if="selectedAuth" class="section-toolbar">
+        <div class="section-toolbar token-toolbar">
+          <el-select
+            v-model="selectedAuthId"
+            aria-label="选择鉴权配置"
+            placeholder="选择鉴权配置"
+            filterable
+            @change="selectTokenAuth"
+          >
+            <el-option v-for="auth in authList" :key="auth.id" :value="auth.id"
+              :label="auth.authName + '（' + auth.authCode + '）'" />
+          </el-select>
           <div>
-            <span class="section-title">{{ selectedAuth.authName }}</span>
-            <code class="inline-code">{{ selectedAuth.authCode }}</code>
+            <el-button size="small" :disabled="!selectedAuth" @click="loadTokens">刷新</el-button>
+            <el-button
+              v-permission="{ code: 'project:edit', projectId: project.id, scope: 'PROJECT' }"
+              size="small"
+              type="primary"
+              :loading="!!selectedAuth && issuingAuth?.id === selectedAuth.id"
+              :disabled="!canIssueToken(selectedAuth)"
+              @click="issueToken(selectedAuth)"
+            >生成临时 Token</el-button>
           </div>
-          <el-button size="small" @click="loadTokens">刷新</el-button>
         </div>
-        <dismissible-guidance v-else guide-id="project.auth-token" label="Token 获取说明">
-          请先在“鉴权配置”中选择一项并点击 Token。
-        </dismissible-guidance>
         <el-table show-overflow-tooltip
           v-if="selectedAuth"
           :aria-busy="tokenLoading"
@@ -209,12 +230,12 @@
                 size="small"
                 type="primary"
                 @click="viewFullToken(row)"
-                v-permission="'project:edit'"
+                v-permission="{ code: 'project:edit', projectId: project.id, scope: 'PROJECT' }"
                 >完整值</el-button
               >
               <el-button
                 v-if="row.status === 1"
-                v-permission="'project:edit'"
+                v-permission="{ code: 'project:edit', projectId: project.id, scope: 'PROJECT' }"
                 class="btn-delete"
                 link
                 size="small"
@@ -622,12 +643,17 @@
       width="620px"
       append-to-body
     >
-      <div class="token-code-block">
-        <code>{{ fullTokenValue }}</code>
+      <div v-if="fullToken" class="section-copy token-details">
+        <div>鉴权编码 <code>{{ fullToken.authCode }}</code></div>
+        <div>有效至 {{ fullToken.expireTime }}，冗余截止 {{ fullToken.graceExpireTime }}</div>
+        <div>调用时使用 Authorization: Bearer &lt;Token&gt;，开放接口还需传入 X-Auth-Code。</div>
+      </div>
+      <div v-if="fullToken" class="token-code-block">
+        <code>{{ fullToken.accessToken }}</code>
       </div>
       <template v-slot:footer>
         <span
-          ><el-button size="small" @click="copyValue(fullTokenValue)"
+          ><el-button size="small" :disabled="!fullToken" @click="copyValue(fullToken.accessToken)"
             >复制</el-button
           ><el-button
             size="small"
@@ -642,7 +668,6 @@
 </template>
 
 <script>
-import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { reservedCodeRule } from '@/utils/reservedContentCode'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
@@ -655,6 +680,7 @@ import {
   getProjectAuthFull,
   regenerateProjectAuthSecret,
   listProjectAuthTokens,
+  issueProjectAuthToken,
   getProjectAuthTokenFull,
   revokeProjectAuthToken,
   listProjectAuthAccessLogs,
@@ -663,7 +689,6 @@ import {
 } from '@/api/project'
 
 export default {
-  components: { DismissibleGuidance },
   data() {
     const validateBasicField = (rule, value, callback) => {
       if (this.authForm.authType === 'BASIC' && !String(value || '').trim()) {
@@ -713,13 +738,15 @@ export default {
       },
       fullDialogVisible: false,
       fullCredential: {},
-      selectedAuth: null,
+      selectedAuthId: null,
+      issuingAuth: null,
+      tokenListRequest: 0,
       tokenLoading: false,
       tokenList: [],
       tokenTotal: 0,
       tokenQuery: { pageNum: 1, pageSize: 20 },
       fullTokenDialogVisible: false,
-      fullTokenValue: '',
+      fullToken: null,
       logLoading: false,
       accessLogs: [],
       logTotal: 0,
@@ -740,15 +767,33 @@ export default {
     visible: { type: Boolean, default: false },
     project: { type: Object, default: () => ({}) },
   },
+  computed: {
+    selectedAuth() {
+      return this.authList.find(auth => auth.id === this.selectedAuthId)
+    },
+  },
   watch: {
+    fullTokenDialogVisible(value) {
+      if (!value) this.fullToken = null
+    },
     visible: {
       deep: true,
       immediate: true,
 
       handler(value) {
         if (value && this.project.id) {
+          this.selectedAuthId = null
+          this.authList = []
+          this.tokenList = []
+          this.tokenTotal = 0
           this.activeTab = 'auth'
           this.loadAuths()
+        } else {
+          this.tokenListRequest++
+          this.tokenLoading = false
+          this.issuingAuth = null
+          this.fullTokenDialogVisible = false
+          this.fullToken = null
         }
       },
     },
@@ -784,8 +829,9 @@ export default {
     async loadAuths() {
       this.authLoading = true
       try {
-        const res = await listProjectAuths(this.project.id)
-        this.authList = res.data || []
+        const projectId = this.project.id
+        const res = await listProjectAuths(projectId)
+        if (this.visible && projectId === this.project.id) this.authList = res.data || []
       } finally {
         this.authLoading = false
       }
@@ -1004,13 +1050,19 @@ export default {
       }
     },
     async openTokens(row) {
-      this.selectedAuth = row
-      this.tokenQuery.pageNum = 1
+      this.selectedAuthId = row.id
       this.activeTab = 'tokens'
+      await this.selectTokenAuth()
+    },
+    async selectTokenAuth() {
+      this.tokenQuery.pageNum = 1
+      this.tokenList = []
+      this.tokenTotal = 0
       await this.loadTokens()
     },
     async loadTokens() {
       if (!this.selectedAuth) return
+      const request = ++this.tokenListRequest
       this.tokenLoading = true
       try {
         const res = await listProjectAuthTokens(
@@ -1019,23 +1071,46 @@ export default {
           this.tokenQuery
         )
         const data = res.data || {}
+        if (request !== this.tokenListRequest) return
         this.tokenList = data.records || []
         this.tokenTotal = data.total || 0
       } finally {
-        this.tokenLoading = false
+        if (request === this.tokenListRequest) this.tokenLoading = false
       }
     },
     onTokenPageChange(page) {
       this.tokenQuery.pageNum = page
       this.loadTokens()
     },
+    canIssueToken(auth) {
+      return auth?.status === 1 && this.project.status !== 0 && this.issuingAuth === null
+    },
+    async issueToken(auth) {
+      if (!this.canIssueToken(auth)) return
+      const projectId = this.project.id
+      this.issuingAuth = auth
+      try {
+        const res = await issueProjectAuthToken(projectId, auth.id)
+        if (!this.visible || this.project.id !== projectId || this.issuingAuth !== auth) return
+        this.fullToken = { ...res.data, authCode: auth.authCode }
+        this.fullTokenDialogVisible = true
+        if (this.activeTab === 'tokens' && this.selectedAuthId === auth.id) {
+          this.tokenQuery.pageNum = 1
+          await this.loadTokens()
+        }
+      } finally {
+        if (this.issuingAuth === auth) this.issuingAuth = null
+      }
+    },
     async viewFullToken(row) {
+      const auth = this.selectedAuth
       const res = await getProjectAuthTokenFull(
         this.project.id,
         this.selectedAuth.id,
         row.id
       )
-      this.fullTokenValue = (res.data && res.data.accessToken) || ''
+      if (!this.visible || this.selectedAuth !== auth) return
+      this.fullToken = { ...res.data, authCode: auth.authCode }
       this.fullTokenDialogVisible = true
     },
     async revokeToken(row) {
@@ -1128,14 +1203,26 @@ export default {
         return { label: '冗余期', type: 'warning' }
       return { label: '有效', type: 'success' }
     },
-    copyValue(value) {
+    async copyValue(value) {
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(value)
+          this.$message.success('已复制到剪贴板')
+          return
+        } catch {
+          // 浏览器禁止 Clipboard API 时尝试兼容方式。
+        }
+      }
       const input = document.createElement('textarea')
       input.value = value
       document.body.appendChild(input)
       input.select()
-      document.execCommand('copy')
-      document.body.removeChild(input)
-      this.$message.success('已复制到剪贴板')
+      try {
+        if (document.execCommand('copy')) this.$message.success('已复制到剪贴板')
+        else this.$message.warning('请选中完整值并手动复制')
+      } finally {
+        input.remove()
+      }
     },
   },
   emits: ['update:visible'],
@@ -1194,12 +1281,14 @@ code {
 .auth-row-actions :deep(.el-button + .el-button) {
   margin-left: 0;
 }
-.inline-code {
-  margin-left: 8px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  color: var(--tianshu-info-text);
-  background: var(--tianshu-info-bg);
+.token-toolbar {
+  flex-wrap: wrap;
+}
+.token-toolbar .el-select {
+  width: min(320px, 100%);
+}
+.token-details {
+  margin-bottom: 12px;
 }
 .dialog-pagination {
   margin-top: 16px;

@@ -176,31 +176,9 @@ public class ProjectAuthService {
         if (context == null || context.isTemporaryToken()) {
             throw new IllegalArgumentException("Base project credential is required");
         }
-        RuleProjectAuth auth = findAuthById(context.getAuthId());
-        if (auth == null || !Integer.valueOf(1).equals(auth.getStatus())
-                || !context.getProjectId().equals(auth.getProjectId())) {
-            throw new IllegalArgumentException("Project credential is not available");
-        }
-        RuleProject project = findProjectById(context.getProjectId());
-        if (project == null || !Integer.valueOf(1).equals(project.getStatus())) {
-            throw new IllegalArgumentException("Project is not available");
-        }
-
-        LocalDateTime now = currentDateTime();
-        int tokenTtlSeconds = tokenTtlSeconds(auth);
-        int tokenGraceSeconds = tokenGraceSeconds(auth);
+        RuleProjectAuth auth = requireEnabledTokenAuth(context.getProjectId(), context.getAuthId());
         String tokenValue = generateTokenValue();
-        RuleProjectAuthToken token = new RuleProjectAuthToken();
-        token.setProjectId(context.getProjectId());
-        token.setAuthId(auth.getId());
-        token.setTokenCode("TOKEN_" + UUID.randomUUID().toString().replace("-", "").toUpperCase(Locale.ROOT));
-        token.setLookupKey(credentialCipher.lookupKey(ProjectAuthType.BEARER_TOKEN, tokenValue));
-        token.setTokenCiphertext(credentialCipher.encrypt(tokenValue));
-        token.setIssuedTime(now);
-        token.setExpireTime(now.plusSeconds(tokenTtlSeconds));
-        token.setGraceExpireTime(token.getExpireTime().plusSeconds(tokenGraceSeconds));
-        token.setStatus(1);
-        insertToken(token);
+        RuleProjectAuthToken token = persistToken(auth, tokenValue);
 
         ProjectTokenResponse response = new ProjectTokenResponse();
         response.setAccessToken(tokenValue);
@@ -212,9 +190,46 @@ public class ProjectAuthService {
         response.setIssuedAt(token.getIssuedTime());
         response.setExpiresAt(token.getExpireTime());
         response.setGraceExpiresAt(token.getGraceExpireTime());
-        response.setExpiresInSeconds(tokenTtlSeconds);
-        response.setGraceExpiresInSeconds(tokenTtlSeconds + tokenGraceSeconds);
+        response.setExpiresInSeconds(tokenTtlSeconds(auth));
+        response.setGraceExpiresInSeconds(tokenTtlSeconds(auth) + tokenGraceSeconds(auth));
         return response;
+    }
+
+    @Transactional
+    public ProjectAuthTokenDTO issueManagementToken(Long projectId, Long authId) {
+        RuleProjectAuth auth = requireEnabledTokenAuth(projectId, authId);
+        return toTokenDto(persistToken(auth, generateTokenValue()), true);
+    }
+
+    private RuleProjectAuth requireEnabledTokenAuth(Long projectId, Long authId) {
+        RuleProjectAuth auth = findAuthById(authId);
+        if (auth == null || !Integer.valueOf(1).equals(auth.getStatus())
+                || !projectId.equals(auth.getProjectId())) {
+            throw new IllegalArgumentException("Project credential is not available");
+        }
+        RuleProject project = findProjectById(projectId);
+        if (project == null || !Integer.valueOf(1).equals(project.getStatus())) {
+            throw new IllegalArgumentException("Project is not available");
+        }
+        return auth;
+    }
+
+    private RuleProjectAuthToken persistToken(RuleProjectAuth auth, String tokenValue) {
+        LocalDateTime now = currentDateTime();
+        int tokenTtlSeconds = tokenTtlSeconds(auth);
+        int tokenGraceSeconds = tokenGraceSeconds(auth);
+        RuleProjectAuthToken token = new RuleProjectAuthToken();
+        token.setProjectId(auth.getProjectId());
+        token.setAuthId(auth.getId());
+        token.setTokenCode("TOKEN_" + UUID.randomUUID().toString().replace("-", "").toUpperCase(Locale.ROOT));
+        token.setLookupKey(credentialCipher.lookupKey(ProjectAuthType.BEARER_TOKEN, tokenValue));
+        token.setTokenCiphertext(credentialCipher.encrypt(tokenValue));
+        token.setIssuedTime(now);
+        token.setExpireTime(now.plusSeconds(tokenTtlSeconds));
+        token.setGraceExpireTime(token.getExpireTime().plusSeconds(tokenGraceSeconds));
+        token.setStatus(1);
+        insertToken(token);
+        return token;
     }
 
     public List<ProjectAuthDTO> listAuths(Long projectId) {
@@ -525,7 +540,7 @@ public class ProjectAuthService {
                 new LambdaQueryWrapper<RuleProjectAuthToken>()
                         .eq(RuleProjectAuthToken::getProjectId, projectId)
                         .eq(RuleProjectAuthToken::getAuthId, authId)
-                        .orderByDesc(RuleProjectAuthToken::getIssuedTime));
+                        .orderByDesc(RuleProjectAuthToken::getIssuedTime).orderByDesc(RuleProjectAuthToken::getId));
     }
 
     protected void insertAuth(RuleProjectAuth auth) {
