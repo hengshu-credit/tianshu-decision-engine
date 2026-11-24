@@ -251,14 +251,15 @@ export default {
 .settings-pair > * { min-width: 0; }
 .mail-preview-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
 .mail-preview-heading .el-select { width: 140px; }
-.mail-letter { border: 1px solid var(--tianshu-border-subtle); border-radius: 0; padding: 20px; font-size: 13px; line-height: 1.8; }
-.mail-letter header { display: flex; justify-content: space-between; gap: 18px; align-items: center; border-bottom: 2px solid var(--el-color-primary); padding-bottom: 16px; }
+.mail-letter { border: 1px solid var(--tianshu-border-subtle); border-radius: 0; padding: 20px; font-size: 12px; line-height: 1.7; }
+.mail-letter header { display: flex; justify-content: space-between; gap: 18px; align-items: center; border-bottom: 2px solid var(--el-color-primary); padding-bottom: 6px; }
+.mail-letter header > strong { font-size: 15px; }
 .mail-brand { display: flex; gap: 8px; align-items: center; font-size: 12px; }
-.mail-brand small { font-size: 11px; margin: 0; }
+.mail-brand small { font-size: 12px; margin: 0; }
 .mail-highlight { padding: 10px; border-left: 3px solid var(--el-color-primary); background: var(--tianshu-primary-soft-bg); }
 .mail-note { color: var(--tianshu-text-tertiary); font-size: 12px; }
 .mail-signature { border-top: 2px solid var(--el-color-primary); padding: 0 0 18px; font-size: 12px; line-height: 1.7; }
-.mail-brand-line { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--tianshu-border-subtle); padding-top: 12px; font-size: 11px; color: var(--tianshu-text-tertiary); }
+.mail-brand-line { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--tianshu-border-subtle); padding-top: 12px; font-size: 12px; color: var(--tianshu-text-tertiary); }
 .mail-letter a { color: var(--el-color-primary); }
 .code-toolbar { margin-top: 14px; gap: 16px; }
 .code-filters, .code-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

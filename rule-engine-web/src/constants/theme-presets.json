@@ -1,0 +1,110 @@
+[
+  {
+    "id": "THEME_BLUE",
+    "name": "主题蓝",
+    "kind": "solid",
+    "primary": "#2639E9",
+    "secondary": "#F76E6C",
+    "foreground": "#FFFFFF",
+    "background": "#2639E9"
+  },
+  {
+    "id": "LIQUID_PURPLE",
+    "name": "凝液紫",
+    "kind": "solid",
+    "primary": "#873FF2",
+    "secondary": "#2CC7B8",
+    "foreground": "#FFFFFF",
+    "background": "#873FF2"
+  },
+  {
+    "id": "PEACH_PINK",
+    "name": "桃粉红",
+    "kind": "solid",
+    "primary": "#FF6B9D",
+    "secondary": "#5B6CFF",
+    "foreground": "#19103B",
+    "background": "#FF6B9D"
+  },
+  {
+    "id": "NEON_PINK",
+    "name": "霓虹粉",
+    "kind": "solid",
+    "primary": "#E14ECA",
+    "secondary": "#3A9BFF",
+    "foreground": "#19103B",
+    "background": "#E14ECA"
+  },
+  {
+    "id": "MIDNIGHT_PURPLE",
+    "name": "深夜紫",
+    "kind": "solid",
+    "primary": "#19103B",
+    "secondary": "#F2B35D",
+    "foreground": "#FFFFFF",
+    "background": "#19103B"
+  },
+  {
+    "id": "INDIGO_PURPLE",
+    "name": "靛青紫",
+    "kind": "solid",
+    "primary": "#5B3DF5",
+    "secondary": "#2BBEC4",
+    "foreground": "#FFFFFF",
+    "background": "#5B3DF5"
+  },
+  {
+    "id": "NEBULA_BLUE",
+    "name": "星云蓝",
+    "kind": "solid",
+    "primary": "#536DFE",
+    "secondary": "#D96BB3",
+    "foreground": "#FFFFFF",
+    "background": "#536DFE"
+  },
+  {
+    "id": "CRYSTAL_BLUE",
+    "name": "晶石蓝",
+    "kind": "solid",
+    "primary": "#2F80ED",
+    "secondary": "#22B8A7",
+    "foreground": "#FFFFFF",
+    "background": "#2F80ED"
+  },
+  {
+    "id": "THEME_BLUE_GRADIENT",
+    "name": "主题蓝渐变",
+    "kind": "gradient",
+    "primary": "#2639E9",
+    "secondary": "#E66AB1",
+    "foreground": "#FFFFFF",
+    "background": "linear-gradient(135deg, #2639E9 0%, #536DFE 100%)"
+  },
+  {
+    "id": "LIQUID_PURPLE_GRADIENT",
+    "name": "凝液紫渐变",
+    "kind": "gradient",
+    "primary": "#873FF2",
+    "secondary": "#B16CF2",
+    "foreground": "#FFFFFF",
+    "background": "linear-gradient(135deg, #19103B 0%, #873FF2 100%)"
+  },
+  {
+    "id": "PEACH_PINK_GRADIENT",
+    "name": "桃粉渐变",
+    "kind": "gradient",
+    "primary": "#873FF2",
+    "secondary": "#E14ECA",
+    "foreground": "#FFFFFF",
+    "background": "linear-gradient(135deg, #873FF2 0%, #E14ECA 100%)"
+  },
+  {
+    "id": "NEBULA_GRADIENT",
+    "name": "星云渐变",
+    "kind": "gradient",
+    "primary": "#536DFE",
+    "secondary": "#E14ECA",
+    "foreground": "#FFFFFF",
+    "background": "linear-gradient(135deg, #536DFE 0%, #E14ECA 100%)"
+  }
+]

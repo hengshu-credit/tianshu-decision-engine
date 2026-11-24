@@ -12,6 +12,8 @@ import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
 import com.hengshucredit.rule.server.system.EngineMailFont;
+import com.hengshucredit.rule.server.system.MailTheme;
+import com.hengshucredit.rule.model.dto.ConsoleThemePreference;
 import com.hengshucredit.rule.server.system.SystemBrandAssetService;
 import com.hengshucredit.rule.server.system.SystemBrandAssetService.StatementBrand;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -42,12 +44,12 @@ public class BillingStatementTest {
         var bill = new BillingStatement("客户A", "PROJECT_A", "对账测试公司", third.getSummaryDate(), first.getSummaryDate(),
                 Map.of(7L, config, 8L, another), List.of(first, second, third));
         var brand = brand();
-        assertTrue(bill.tablesHtml().contains("活体&lt;核验&gt;"));
-        assertTrue(bill.tablesHtml().contains("CNY 账单"));
-        assertTrue(bill.tablesHtml().contains(">0.19825</td>"));
-        assertTrue(bill.tablesHtml().contains("2026-10 月度合计"));
-        assertTrue(bill.tablesHtml().contains("2026-11 月度合计"));
-        assertFalse(bill.tablesHtml().contains("减免"));
+        assertTrue(bill.tablesHtml(MailTheme.DEFAULT).contains("活体&lt;核验&gt;"));
+        assertTrue(bill.tablesHtml(MailTheme.DEFAULT).contains("CNY 账单"));
+        assertTrue(bill.tablesHtml(MailTheme.DEFAULT).contains(">0.19825</td>"));
+        assertTrue(bill.tablesHtml(MailTheme.DEFAULT).contains("2026-10</th>"));
+        assertTrue(bill.tablesHtml(MailTheme.DEFAULT).contains("2026-11</th>"));
+        assertFalse(bill.tablesHtml(MailTheme.DEFAULT).contains("减免"));
 
         var captured = new java.util.ArrayList<MimeMessage>();
         var transport = new JavaMailSenderImpl() {
@@ -61,7 +63,7 @@ public class BillingStatementTest {
         ReflectionTestUtils.setField(service, "mailSender", transport);
         ReflectionTestUtils.setField(service, "properties", props);
         service.sendStatement(brand, "accounts@example.test", bill.title(), "客户A团队", bill.introduction(), bill.plain(),
-                bill.tablesHtml(), "账单.xlsx", BillingStatementWorkbook.render(bill, brand));
+                bill.tablesHtml(brand.theme()), "账单.xlsx", BillingStatementWorkbook.render(bill, brand));
         assertEquals(1, captured.size());
         var bytes = new ByteArrayOutputStream();
         captured.get(0).writeTo(bytes);
@@ -77,6 +79,10 @@ public class BillingStatementTest {
         for (String text : List.of("cid:tianshu-logo", brand.name(), "上海衡枢真信科技有限公司", "https://www.hengshucredit.com", "尊敬的客户A团队", "本期合计", "0.17425", "顺颂商祺！", "mailto:hscredit@hengshucredit.com"))
             assertTrue(text, html.contains(text));
         assertFalse(html.contains(bill.company));
+        assertTrue(html.contains("background:" + brand.theme().surface()));
+        assertTrue(html.contains("scrollbar-color: " + brand.theme().accent()));
+        assertTrue(html.contains("overflow-x:auto"));
+        assertTrue(html.contains("white-space:nowrap"));
         assertTrue(html.contains("cid:tianshu-font"));
         assertTrue(html.contains("font-size:12px;line-height:1.7"));
         assertArrayEquals(brand.font().file().getContentAsByteArray(), related.getBodyPart(2).getInputStream().readAllBytes());
@@ -92,6 +98,8 @@ public class BillingStatementTest {
             assertEquals(6, book.getSheetAt(1).getLastRowNum());
             assertEquals("本期合计", book.getSheetAt(1).getRow(2).getCell(4).getStringCellValue());
             assertEquals(0.19825, book.getSheetAt(1).getRow(2).getCell(9).getNumericCellValue(), 1e-12);
+            assertEquals("FF1C7965", catalog.getRow(3).getCell(1).getCellStyle().getFillForegroundXSSFColor().getARGBHex());
+            assertFalse(catalog.getRow(4).getCell(1).getCellStyle().getWrapText());
             assertEquals(brand.font().family(), catalog.getRow(3).getCell(1).getCellStyle().getFont().getFontName());
             assertEquals(4, book.getSheetAt(2).getLastRowNum());
             for (var sheet : book) {
@@ -127,17 +135,20 @@ public class BillingStatementTest {
         var bill = new BillingStatement("项目", "PRJ", "抬头", october, novCny.getSummaryDate(),
                 Map.of(7L, product(7, "计费A")), List.of(octCny, octUsd, novCny, novUsd));
         var doc = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(
-                new ByteArrayInputStream(("<root>" + bill.tablesHtml() + "</root>").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                new ByteArrayInputStream(("<root>" + bill.tablesHtml(MailTheme.DEFAULT) + "</root>").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         assertEquals(2, doc.getElementsByTagName("table").getLength());
         for (int c = 0; c < 2; c++) {
             String unit = c == 0 ? "CNY" : "USD";
             assertEquals(unit + " 账单", doc.getElementsByTagName("h3").item(c).getTextContent());
             var rows = ((org.w3c.dom.Element)doc.getElementsByTagName("tbody").item(c)).getElementsByTagName("tr");
-            var names = List.of("本期合计", "2026-11 月度合计", "计费A", "2026-10 月度合计", "计费A");
+            var names = List.of("本期合计", "2026-11", "2026-11", "2026-10", "2026-10");
             var amounts = c == 0 ? List.of("19.00","9.00","9.00","10.00","10.00") : List.of("1.10","0.60","0.60","0.50","0.50");
             assertEquals(names.size(), rows.getLength());
             for (int i = 0; i < rows.getLength(); i++) {
                 assertEquals(names.get(i), rows.item(i).getFirstChild().getTextContent());
+                assertEquals(7, rows.item(i).getChildNodes().getLength());
+                assertEquals(List.of("—", "月度合计", "计费A", "月度合计", "计费A").get(i),
+                        rows.item(i).getChildNodes().item(1).getTextContent());
                 assertEquals(amounts.get(i), rows.item(i).getLastChild().getTextContent());
             }
         }
@@ -253,7 +264,17 @@ public class BillingStatementTest {
 
     private static StatementBrand brand() throws Exception {
         var logo = new org.springframework.core.io.ClassPathResource("brand/tianshu-logo.png").getContentAsByteArray();
-        return new StatementBrand("系统甲", "通知", logo, EngineMailFont.engineDefault());
+        var pref = new ConsoleThemePreference();
+        pref.setColorScheme("DARK");
+        pref.setAccentPreset("PEACH_PINK_GRADIENT");
+        pref.setAccentMode("CUSTOM_GRADIENT");
+        pref.setCustomGradientColors(List.of("#1C7965", "#3975C9"));
+        var theme = MailTheme.from(pref);
+        assertEquals("#151D31", theme.surface());
+        assertEquals("#3975C9", theme.scrollbarEnd());
+        var fallback = EngineMailFont.engineDefault();
+        var font = new EngineMailFont("账单测试字体", "normal", fallback.file(), fallback.mimeType());
+        return new StatementBrand("系统甲", "通知", logo, font, theme);
     }
 
     private static RuleBillingConfig product(long id, String name) {

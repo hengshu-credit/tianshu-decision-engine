@@ -1,25 +1,34 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>{{fontface}}</style></head>
-<body style="margin:0;padding:24px 12px;background:#f6f8fc;color:#243248;{{fontstyle}}">
-<table role="presentation" style="width:100%;{{fontstyle}};max-width:640px;margin:auto;background:#fff;border:1px solid #e6e9f0;border-radius:0"><tr><td style="padding:24px">
-  <table role="presentation" style="width:100%;border-bottom:2px solid #2934ea"><tr>
-    <td style="font-size:21px;font-weight:bold;padding-bottom:16px">{{title}}</td>
-    <td align="right" style="padding-bottom:16px"><table role="presentation"><tr>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+{{fontface}}
+.bill-scroll { scrollbar-color: {{accent}} {{track}}; scrollbar-width: thin; }
+@supports selector(::-webkit-scrollbar) {
+  .bill-scroll { scrollbar-color: auto; scrollbar-width: auto; }
+  .bill-scroll::-webkit-scrollbar { height: 8px; }
+  .bill-scroll::-webkit-scrollbar-track { background: {{track}}; }
+  .bill-scroll::-webkit-scrollbar-thumb { background: {{accent}} linear-gradient(90deg,{{accent}},{{thumbend}}); border-radius: 4px; }
+}
+</style></head>
+<body style="margin:0;font-size:12px;padding:24px 12px;background:{{page}};color:{{textcolor}};{{fontstyle}}">
+<table role="presentation" style="width:100%;table-layout:fixed;border-spacing:0;{{fontstyle}};font-size:12px;color:{{textcolor}};max-width:640px;margin:auto;background:{{surface}};border:1px solid {{border}};border-radius:0"><tr><td style="padding:24px">
+  <table role="presentation" style="width:100%;border-spacing:0;border-bottom:2px solid {{accent}}"><tr>
+    <td style="font-size:15px;font-weight:bold;padding-bottom:6px">{{title}}</td>
+    <td align="right" style="padding-bottom:6px"><table role="presentation"><tr>
       <td><img src="{{logo}}" alt="{{name}}" width="32" height="32" style="object-fit:contain"></td>
-      <td style="padding-left:8px;font-size:13px">{{name}}<br><span style="font-size:11px;color:#2934ea">{{subtitle}}</span></td>
+      <td style="padding-left:8px;font-size:12px">{{name}}<br><span style="font-size:12px;color:{{link}}">{{subtitle}}</span></td>
     </tr></table></td>
   </tr></table>
   <div style="font-size:12px;line-height:1.7"><p>尊敬的{{username}}：</p><p>{{text}}</p>{{action}}</div>
-  <p style="margin:18px 0 14px;font-size:12px;color:#364665">如有任何问题，欢迎随时沟通。</p>
-  <div style="border-top:2px solid #2934ea;padding:12px 0 18px;font-size:12px;line-height:1.7">
+  <p style="margin:18px 0 14px;font-size:12px;color:{{muted}}">如有任何问题，欢迎随时沟通。</p>
+  <div style="border-top:2px solid {{accent}};padding:12px 0 18px;font-size:12px;line-height:1.7">
     <p style="margin:0 0 8px">顺颂商祺！</p>
-    <a href="mailto:hscredit@hengshucredit.com" style="color:#2934ea">hscredit@hengshucredit.com</a><br>
+    <a href="mailto:hscredit@hengshucredit.com" style="color:{{link}}">hscredit@hengshucredit.com</a><br>
     上海衡枢真信科技有限公司
   </div>
-  <table role="presentation" style="width:100%;border-top:1px solid #e6e9f0;font-size:10px;color:#657087"><tr>
+  <table role="presentation" style="width:100%;border-top:1px solid {{border}};font-size:12px;color:{{muted}}"><tr>
     <td style="padding-top:9px">HENGSHU CREDIT · 鉴真伪，斟信用，衡风险，枢定策</td>
-    <td align="right" style="padding-top:9px"><a href="https://www.hengshucredit.com" style="color:#2934ea;text-decoration:none">www.hengshucredit.com</a></td>
+    <td align="right" style="padding-top:9px"><a href="https://www.hengshucredit.com" style="color:{{link}};text-decoration:none">www.hengshucredit.com</a></td>
   </tr></table>
 </td></tr></table>
 </body></html>

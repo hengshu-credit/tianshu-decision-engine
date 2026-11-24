@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.consolelogin;
 
 import com.hengshucredit.rule.server.system.EngineMailFont;
+import com.hengshucredit.rule.server.system.MailTheme;
 import com.hengshucredit.rule.server.system.SystemBrandAssetService;
 import com.hengshucredit.rule.server.system.SystemSettingsService;
 import jakarta.annotation.Resource;
@@ -78,7 +79,7 @@ public class ConsoleMailService {
                 + (link == null ? "" : "\n" + link + "\n链接有效期：" + ttl + " 分钟") + PLAIN_FOOTER;
         try {
             deliver(sender, from, name, email, title, plain,
-                    html(name, (String) brand.get("subtitle"), title, username, text, link, action, ttl, logoSource, font),
+                    html(name, (String) brand.get("subtitle"), title, username, text, link, action, ttl, logoSource, font, settings == null ? MailTheme.DEFAULT : settings.mailTheme()),
                     font, "cid:tianshu-logo".equals(logoSource) && assets != null ? assets.logo() : null, null, null);
         } catch (java.io.IOException error) {
             throw new IllegalStateException("邮件模板读取失败", error);
@@ -103,7 +104,7 @@ public class ConsoleMailService {
         Map<String, Object> config = settings == null ? null : settings.mail();
         try {
             String body = renderNotification(brand.name(), brand.subtitle(), title, recipientName, introduction,
-                    tables, "cid:tianshu-logo", brand.font());
+                    tables, "cid:tianshu-logo", brand.font(), brand.theme());
             deliver(config == null ? mailSender : sender(config),
                     config == null ? properties.getMail().getFrom() : (String) config.get("email"),
                     brand.name(), email, title, plain + PLAIN_FOOTER, body, brand.font(), brand.logo(), filename, attachment);
@@ -147,27 +148,28 @@ public class ConsoleMailService {
         return html(name, subtitle, title, username, text, link, action, ttl, "cid:tianshu-logo");
     }
     static String html(String name, String subtitle, String title, String username, String text, String link, String action, int ttl, String logoSource) throws java.io.IOException {
-        return html(name, subtitle, title, username, text, link, action, ttl, logoSource, EngineMailFont.engineDefault());
+        return html(name, subtitle, title, username, text, link, action, ttl, logoSource, EngineMailFont.engineDefault(), MailTheme.DEFAULT);
     }
 
     private static String html(String name, String subtitle, String title, String username, String text, String link,
-                               String action, int ttl, String logoSource, EngineMailFont font) throws java.io.IOException {
+                               String action, int ttl, String logoSource, EngineMailFont font, MailTheme theme) throws java.io.IOException {
         if (!"cid:tianshu-logo".equals(logoSource)) SystemSettingsService.validateImageUrl(logoSource);
         if (link != null) {
             var uri = java.net.URI.create(link);
             if (!("https".equals(uri.getScheme()) || "http".equals(uri.getScheme())) || uri.getHost() == null || uri.getUserInfo() != null) throw new IllegalArgumentException("邮件操作链接无效");
         }
-        String button = link == null ? "" : "<p style=\"padding:10px 12px;background:#f3f3ff;border-left:3px solid #2934ea\">链接有效期：" + ttl
-                + " 分钟</p><p><a href=\"" + escape(link) + "\" style=\"display:block;padding:12px;background:#2934ea;color:#fff;text-align:center;text-decoration:none;border-radius:0\">"
-                + escape(action) + "</a></p><p style=\"font-size:12px;color:#657087\">若非您本人操作，请忽略此邮件。请勿向他人转发此链接。</p>";
-        return renderNotification(name, subtitle, title, username, text, button, logoSource, font);
+        String button = link == null ? "" : "<p style=\"padding:10px 12px;background:" + theme.month() + ";border-left:3px solid " + theme.accent() + "\">链接有效期：" + ttl
+                + " 分钟</p><p><a href=\"" + escape(link) + "\" style=\"display:block;padding:12px;background:" + theme.accent() + ";color:" + theme.onAccent() + ";text-align:center;text-decoration:none;border-radius:0\">"
+                + escape(action) + "</a></p><p style=\"font-size:12px;color:" + theme.muted() + "\">若非您本人操作，请忽略此邮件。请勿向他人转发此链接。</p>";
+        return renderNotification(name, subtitle, title, username, text, button, logoSource, font, theme);
     }
 
     private static String renderNotification(String name, String subtitle, String title, String username, String text,
-                                             String content, String logoSource, EngineMailFont font) throws java.io.IOException {
+                                             String content, String logoSource, EngineMailFont font, MailTheme theme) throws java.io.IOException {
         String template = new ClassPathResource("brand/notification.html").getContentAsString(StandardCharsets.UTF_8);
-        Map<String, String> values = Map.of("name", escape(name), "subtitle", escape(subtitle), "title", escape(title),
-                "username", escape(username), "text", escape(text), "action", content, "logo", escape(logoSource), "fontstyle", escape(font.inlineCss()), "fontface", font.faceCss());
+        Map<String, String> values = new java.util.HashMap<>(theme.templateColors());
+        values.putAll(Map.of("name", escape(name), "subtitle", escape(subtitle), "title", escape(title),
+                "username", escape(username), "text", escape(text), "action", content, "logo", escape(logoSource), "fontstyle", escape(font.inlineCss()), "fontface", font.faceCss()));
         Matcher matcher = Pattern.compile("\\{\\{([a-z]+)}}").matcher(template);
         StringBuffer result = new StringBuffer();
         while (matcher.find()) matcher.appendReplacement(result, Matcher.quoteReplacement(values.getOrDefault(matcher.group(1), "")));

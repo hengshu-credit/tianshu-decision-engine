@@ -162,7 +162,7 @@
             </resource>
             <resource>
                 <directory>../rule-engine-web/src/constants</directory>
-                <includes><include>reserved-codes.json</include><include>faker-methods.json</include></includes>
+                <includes><include>reserved-codes.json</include><include>theme-presets.json</include><include>faker-methods.json</include></includes>
             </resource>
         </resources>
         <testResources>

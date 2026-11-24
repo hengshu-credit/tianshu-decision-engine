@@ -100,6 +100,19 @@ public class SystemSettingsService {
         return ExternalCodeMapping.from(((Number) config.get("configVersion")).longValue(), config);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.hengshucredit.rule.server.consolelogin.ConsoleThemePreferenceService themePreferences;
+
+    public MailTheme mailTheme() {
+        if (org.springframework.web.context.request.RequestContextHolder.getRequestAttributes() instanceof
+                org.springframework.web.context.request.ServletRequestAttributes attrs) {
+            var session = attrs.getRequest().getSession(false);
+            if (session != null && session.getAttribute(login.getSessionUserIdAttribute()) instanceof Number id)
+                return MailTheme.from(themePreferences.load(id.longValue()));
+        }
+        return MailTheme.DEFAULT;
+    }
+
     public EngineMailFont mailFont(Map<String, Object> brand) {
         Object value = brand.get("font");
         return value == null || SystemFontService.DEFAULT.equals(value)

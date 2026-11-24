@@ -84,7 +84,7 @@ public class BillingStatementService {
         String name = project.projectName();
         var bill = new BillingStatement(name, code, company, begin, end, eligible, days);
         mail.sendStatement(brand, config.getBillEmail(), bill.title(), name + "团队", bill.introduction(), bill.plain(),
-                bill.tablesHtml(), begin + "至" + end + "-账单.xlsx", BillingStatementWorkbook.render(bill, brand));
+                bill.tablesHtml(brand.theme()), begin + "至" + end + "-账单.xlsx", BillingStatementWorkbook.render(bill, brand));
     }
 
     private static String companyName(RuleBillingConfig config, String defaultName) {

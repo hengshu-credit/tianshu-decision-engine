@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleBillingConfig;
 import com.hengshucredit.rule.server.system.SystemBrandAssetService.StatementBrand;
+import com.hengshucredit.rule.server.system.MailTheme;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
@@ -28,18 +29,21 @@ final class BillingStatementWorkbook {
     private final XSSFWorkbook book;
     private final BillingStatement bill;
     private final String fontName;
-    private final XSSFCellStyle header, light, white, subtotal, periodTotal;
+    private final XSSFCellStyle header, light, surface, subtotal, periodTotal, titleStyle;
     private final Map<Short, CellStyle> decimals = new java.util.HashMap<>();
 
-    private BillingStatementWorkbook(XSSFWorkbook book, BillingStatement bill, String fontName) {
+    private BillingStatementWorkbook(XSSFWorkbook book, BillingStatement bill, StatementBrand brand) {
         this.book = book;
-        this.fontName = fontName;
+        this.fontName = brand.font().family();
+        MailTheme theme = brand.theme();
         this.bill = bill;
-        header = style(0x2934EA, true, true);
-        light = style(0xEFF1FF, false, false);
-        white = style(0xFFFFFF, false, false);
-        periodTotal = style(0x344797, true, true);
-        subtotal = style(0xDEE3FA, true, false);
+        header = style(theme.accent(), theme.onAccent(), true);
+        light = style(theme.band(), theme.text(), false);
+        surface = style(theme.surface(), theme.text(), false);
+        periodTotal = style(theme.total(), theme.text(), true);
+        subtotal = style(theme.month(), theme.text(), true);
+        titleStyle = style(theme.surface(), theme.link(), true);
+        titleStyle.setAlignment(HorizontalAlignment.LEFT);
     }
 
     static byte[] render(BillingStatement bill, StatementBrand brand) {
@@ -55,7 +59,7 @@ final class BillingStatementWorkbook {
                 cursor.insertAttributeWithValue("xfId", "0");
                 cursor.insertAttributeWithValue("builtinId", "0");
             }
-            var writer = new BillingStatementWorkbook(book, bill, brand.font().family());
+            var writer = new BillingStatementWorkbook(book, bill, brand);
             writer.catalog(brand.logo());
             writer.monthly();
             writer.daily();
@@ -72,8 +76,6 @@ final class BillingStatementWorkbook {
         title.setHeightInPoints(36);
         var heading = title.createCell(2);
         heading.setCellValue(bill.company);
-        var titleStyle = style(0xFFFFFF, true, false);
-        titleStyle.setAlignment(HorizontalAlignment.LEFT);
         heading.setCellStyle(titleStyle);
         sheet.addMergedRegion(new CellRangeAddress(1, 1, 2, 7));
         var image = ImageIO.read(new ByteArrayInputStream(logo));
@@ -148,7 +150,7 @@ final class BillingStatementWorkbook {
         }
     }
 
-    private CellStyle band(int index) { return index % 2 == 0 ? light : white; }
+    private CellStyle band(int index) { return index % 2 == 0 ? light : surface; }
 
     private Sheet sheet(String name, int headerIndex, String... labels) {
         Sheet sheet = book.createSheet(name);
@@ -168,7 +170,6 @@ final class BillingStatementWorkbook {
 
     private void append(Sheet sheet, CellStyle style, Object... values) {
         Row row = sheet.createRow(sheet.getLastRowNum() + 1);
-        int lines = 1;
         for (int i = 0; i < values.length; i++) {
             Object value = values[i];
             if (value == null) throw new IllegalArgumentException("账单模板字段缺少数据：" + sheet.getSheetName());
@@ -186,24 +187,23 @@ final class BillingStatementWorkbook {
             else cell.setCellValue(value.toString());
             int width = BillingStatement.number(value).codePoints().map(c -> c > 127 ? 2 : 1).sum() + 4;
             int column = i + 1;
-            sheet.setColumnWidth(column, Math.max(sheet.getColumnWidth(column), Math.min(64, width) * 256));
-            lines = Math.max(lines, (width + 63) / 64);
+            sheet.setColumnWidth(column, Math.max(sheet.getColumnWidth(column), Math.min(255, width) * 256));
         }
-        row.setHeightInPoints(20f * lines);
+        row.setHeightInPoints(20);
     }
 
-    private XSSFCellStyle style(int rgb, boolean bold, boolean inverted) {
+    private XSSFCellStyle style(String background, String foreground, boolean bold) {
         var style = book.createCellStyle();
-        style.setFillForegroundColor(new XSSFColor(new Color(rgb), null));
+        style.setFillForegroundColor(new XSSFColor(Color.decode(background), null));
         style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
         style.setVerticalAlignment(VerticalAlignment.CENTER);
         style.setAlignment(HorizontalAlignment.CENTER);
-        style.setWrapText(true);
+        style.setWrapText(false);
         var font = book.createFont();
         font.setFontName(fontName);
         font.setFontHeightInPoints((short) 10);
         font.setBold(bold);
-        font.setColor(new XSSFColor(new Color(inverted ? 0xFFFFFF : 0x24344E), null));
+        font.setColor(new XSSFColor(Color.decode(foreground), null));
         style.setFont(font);
         return style;
     }

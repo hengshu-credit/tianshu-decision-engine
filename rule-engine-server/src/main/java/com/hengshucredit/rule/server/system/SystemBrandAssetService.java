@@ -44,7 +44,7 @@ public class SystemBrandAssetService {
         if (!id.equals(brand.get("logoId")) && !id.equals(brand.get("faviconId"))) throw new IllegalArgumentException("品牌图片不存在");
         return load(id);
     }
-    public record StatementBrand(String name, String subtitle, byte[] logo, EngineMailFont font) {
+    public record StatementBrand(String name, String subtitle, byte[] logo, EngineMailFont font, MailTheme theme) {
         public StatementBrand {
             if (name == null || name.isBlank()) throw new IllegalArgumentException("请在系统基本信息中填写系统名称");
             if (logo == null || logo.length == 0) throw new IllegalArgumentException("系统 Logo 不能为空");
@@ -57,7 +57,7 @@ public class SystemBrandAssetService {
         String id = (String) brand.get("logoId");
         byte[] image = id != null && !id.isBlank() ? load(id)
                 : url != null && !url.isBlank() ? configuredLogo(url) : defaultLogo();
-        return new StatementBrand((String) brand.get("systemName"), (String) brand.get("subtitle"), image, settings.mailFont(brand));
+        return new StatementBrand((String) brand.get("systemName"), (String) brand.get("subtitle"), image, settings.mailFont(brand), settings.mailTheme());
     }
 
     // 地址来自已审批的系统品牌配置。发送接口不接受图片地址或附件内容。

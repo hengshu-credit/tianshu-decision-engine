@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.model.entity.RuleBillingConfig;
 import com.hengshucredit.rule.model.entity.RuleBillingSummary;
 import org.springframework.web.util.HtmlUtils;
+import com.hengshucredit.rule.server.system.MailTheme;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -127,35 +128,43 @@ final class BillingStatement {
         return out.toString();
     }
 
-    String tablesHtml() {
+    String tablesHtml(MailTheme theme) {
         StringBuilder out = new StringBuilder();
         currencies.forEach((unit, bill) -> {
-            out.append("<h3 style='margin:20px 0 8px;font-size:13px'>").append(HtmlUtils.htmlEscape(unit, "UTF-8")).append(" 账单</h3>")
-                    .append("<table width='100%' cellspacing='0' cellpadding='5' style='border-collapse:collapse;font-size:12px'>")
-                    .append("<thead style='background:#2934ea;color:white'><tr>");
-            for (String label : List.of("月份 / 产品", "请求次数", "调用次数", "计费次数", "计费单价", "账单费用"))
-                out.append("<th scope='col'>").append(label).append("</th>");
+            out.append("<h3 style='margin:16px 0 6px;font-size:12px'>").append(HtmlUtils.htmlEscape(unit, "UTF-8")).append(" 账单</h3>")
+                    .append("<div class='bill-scroll' role='region' aria-label='账单明细' tabindex='0' ")
+                    .append("style='width:100%;max-width:100%;overflow-x:auto'>")
+                    .append("<table cellspacing='0' cellpadding='5' style='width:max-content;min-width:100%;")
+                    .append("border-collapse:collapse;font-size:12px;line-height:1.5;white-space:nowrap;color:")
+                    .append(theme.text()).append("'><thead style='background:").append(theme.accent())
+                    .append(";color:").append(theme.onAccent()).append("'><tr>");
+            for (String label : List.of("月份", "产品", "请求次数", "调用次数", "计费次数", "计费单价", "账单费用"))
+                out.append("<th scope='col' style='white-space:nowrap'>").append(label).append("</th>");
             out.append("</tr></thead><tbody>");
-            appendRow(out, "本期合计", bill.period.total, "background:#dee3fa;font-weight:bold", false);
+            appendRow(out, "本期合计", "—", bill.period.total, theme.total(), theme.border(), false);
             bill.months.forEach((month, section) -> {
-                appendRow(out, month + " 月度合计", section.total, "background:#f0f2fc;font-weight:bold", false);
-                section.byProduct.forEach((id, line) -> appendRow(out, products.get(id).getBillingName(), line, "", true));
+                appendRow(out, month.toString(), "月度合计", section.total, theme.month(), theme.border(), false);
+                section.byProduct.forEach((id, line) -> appendRow(out, month.toString(), products.get(id).getBillingName(),
+                        line, theme.surface(), theme.border(), true));
             });
-            out.append("</tbody></table>");
+            out.append("</tbody></table></div>");
         });
-        out.append("<p style='font-size:12px;color:#59647a'>请求次数按各产品的日汇总累加。</p>");
+        out.append("<p style='color:").append(theme.muted()).append("'>请求次数按各产品的日汇总累加。</p>");
         if (currencies.values().stream().anyMatch(section -> section.period.total.requests == null))
-            out.append("<p style='font-size:12px;color:#59647a'>部分明细缺少请求标识，对应请求次数标为“未记录”。</p>");
+            out.append("<p style='color:").append(theme.muted()).append("'>部分明细缺少请求标识，对应请求次数标为“未记录”。</p>");
         return out.toString();
     }
 
-    private static void appendRow(StringBuilder out, String label, Totals totals, String style, boolean product) {
-        out.append("<tr style='").append(style).append("'><th scope='row' style='text-align:left;font-weight:inherit;")
-                .append(product ? "padding-left:24px;" : "").append("border-bottom:1px solid #d9dfee'>")
-                .append(HtmlUtils.htmlEscape(label, "UTF-8")).append("</th>");
+    private static void appendRow(StringBuilder out, String month, String product, Totals totals, String background,
+                                  String border, boolean detail) {
+        String cell = "white-space:nowrap;border-bottom:1px solid " + border;
+        out.append("<tr style='background:").append(background).append(detail ? "'>" : ";font-weight:bold'>")
+                .append("<th scope='row' style='text-align:left;font-weight:inherit;").append(cell).append("'>")
+                .append(HtmlUtils.htmlEscape(month, "UTF-8")).append("</th><td style='text-align:left;").append(cell)
+                .append("'>").append(HtmlUtils.htmlEscape(product, "UTF-8")).append("</td>");
         for (Object value : List.of(totals.requestsValue(), totals.calls, totals.charged,
-                product ? totals.priceValue() : "—", amountText(totals.amount))) {
-            out.append("<td style='text-align:right;border-bottom:1px solid #d9dfee'>")
+                detail ? totals.priceValue() : "—", amountText(totals.amount))) {
+            out.append("<td style='text-align:right;").append(cell).append("'>")
                     .append(HtmlUtils.htmlEscape(number(value), "UTF-8")).append("</td>");
         }
         out.append("</tr>");
