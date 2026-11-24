@@ -40,6 +40,19 @@ public class OfflineDataObjectImportTest {
         assertEquals(1, f.drafts.size());
     }
 
+    @Test public void identicalNumbersInDifferentObjectsCannotOverrideTheAppliedFieldHierarchy() {
+        var f = fixture();
+        f.appliedFieldIds = Map.of(10L, 10L, 11L, 11L, 12L, 12L, 13L, 13L);
+        f.objectProjections.put(200L, Map.of("objectCode", "request", "fields", List.of(
+                field(10, null, "mother", "OBJECT"), field(11, 10L, "age", "NUMBER"),
+                field(12, null, "father", "OBJECT"), field(13, 12L, "age", "NUMBER"))));
+        f.service.apply(bundle(), options("REUSE"), "tester");
+        var draft = CanonicalJson.readMap(f.drafts.get(1).getSnapshotJson());
+        var params = com.alibaba.fastjson.JSON.parseArray((String)draft.get("paramsJson"));
+        assertEquals(Long.valueOf(13), params.getJSONObject(0).getLong("varId"));
+        assertEquals(Long.valueOf(11), params.getJSONObject(1).getLong("varId"));
+    }
+
     @Test public void conflictedApprovalIsNotReportedAsSuccessfulImport() {
         var f = fixture();
         f.approvalStatus = "CONFLICT";

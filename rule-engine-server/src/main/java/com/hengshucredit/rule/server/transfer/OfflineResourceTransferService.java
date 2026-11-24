@@ -57,6 +57,7 @@ public class OfflineResourceTransferService {
     private GovernedResourceVersionMapper governedResourceVersionMapper;
     @Resource
     private GovernanceSecretCodec secretCodec;
+    @Resource private TransferPageSettings pageSettings;
     @Resource
     private RuleVersionBindingMapper ruleVersionBindingMapper;
     @Resource
@@ -98,14 +99,16 @@ public class OfflineResourceTransferService {
         if (consoleResources != null) for (TransferKey root : roots) consoleResources.requirePermission(root.type().name(), root.id(), "transfer:export");
         Map<String, TransferBundle.Resource> resources = new LinkedHashMap<>();
         List<String> warnings = new ArrayList<>();
+        Set<TransferKey> withPageSettings = new LinkedHashSet<>(roots);
         Deque<TransferKey> queue = new ArrayDeque<>(roots);
         if (includeDependencies) {
             // 项目包含关系不是上游引用，不能写成反向依赖，否则会与资源的 projectId 形成环。
             // 只展开用户显式选择的项目；普通资源携带归属项目时不能扩散到无关资源。
             for (TransferKey root : roots) {
                 if (root.type() == TransferResourceType.PROJECT) {
-                    projectResourceMapper.selectProjectResources(root.id()).stream()
-                            .map(TransferRootRequest::key).forEach(queue::addLast);
+                    var members = projectResourceMapper.selectProjectResources(root.id()).stream().map(TransferRootRequest::key).toList();
+                    queue.addAll(members);
+                    withPageSettings.addAll(members);
                 }
             }
         }
@@ -129,7 +132,10 @@ public class OfflineResourceTransferService {
             // 外数/数据库/鉴权敏感字段不还原，必须在目标环境重新配置。
             if (key.type() == TransferResourceType.MODEL && secretCodec != null) {
                 configuration = secretCodec.restore(snapshot);
+                Long snapshotId = selectedModelSnapshot(key, selectedVersions.get(key.value()), snapshot);
+                if (snapshotId != null) configuration.put("_transferSourceGovernedSnapshot", snapshotId);
                 Object fileVersionId = configuration.remove("_modelContentVersionId");
+                if (fileVersionId != null) configuration.put("_transferSourceModelVersion", fileVersionId);
                 if (fileVersionId != null) {
                     var fileVersion = modelVersions.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleModelVersion>()
                             .select(com.hengshucredit.rule.model.entity.RuleModelVersion::getId, com.hengshucredit.rule.model.entity.RuleModelVersion::getModelId, com.hengshucredit.rule.model.entity.RuleModelVersion::getModelContent)
@@ -198,7 +204,9 @@ public class OfflineResourceTransferService {
                 if (includeDependencies) queue.addLast(new TransferKey(targetType, dependency.targetResourceId()));
             }
             resources.put(key.value(), new TransferBundle.Resource(key.value(), configuration,
-                    references, requiredEnvironmentFields(key.type(), configuration), versionReferences));
+                    references, requiredEnvironmentFields(key.type(), configuration), versionReferences,
+                    pageSettings == null || !withPageSettings.contains(key) || selectedVersions.containsKey(key.value()) && "FIXED".equals(selectedVersions.get(key.value()).versionMode())
+                            ? List.of() : pageSettings.export(key)));
             visiting.remove(key.value());
         }
         Map<String,TransferFunctionLibraries.Library> libraries = new LinkedHashMap<>();
@@ -222,6 +230,19 @@ public class OfflineResourceTransferService {
     @Transactional(readOnly = true)
     public Map<String, Object> preview(byte[] bytes) {
         return preview(bytes, new TransferImportOptions(null, "PROJECT", "REUSE", "SUFFIX", "_imported", false, null, null, Map.of()));
+    }
+
+    private Long selectedModelSnapshot(TransferKey key, TransferRootRequest selected, ResourceSnapshot snapshot) {
+        if (governedResourceMapper == null || governedResourceVersionMapper == null) return null;
+        Long id = selected != null && "FIXED".equals(selected.versionMode()) ? selected.versionId() : null;
+        if (id == null) {
+            var owner = governedResourceMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<GovernedResource>()
+                    .eq(GovernedResource::getResourceType, key.type().name()).eq(GovernedResource::getResourceId, key.id()));
+            if (owner != null) id = owner.getEffectiveVersionId();
+        }
+        var row = id == null ? null : governedResourceVersionMapper.selectById(id);
+        return row != null && "MODEL".equals(row.getResourceType()) && java.util.Objects.equals(row.getResourceId(),key.id())
+                && com.hengshucredit.rule.server.artifact.Sha256Digests.text(snapshot.snapshotJson()).equals(row.getSnapshotDigest()) ? id : null;
     }
 
     private ResourceSnapshot exportSnapshot(TransferKey key, TransferRootRequest selection, GovernedResourceAdapter adapter) {
@@ -248,7 +269,10 @@ public class OfflineResourceTransferService {
 
     @Transactional(readOnly = true)
     public Map<String, Object> preview(byte[] bytes, TransferImportOptions options) {
-        TransferBundleCodec.Decoded decoded = codec.decode(bytes);
+        return preview(Boolean.TRUE.equals(options.createProject()) ? codec.decodeDeferred(bytes) : codec.decode(bytes), options);
+    }
+
+    Map<String,Object> preview(TransferBundleCodec.Decoded decoded, TransferImportOptions options) {
         List<TransferBundle.Resource> selectedResources = TransferSelection.select(decoded.bundle(), options);
         List<Map<String, Object>> resources = new ArrayList<>();
         List<TransferConflict> conflicts = new ArrayList<>();
@@ -280,6 +304,11 @@ public class OfflineResourceTransferService {
                     : resource.requiredEnvironmentFields().stream().filter(field -> !"目标环境需提供同名 Java 类或 Spring Bean".equals(field)).toList());
             if (requirement != null) item.put("functionJar", requirement.path());
             item.put("configurationOnly", DATA_FREE_TYPES.contains(key.type()));
+            item.put("pageSettingCount", resource.pageSettings().size());
+            item.put("sourcePublished", "1".equals(String.valueOf(resource.configuration().get("status")))
+                    && (key.type() == TransferResourceType.EXPERIMENT || key.type() == TransferResourceType.RULE
+                    && longValue(resource.configuration().get("publishedVersion")) != null
+                    && longValue(resource.configuration().get("publishedVersion")) > 0));
             item.put("selected", true);
             resources.add(item);
             TransferConflict conflict = findConflict(resource, key, options, targets);
@@ -489,16 +518,18 @@ public class OfflineResourceTransferService {
     }
 
     private Map<String, String> resourceIdentity(TransferResourceType type, Long resourceId) {
-        List<Map<String, Object>> candidates = targetCandidates(type.name(), null, null);
-        for (Map<String, Object> candidate : candidates) {
-            if (String.valueOf(resourceId).equals(String.valueOf(candidate.get("id")))) {
-                Map<String, String> result = new LinkedHashMap<>();
-                result.put("code", candidate.get("code") == null ? null : String.valueOf(candidate.get("code")));
-                result.put("name", candidate.get("name") == null ? null : String.valueOf(candidate.get("name")));
-                return result;
-            }
-        }
-        return Map.of();
+        if (governedResourceMapper == null || governedResourceVersionMapper == null) return Map.of();
+        if (consoleResources != null) consoleResources.require(type.name(), resourceId, "view");
+        var row = governedResourceMapper.selectOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<GovernedResource>()
+                .eq(GovernedResource::getResourceType, type.name()).eq(GovernedResource::getResourceId, resourceId));
+        if (row == null || row.getEffectiveVersionId() == null) return Map.of();
+        var version = governedResourceVersionMapper.selectById(row.getEffectiveVersionId());
+        if (version == null) return Map.of();
+        Map<String,Object> config = CanonicalJson.readMap(version.getSnapshotJson());
+        Map<String,String> result = new LinkedHashMap<>();
+        result.put("code", identity(config, type));
+        result.put("name", config.get(type.nameField) == null ? null : String.valueOf(config.get(type.nameField)));
+        return result;
     }
 
     @SuppressWarnings("unchecked")

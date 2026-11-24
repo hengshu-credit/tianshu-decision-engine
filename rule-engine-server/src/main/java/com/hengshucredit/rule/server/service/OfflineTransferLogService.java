@@ -45,7 +45,11 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
 
     public void recordImport(byte[] bytes, Map<String, Object> result, String operator, String errorMessage) {
         TransferBundleCodec.Decoded decoded = null;
-        try { decoded = codec.decode(bytes); } catch (RuntimeException ignored) { }
+        try { decoded = codec.decodeDeferred(bytes); } catch (RuntimeException ignored) { }
+        recordDecodedImport(decoded, Sha256Digests.bytes(bytes), result, operator, errorMessage);
+    }
+
+    public void recordDecodedImport(TransferBundleCodec.Decoded decoded, String digest, Map<String,Object> result, String operator, String errorMessage) {
         List<String> roots = decoded == null ? List.of() : decoded.bundle().roots();
         int count = decoded == null ? 0 : decoded.bundle().resources().size();
         Map<String, Object> content = new LinkedHashMap<>();
@@ -56,7 +60,7 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
             content.put("lineage", lineageSnapshot(decoded.bundle(), selected));
         }
         saveLog("IMPORT", errorMessage == null ? "SUCCESS" : "FAILED", operator,
-                Sha256Digests.bytes(bytes), roots, count, content, errorMessage);
+                digest, roots, count, content, errorMessage);
     }
 
     public void recordFailure(String operationType, List<TransferRootRequest> roots, String operator, String errorMessage) {

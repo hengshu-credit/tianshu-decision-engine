@@ -63,6 +63,8 @@ final class TransferResourceComparison {
         if (type == TransferResourceType.MODEL && config.get("modelContent") instanceof String content) {
             config.put("modelContent", ModelFileStore.contentDigest(content));
         }
+        config.remove("_transferSourceModelVersion");
+        config.remove("_transferSourceGovernedSnapshot");
         entity(config);
         switch (type) {
             case FUNCTION -> removeInactiveFunctionFields(config);

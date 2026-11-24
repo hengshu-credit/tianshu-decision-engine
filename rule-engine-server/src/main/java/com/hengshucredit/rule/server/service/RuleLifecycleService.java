@@ -351,6 +351,9 @@ public class RuleLifecycleService {
         RuleRevision revision = requireState(revisionId, RuleRevisionState.DRAFT);
         lockDefinition(revision.getDefinitionId());
         revision = requireState(revisionId, RuleRevisionState.DRAFT);
+        if (request != null && ((request.getExpectedContentDigest() != null && !Objects.equals(request.getExpectedContentDigest(), revision.getContentDigest()))
+                || (request.getExpectedLockVersion() != null && !Objects.equals(request.getExpectedLockVersion(), revision.getLockVersion()))))
+            throw governance(409, "DRAFT_LOCK_CONFLICT", "规则草稿在预检后已变更，请重新核对");
         requireLocalNamespace(loadDefinition(revision.getDefinitionId()), revision);
         RuleRevision pending = findPendingRevision(revision.getDefinitionId());
         if (pending != null) {

@@ -24,7 +24,7 @@ public final class DataObjectGovernanceReferences {
         if (path == null) return false;
         String field = path.substring(path.lastIndexOf('.') + 1);
         return switch (field) {
-            case "refId", "varId", "_varId", "leftVarId", "rightVarId", "_targetVarId",
+            case "refId", "varId", "sourceVarId", "targetVarId", "_varId", "leftVarId", "rightVarId", "_targetVarId",
                     "_condVarId", "_matchVarId", "_checkVarId", "_rightVarId" -> true;
             default -> false;
         };

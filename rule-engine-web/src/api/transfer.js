@@ -31,6 +31,13 @@ export function listTransferVersionCandidates(refType, resourceId) {
   return request({ ...metadataResponse, url: '/rule/transfer/version-candidates', method: 'get', params: { refType, resourceId } })
 }
 
+export function transferProjectSet(file, digest = null) {
+  const data = new FormData()
+  data.append('file', file)
+  if (digest) data.append('digest', digest)
+  return request({ url: '/rule/transfer/project-set/' + (digest ? 'import' : 'preview'), method: 'post', data, timeout: transferFileTimeoutMs })
+}
+
 export function previewResourceTransfer(file, options = null) {
   const form = new FormData()
   form.append('file', file)

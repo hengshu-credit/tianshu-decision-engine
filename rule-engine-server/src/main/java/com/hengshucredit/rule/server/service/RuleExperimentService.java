@@ -282,7 +282,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             inputs.addAll(conditionFields.getInputFields());
         }
         if (hasText(experiment.getRequestKeyPath())) {
-            for (JSONObject operand : OperandValueResolver.collectReferences(experiment.getRequestKeyPath())) {
+            for (JSONObject operand : OperandValueResolver.collectReferences(validatedRequestKey(experiment))) {
                 String path = firstNonBlank(operand.getString("code"), operand.getString("value"));
                 if (!hasText(path)) continue;
                 RuleDefinitionInputField requestKey = new RuleDefinitionInputField();
@@ -707,7 +707,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         // 独立路由规则由已发布执行器解析自己的冻结依赖，不提前回读实时草稿。
 
         if (includeRequestKey && hasText(experiment.getRequestKeyPath())) {
-            for (JSONObject operand : OperandValueResolver.collectReferences(experiment.getRequestKeyPath())) {
+            for (JSONObject operand : OperandValueResolver.collectReferences(validatedRequestKey(experiment))) {
                 if ("FIXED".equals(operand.getString("versionMode"))) continue;
                 String refType = firstNonBlank(operand.getString("refType"), "VARIABLE");
                 Long refId = operand.getLong("refId");
@@ -1332,6 +1332,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     /** 审批预检与执行共用相同分流约束。 */
     public void validateExperiment(RuleExperiment experiment) {
+        validatedRequestKey(experiment);
         List<RuleExperimentGroup> groups = experiment.getGroups() == null
                 ? Collections.emptyList()
                 : experiment.getGroups();
@@ -1553,13 +1554,25 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
     }
 
+    private static String validatedRequestKey(RuleExperiment experiment) {
+        String value = experiment.getRequestKeyPath();
+        if (value == null || value.isBlank()) return value;
+        try {
+            if (JSON.parse(value) instanceof JSONObject operand && operand.getString("kind") != null
+                    && !operand.getString("kind").isBlank()) return value;
+        } catch (com.alibaba.fastjson.JSONException invalid) {
+            // 业务请求不回显可能含有样例值的原始 JSON。
+        }
+        throw new IllegalArgumentException("实验请求键必须为有效操作数，请在内容选择器中重新选择字段或表达式");
+    }
+
     private String resolveRequestKey(RuleExperiment experiment, RuleExperimentExecuteRequest request,
                                      Map<String, Object> params) {
         if (request != null && hasText(request.getRequestKey())) {
             return request.getRequestKey();
         }
         Object configured = hasText(experiment.getRequestKeyPath())
-                ? OperandValueResolver.resolve(experiment.getRequestKeyPath(), params,
+                ? OperandValueResolver.resolve(validatedRequestKey(experiment), params,
                 referenceValues(experiment.getProjectId(), params), this::invokeOperandFunction)
                 : null;
         if (configured != null && hasText(String.valueOf(configured))) {

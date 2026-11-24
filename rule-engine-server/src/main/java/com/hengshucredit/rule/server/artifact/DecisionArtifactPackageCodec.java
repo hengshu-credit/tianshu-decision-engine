@@ -156,15 +156,25 @@ public class DecisionArtifactPackageCodec {
     }
 
     /** Server-owned ZIP bytes stay with the snapshot. Large weights are verified now and inflated individually on use. */
-    DecodedPackage decodeRuntime(byte[] packageBytes) {
+    public DecodedPackage decodeRuntime(byte[] packageBytes) {
         return decode(packageBytes, null, false, true);
     }
 
     private DecodedPackage decode(byte[] packageBytes, Set<String> retainedPaths, boolean catalog, boolean lazyModels) {
-        if (packageBytes == null || packageBytes.length == 0) {
+        return decode(packageBytes, null, retainedPaths, catalog, lazyModels);
+    }
+
+    /** 文件由调用方保持到最后一个延迟组件消费完毕。逐项校验与内存包一致。 */
+    public DecodedPackage decodeTransferFile(java.nio.file.Path file) {
+        return decode(null, java.util.Objects.requireNonNull(file), null, false, true);
+    }
+
+    private DecodedPackage decode(byte[] packageBytes, java.nio.file.Path file, Set<String> retainedPaths,
+                                  boolean catalog, boolean lazyModels) {
+        if (file == null && (packageBytes == null || packageBytes.length == 0)) {
             throw new IllegalArgumentException("决策制品包不能为空");
         }
-        Map<String, VerifiedEntry> entries = readEntries(packageBytes, retainedPaths, catalog);
+        Map<String, VerifiedEntry> entries = readEntries(packageBytes, file, retainedPaths, catalog);
         VerifiedEntry manifestEntry = entries.remove(DecisionArtifactPackage.MANIFEST_PATH);
         if (manifestEntry == null) {
             throw new IllegalArgumentException("决策制品包缺少 manifest.json");
@@ -225,7 +235,8 @@ public class DecisionArtifactPackageCodec {
             if (entry.content() == null && retainedPaths == null) {
                 if (catalog) artifactPackage.addModelDescriptor(path, mediaType, entry.size(), digest, componentMetadata);
                 else if (lazyModels) artifactPackage.addDeferredModel(path, mediaType, Math.toIntExact(entry.size()), digest,
-                        componentMetadata, () -> readVerifiedModel(packageBytes, path, Math.toIntExact(entry.size()), digest));
+                        componentMetadata, () -> file == null ? readVerifiedModel(packageBytes, path, Math.toIntExact(entry.size()), digest)
+                                : readTransferFileEntry(file, path, Math.toIntExact(entry.size()), digest));
                 else artifactPackage.addComponent(path, mediaType, readVerifiedModel(packageBytes, path, Math.toIntExact(entry.size()), digest),
                         componentMetadata, false);
             }
@@ -239,7 +250,7 @@ public class DecisionArtifactPackageCodec {
             throw new IllegalArgumentException("决策制品包包含未声明组件: " + unexpected);
         }
         return new DecodedPackage(artifactPackage, expectedArtifactDigest,
-                Sha256Digests.bytes(packageBytes));
+                file == null ? Sha256Digests.bytes(packageBytes) : fileDigest(file));
     }
 
     private Map<String, Object> baseManifest(DecisionArtifactPackage artifactPackage) {
@@ -265,11 +276,32 @@ public class DecisionArtifactPackageCodec {
 
     private record VerifiedEntry(byte[] content, long size, String digest) { }
 
-    private Map<String, VerifiedEntry> readEntries(byte[] packageBytes, Set<String> retainedPaths, boolean catalog) {
+    private String fileDigest(java.nio.file.Path file) {
+        var hash = sha256();
+        try (var out = new java.security.DigestOutputStream(java.io.OutputStream.nullOutputStream(), hash)) {
+            java.nio.file.Files.copy(file, out);
+            return java.util.HexFormat.of().formatHex(hash.digest());
+        } catch (IOException error) { throw new IllegalStateException("无法核对迁移包摘要", error); }
+    }
+
+    private static byte[] readTransferFileEntry(java.nio.file.Path file, String path, int size, String digest) {
+        try (var archive = new java.util.zip.ZipFile(file.toFile())) {
+            var entry = archive.getEntry(path);
+            if (entry == null || entry.getSize() != size) throw new IOException("模型大小不匹配");
+            try (var in = archive.getInputStream(entry)) {
+                byte[] bytes = new byte[size];
+                if (in.readNBytes(bytes, 0, size) != size || in.read() != -1 || !Sha256Digests.bytes(bytes).equals(digest))
+                    throw new IOException("模型摘要不匹配");
+                return bytes;
+            }
+        } catch (IOException invalid) { throw new IllegalArgumentException("无法读取已验证的迁移模型", invalid); }
+    }
+
+    private Map<String, VerifiedEntry> readEntries(byte[] packageBytes, java.nio.file.Path file, Set<String> retainedPaths, boolean catalog) {
         Map<String, VerifiedEntry> entries = new TreeMap<>();
         long totalBytes = 0L;
         Set<String> models = new HashSet<>();
-        try (ZipInputStream input = new ZipInputStream(new ByteArrayInputStream(packageBytes))) {
+        try (ZipInputStream input = new ZipInputStream(file == null ? new ByteArrayInputStream(packageBytes) : java.nio.file.Files.newInputStream(file))) {
             byte[] chunk = new byte[65536];
             ZipEntry entry;
             while ((entry = input.getNextEntry()) != null) {
@@ -283,6 +315,7 @@ public class DecisionArtifactPackageCodec {
                 if (entries.size() >= maxEntries) {
                     throw new IllegalArgumentException("决策制品包条目数量超过限制");
                 }
+                if (retainedPaths == null && path.startsWith("model-files/")) models.add(path);
                 boolean retain = !models.contains(path) && (retainedPaths == null || retainedPaths.contains(path)
                         || DecisionArtifactPackage.MANIFEST_PATH.equals(path));
                 ByteArrayOutputStream entryBuffer = retain ? new ByteArrayOutputStream() : null;

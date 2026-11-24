@@ -110,6 +110,18 @@ public final class MysqlModelBlobStore {
 
     private void deflate(byte[] data, PayloadWriter sink) throws IOException {
         // ZIP's raw DEFLATE level matches DecisionArtifactPackageCodec. Model payload blocks can be shared with frozen ZIPs.
+        if (data.length >= 8 * 1024 * 1024) {
+            var path = java.nio.file.Files.createTempFile("tianshu-compressed-", ".deflate");
+            try {
+                Deflater codec = new Deflater(9, true);
+                try (var stream = java.nio.file.Files.newOutputStream(path);
+                     var compressed = new DeflaterOutputStream(stream, codec, 64 * 1024)) {
+                    compressed.write(data);
+                } finally { codec.end(); }
+                sink.append(path);
+            } finally { java.nio.file.Files.deleteIfExists(path); }
+            return;
+        }
         Deflater codec = new Deflater(9,true);
         var compressed = new ByteArrayOutputStream(Math.min(data.length, 65536));
         try (var out = new DeflaterOutputStream(compressed,codec,64*1024)) { out.write(data); }
@@ -196,19 +208,46 @@ public final class MysqlModelBlobStore {
             return true;
         }
 
+        void append(java.nio.file.Path file) throws IOException {
+            long length = java.nio.file.Files.size(file);
+            byte[] buffer = new byte[65536];
+            try (var stream = java.nio.file.Files.newInputStream(file);
+                 var payload = java.nio.channels.FileChannel.open(file, java.nio.file.StandardOpenOption.READ)) {
+                for (long offset = 0; offset < length;) {
+                    int size = (int)Math.min(maxPayload, length - offset);
+                    var digest = sha256();
+                    for (int remaining = size; remaining > 0;) {
+                        int n = stream.read(buffer, 0, Math.min(remaining, buffer.length));
+                        if (n <= 0) throw new IOException("压缩模型文件不完整");
+                        digest.update(buffer, 0, n);
+                        remaining -= n;
+                    }
+                    final long start = offset;
+                    save(HexFormat.of().formatHex(digest.digest()), size, () ->
+                            new org.apache.commons.compress.utils.BoundedSeekableByteChannelInputStream(start, size, payload));
+                    offset += size;
+                }
+            }
+        }
+
+        @FunctionalInterface private interface ChunkStream { InputStream open() throws IOException; }
+
         private void save(byte[] bytes, int offset, int size) {
             var md = sha256();
             md.update(bytes, offset, size);
-            String hash = HexFormat.of().formatHex(md.digest());
+            save(HexFormat.of().formatHex(md.digest()), size, () -> new ByteArrayInputStream(bytes, offset, size));
+        }
+
+        private void save(String hash, int size, ChunkStream source) {
             // Server-side binary parameters stream through the driver without building a giant escaped SQL string.
             if (!Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM rule_file_chunk WHERE digest=?)", Boolean.class, hash))) {
                 db.execute((ConnectionCallback<Void>) connection -> {
                     try (var ps = connection.unwrap(JdbcConnection.class).serverPrepareStatement(
-                            "INSERT INTO rule_file_chunk(digest,content) VALUES(?,?) ON DUPLICATE KEY UPDATE digest=rule_file_chunk.digest")) {
+                            "INSERT INTO rule_file_chunk(digest,content) VALUES(?,?) ON DUPLICATE KEY UPDATE digest=rule_file_chunk.digest"); var input = source.open()) {
                         ps.setString(1,hash);
-                        ps.setBinaryStream(2,new ByteArrayInputStream(bytes,offset,size),size);
+                        ps.setBinaryStream(2,input,size);
                         ps.executeUpdate();
-                    }
+                    } catch (IOException error) { throw new java.sql.SQLException("读取模型分片失败", error); }
                     return null;
                 });
             }

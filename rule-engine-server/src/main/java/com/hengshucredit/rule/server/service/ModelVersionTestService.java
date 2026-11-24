@@ -58,7 +58,7 @@ public class ModelVersionTestService {
             metadata.put("embeddingMode", dependency.getEmbeddingMode());
             if (!apiIds.isEmpty() && "MODEL".equals(dependency.getResourceType())
                     && model.getId().equals(dependency.getResourceId())) metadata.put("frozenExternalApiIds", apiIds);
-            pack.addComponent(dependency.getComponentPath(), dependency.getMediaType(), dependency.getContent(), metadata);
+            dependency.addTo(pack, metadata);
             if ("MODEL".equals(dependency.getResourceType()) && !model.getId().equals(dependency.getResourceId())
                     && !metadata.containsKey("configurationDigest")) {
                 unavailable.add("依赖模型版本缺少完整配置快照：" + dependency.getComponentId());
@@ -88,7 +88,7 @@ public class ModelVersionTestService {
             }
         }
         byte[] encoded = codec.encode(pack);
-        var decoded = codec.decode(encoded);
+        var decoded = codec.decodeRuntime(encoded);
         RuleTestSchema schema = null;
         try {
             var runtime = runtimeSnapshots.loadModelVersion(encoded, decoded.getArtifactDigest(), decoded.getPackageDigest(), model.getProjectId());

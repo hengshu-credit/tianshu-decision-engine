@@ -6,4 +6,6 @@ import lombok.Data;
 public class RuleLifecycleActionRequest {
     private String comment;
     private String forcePublishReason;
+    private String expectedContentDigest;
+    private Integer expectedLockVersion;
 }

@@ -56,7 +56,7 @@ public class ArtifactDependency {
                 mode, component.digest(), metadata, payload, "MODEL".equals(type) ? component.size() : -1, streamingWriter);
     }
 
-    void addTo(DecisionArtifactPackage target, Map<String, Object> portableMetadata) {
+    public void addTo(DecisionArtifactPackage target, Map<String, Object> portableMetadata) {
         if (frozenModelSize >= 0) target.addDeferredModel(componentPath, mediaType, frozenModelSize, contentDigest, portableMetadata, payload, streamingWriter);
         else target.addComponent(componentPath, mediaType, payload.get(), portableMetadata, false);
     }

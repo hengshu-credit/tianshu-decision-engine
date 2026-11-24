@@ -253,7 +253,19 @@ public class GovernanceApprovalService {
         return Optional.ofNullable(createDraft(draft, actor, true));
     }
 
+    /** 创建待发布实验工作区，允许同一迁移事务中新建的规则草稿作为暂未发布的上游。 */
+    @Transactional
+    public GovernanceApprovalRequest createImportedExperimentWorkspace(GovernanceDraftRequest draft, String actor, Set<Long> ruleDrafts) {
+        if (!"EXPERIMENT".equals(draft.getResourceType()) || !"CREATE".equals(draft.getAction()) || draft.getResourceId() != null)
+            throw new IllegalArgumentException("仅支持新建实验工作区");
+        return createDraft(draft, actor, true, Set.copyOf(ruleDrafts));
+    }
+
     private GovernanceApprovalRequest createDraft(GovernanceDraftRequest draft, String actor, boolean importing) {
+        return createDraft(draft, actor, importing, Set.of());
+    }
+
+    private GovernanceApprovalRequest createDraft(GovernanceDraftRequest draft, String actor, boolean importing, Set<Long> ruleDrafts) {
         if (draft == null) {
             throw new IllegalArgumentException("审批草稿不能为空");
         }
@@ -369,7 +381,7 @@ public class GovernanceApprovalService {
         if (active != null) {
             if (importing && matchesProduction(active, normalized, resource)) return null;
             if (unchangedDraft(active, normalized, draft.getChangeSummary())) return active;
-            normalized = saveWorkspace(active, normalized, applicant);
+            normalized = saveWorkspace(active, normalized, applicant, ruleDrafts);
             active.setDraftSnapshotJson(normalized.snapshotJson());
             active.setSnapshotDigest(
                     Sha256Digests.text(normalized.snapshotJson()));
@@ -379,7 +391,7 @@ public class GovernanceApprovalService {
             active.setChangeSummary(draft.getChangeSummary());
             invalidateDraftPreflight(active);
             persistRequest(active);
-            saveDraftDependencies(active, normalized);
+            saveDraftDependencies(active, normalized, ruleDrafts);
             appendEvent(active, "SAVE_DRAFT", active.getStatus(),
                     actor, draft.getChangeSummary(), null);
             return active;
@@ -421,13 +433,13 @@ public class GovernanceApprovalService {
                 throw noProductionChange();
             }
         }
-        normalized = saveWorkspace(request, normalized, applicant);
+        normalized = saveWorkspace(request, normalized, applicant, ruleDrafts);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSnapshotDigest(Sha256Digests.text(normalized.snapshotJson()));
         request.setSecretPayloadCiphertext(normalized.secretPayloadCiphertext());
         request.setSecretDigest(normalized.secretDigest());
         insertRequest(request);
-        saveDraftDependencies(request, normalized);
+        saveDraftDependencies(request, normalized, ruleDrafts);
         appendEvent(request, "CREATE_DRAFT", null, actor,
                 draft.getChangeSummary(), null);
         return request;
@@ -1577,6 +1589,10 @@ public class GovernanceApprovalService {
     }
 
     private ResourceSnapshot saveWorkspace(GovernanceApprovalRequest request, ResourceSnapshot snapshot, String actor) {
+        return saveWorkspace(request, snapshot, actor, Set.of());
+    }
+
+    private ResourceSnapshot saveWorkspace(GovernanceApprovalRequest request, ResourceSnapshot snapshot, String actor, Set<Long> ruleDrafts) {
         ResourceCodeValidation.requireValid(codeIssues(request, snapshot));
         GovernedResourceAdapter adapter = requireAdapter(request.getResourceType());
         if (!"CREATE".equals(request.getAction()) || !adapter.supportsDraftWorkspace()) return snapshot;
@@ -1584,7 +1600,7 @@ public class GovernanceApprovalService {
         boolean create = id == null || id <= 0;
         GovernedResource resource = create ? null : findResource(request.getResourceType(), id);
         if (!create && !isWorkspace(resource)) return snapshot;
-        checkDraftDependencies(request, snapshot);
+        checkDraftDependencies(request, snapshot, ruleDrafts);
         AppliedResource applied = adapter.apply(new ApprovalApplyContext(request.getId(), create ? null : id, 0,
                 create ? "DRAFT_CREATE" : "DRAFT_UPDATE", snapshot, actor, null));
         if (create) {
@@ -1609,10 +1625,17 @@ public class GovernanceApprovalService {
     }
 
     private GovernancePreflightReport checkDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot) {
+        return checkDraftDependencies(request, snapshot, Set.of());
+    }
+
+    private GovernancePreflightReport checkDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot, Set<Long> ruleDrafts) {
         if (dependencyService == null || Set.of("DELETE", "DISABLE").contains(request.getAction())) return null;
         GovernancePreflightReport report = dependencyService.preflight(request.getResourceType(), request.getResourceId(),
                 requireAdapter(request.getResourceType()).collectDependencies(snapshot), List.of());
-        if (!report.valid()) throw new GovernanceStateException("GOVERNANCE_DEPENDENCY_NOT_PUBLISHED", firstErrorMessage(report));
+        boolean onlyPendingRules = !ruleDrafts.isEmpty() && !report.errors().isEmpty() && report.errors().stream().allMatch(error ->
+                "RULE".equals(error.resourceType()) && error.resourceId() != null && ruleDrafts.contains(error.resourceId())
+                        && Set.of("DEPENDENCY_MISSING", "DEPENDENCY_INACTIVE", "DEPENDENCY_VERSION_MISSING").contains(error.code()));
+        if (!report.valid() && !onlyPendingRules) throw new GovernanceStateException("GOVERNANCE_DEPENDENCY_NOT_PUBLISHED", firstErrorMessage(report));
         return report;
     }
 
@@ -1622,7 +1645,11 @@ public class GovernanceApprovalService {
     }
 
     private void saveDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot) {
-        GovernancePreflightReport report = checkDraftDependencies(request, snapshot);
+        saveDraftDependencies(request, snapshot, Set.of());
+    }
+
+    private void saveDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot, Set<Long> ruleDrafts) {
+        GovernancePreflightReport report = checkDraftDependencies(request, snapshot, ruleDrafts);
         if (report != null) persistDependencies(request, report, null);
     }
 

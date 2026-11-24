@@ -83,6 +83,17 @@ public class RuleDraftService {
     @Transactional
     protected RuleDraftSaveResponse saveInternal(
             RuleDraftSaveRequest request, CompileResult precompiled) {
+        return saveInternal(request, precompiled, Set.of());
+    }
+
+    /** 导入同一事务内新建的草稿组。保留上游未发布的诊断，正式预检与发布仍使用完整门禁。 */
+    @Transactional
+    public RuleDraftSaveResponse saveImportedDraft(RuleDraftSaveRequest request, Set<Long> newDrafts) {
+        return saveInternal(request, null, Set.copyOf(newDrafts));
+    }
+
+    private RuleDraftSaveResponse saveInternal(RuleDraftSaveRequest request, CompileResult precompiled,
+                                                Set<Long> newDrafts) {
         requireSaveContract(request);
         RuleDefinition definition = loadDefinition(request.getDefinitionId());
         if (definition == null) {
@@ -132,7 +143,9 @@ public class RuleDraftService {
         RuleDependencyClosureService.DependencyClosure dependencies =
                 resolveDependencies(definition, revision, fields);
         for (RuleValidationIssue issue : dependencies.getIssues()) {
-            if (Set.of("INACTIVE_DEPENDENCY", "MODEL_VERSION_MISSING", "DEPENDENCY_NOT_FOUND").contains(issue.getCode())) {
+            boolean importedDraft = "INACTIVE_DEPENDENCY".equals(issue.getCode()) && "RULE".equals(issue.getResourceType())
+                    && issue.getResourceId() != null && newDrafts.contains(issue.getResourceId());
+            if (!importedDraft && Set.of("INACTIVE_DEPENDENCY", "MODEL_VERSION_MISSING", "DEPENDENCY_NOT_FOUND").contains(issue.getCode())) {
                 throw governance(400, "UPSTREAM_NOT_PUBLISHED", "不能引用未发布或不可用的上游内容：" + issue.getMessage());
             }
         }

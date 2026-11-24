@@ -70,9 +70,28 @@
         <el-upload drag :auto-upload="false" :show-file-list="false" accept=".zip" :disabled="applying" :on-change="selectFile">
           <div class="upload-copy">
             <strong>{{ importFile ? importFile.name : '拖入配置包，或点击选择 ZIP' }}</strong>
-            <span>只接受 TIANSHU_RESOURCE_TRANSFER 配置包</span>
+            <span>选择离线配置包，或选择以 .project-set.zip 结尾的项目合集</span>
           </div>
         </el-upload>
+        <section v-if="isProjectSet" class="import-options">
+          <p>按包内编码新建项目。预检列出各项目的配置数量和冲突，确认后统一导入。</p>
+          <div v-for="project in setResult?.projects || []" :key="project.code">
+            <strong>{{ project.code }}</strong> · {{ project.resources }} 个资源 · {{ project.settings }} 项附属配置 · {{ project.exampleRecords || 0 }} 条预置名单记录
+            <span v-if="project.installationBound"> · 已配置本安装凭据</span>
+            <p v-if="project.issues.length && !setResult.applied">{{ project.issues.join('，') }}</p>
+          </div>
+          <el-checkbox v-if="setResult?.publicationCount && !setResult.applied" v-model="restoreAfterImport" :disabled="applying">执行固定用例并恢复源端已发布的规则和实验（{{ setResult.publicationCount }} 项）</el-checkbox>
+          <p v-if="setResult?.publicationCount && !setResult.applied && restoreAfterImport">回归使用目标环境的外数和名单，可能发生调用费用和名单写入。</p>
+          <p v-if="setResult?.applied" role="status">项目合集已导入</p>
+          <p v-if="activationMessage" role="status">{{ activationMessage }}</p>
+          <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" />
+          <div class="card-actions">
+            <el-button v-permission="'transfer:import'" :loading="previewing" :disabled="applying" @click="reviewSet(false)">预检项目合集</el-button>
+            <el-button v-if="!setResult?.applied" v-permission="'transfer:import'" type="primary" :loading="applying" :disabled="!setResult?.ready || previewing" @click="reviewSet(true)">导入项目合集</el-button>
+            <el-button v-else-if="activationIndex < (setResult.steps?.length || 0)" v-permission="'transfer:import'" type="primary" :loading="applying" @click="resumeActivation">继续验证发布</el-button>
+          </div>
+        </section>
+        <template v-else>
         <el-form :disabled="applying" class="import-options">
           <div class="import-options__target">
             <div class="import-field">
@@ -130,6 +149,7 @@
           <el-button v-permission="'transfer:import'" :disabled="!importFile || applying" :loading="previewing" @click="previewPackage">预览冲突</el-button>
           <el-button v-permission="'transfer:import'" type="primary" :disabled="!hasCurrentPreview || applying" :loading="applying" @click="applyPackage">确认导入</el-button>
         </div>
+        </template>
       </article>
     </section>
 
@@ -159,6 +179,7 @@
             <el-checkbox :value="item.key">
               {{ item.resourceCode || item.key }} · {{ item.resourceType }}
             </el-checkbox>
+            <span v-if="item.pageSettingCount">附属配置 {{ item.pageSettingCount }} 项</span>
             <el-tag v-if="item.recommendedAction === 'REUSE'" size="small" type="success">系统建议复用</el-tag>
             <span v-if="item.existingResourceKey" class="resource-reuse-target">目标候选：{{ item.existingResourceKey }}</span>
             <el-select
@@ -196,7 +217,10 @@
       <section v-if="preview.versionAssociations?.length" class="version-associations">
         <h3>版本依赖映射</h3>
         <p>逐项选择目标环境已有的已发布版本及字段。版本号和数字 ID 相同不代表同一内容；选择后需重新预检。导入不会覆盖所选目标版本。</p>
-        <transfer-version-binding-row v-for="source in preview.versionAssociations" :key="source.referenceKey" :source="source" :model-value="versionBindingsDraft[source.referenceKey] || {}" :disabled="applying || previewing" @update:model-value="versionBindingsDraft[source.referenceKey] = $event" />
+        <div v-for="source in preview.versionAssociations" :key="source.referenceKey">
+          <span v-if="source.includedModel">使用随包模型的固定版本和对应输出字段 · {{ source.label }}</span>
+          <transfer-version-binding-row v-else :source="source" :model-value="versionBindingsDraft[source.referenceKey] || {}" :disabled="applying || previewing" @update:model-value="versionBindingsDraft[source.referenceKey] = $event" />
+        </div>
       </section>
       <el-table :data="preview.conflicts || []" size="small" class="transfer-table">
         <el-table-column prop="resourceType" label="资源类型" width="150" />
@@ -293,7 +317,7 @@ import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import TransferVersionBindingRow from '@/components/transfer/TransferVersionBindingRow.vue'
 import ResourceVersionSelect from '@/components/common/ResourceVersionSelect.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { exportResourceTransfer, importResourceTransfer, previewResourceTransfer, listTransferResources, listTransferResourceFields, listTransferLogs, getTransferLog, getTransferLogLineage } from '@/api/transfer'
+import { transferProjectSet, exportResourceTransfer, importResourceTransfer, previewResourceTransfer, listTransferResources, listTransferResourceFields, listTransferLogs, getTransferLog, getTransferLogLineage } from '@/api/transfer'
 import { getLineageGraph } from '@/api/lineage'
 import { listProjects } from '@/api/project'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
@@ -301,6 +325,7 @@ import LineageGraph from '@/views/lineage/LineageGraph.vue'
 import TransferAssociationPanel from '@/components/transfer/TransferAssociationPanel.vue'
 import { hasPermission } from '@/security/permissionState'
 import { resourceViewPermission } from '@/security/pickerAccess'
+import { restorePublishedStep } from '@/utils/restoreProjectSet'
 
 const RESOURCE_TYPES = [
   { value: 'PROJECT', label: '项目' },
@@ -314,7 +339,9 @@ const RESOURCE_TYPES = [
   { value: 'EXTERNAL_API', label: '外数 API' },
   { value: 'LIST_LIBRARY', label: '名单配置' },
   { value: 'MODEL', label: '模型' },
-  { value: 'EXPERIMENT', label: '分流实验' }
+  { value: 'EXPERIMENT', label: '分流实验' },
+  { value: 'FIELD_VALIDATION', label: '字段校验规则' },
+  { value: 'BILLING_CONFIG', label: '计费项' }
 ]
 
 const emptyLogFilters = () => ({ operationType: '', status: '', keyword: '' })
@@ -338,6 +365,7 @@ export default {
       previewing: false,
       applying: false,
       importFile: null,
+      setResult: null, restoreAfterImport: true, activationIndex: 0, activationMessage: '',
       preview: null,
       previewFile: null,
       previewOptionsSignature: '',
@@ -371,6 +399,7 @@ export default {
     }
   },
   computed: {
+    isProjectSet() { return this.importFile?.name?.toLowerCase().endsWith('.project-set.zip') },
     resourceTypes() { return RESOURCE_TYPES.filter(item => hasPermission(resourceViewPermission(item.value))) },
     optionsSignature() { return JSON.stringify(this.normalizedOptions()) },
     hasCurrentPreview() {
@@ -579,6 +608,10 @@ export default {
       this.previewing = false
     },
     selectFile(upload) {
+      this.setResult = null
+      this.activationIndex = 0
+      this.activationMessage = ''
+      this.restoreAfterImport = true
       this.importFile = upload?.raw || null
       this.selectedLineageRoot = ''
       this.selectedResourceKeysDraft = []
@@ -626,6 +659,50 @@ export default {
       } catch (error) {
         this.exportError = error.message || '配置包生成失败，请重试'
       } finally { this.exporting = false }
+    },
+    async resumeActivation() {
+      if (this.applying) return
+      this.applying = true
+      this.previewError = ''
+      try { await this.runActivation() }
+      catch (error) { this.previewError = error.message || '发布未完成' }
+      finally { this.applying = false }
+    },
+    async runActivation() {
+      const steps = this.setResult?.steps || []
+      for (; this.activationIndex < steps.length; this.activationIndex++) {
+        const step = steps[this.activationIndex]
+        const state = `验证发布 ${this.activationIndex + 1}/${steps.length} · ${step.code}`
+        this.activationMessage = state
+        await restorePublishedStep(step, detail => { this.activationMessage = `${state} · ${detail}` })
+      }
+      if (steps.length) this.activationMessage = `已恢复 ${steps.length} 项发布状态`
+    },
+    async reviewSet(apply) {
+      if (!this.isProjectSet || this.previewing || this.applying) return
+      const file = this.importFile
+      const digest = apply ? this.setResult?.digest : null
+      if (apply && (!digest || !this.setResult.ready || this.setResult.applied)) return
+      this.previewError = ''
+      if (apply) this.applying = true
+      else { this.previewing = true; this.setResult = null }
+      try {
+        const restore = this.restoreAfterImport && this.setResult?.publicationCount > 0
+        if (apply) await ElMessageBox.confirm(restore ? '新建项目后，将在本环境运行启用的固定用例并审批发布。回归会按配置实际调用外数和名单。确认继续？' : '将按清单新建所有项目，规则保存为草稿。确认导入？', '确认导入项目合集', { type: 'warning' })
+        if (file !== this.importFile) return
+        const response = await transferProjectSet(file, digest)
+        if (file === this.importFile) {
+          this.setResult = response.data
+          this.activationIndex = 0
+          this.activationMessage = ''
+          if (apply && restore) await this.runActivation()
+        }
+      } catch (error) {
+        if (file === this.importFile && error !== 'cancel' && error !== 'close') {
+          if (!this.setResult?.applied) this.setResult = null
+          this.previewError = error.message || '项目合集处理失败'
+        }
+      } finally { this.applying = false; this.previewing = false }
     },
     async previewPackage() {
       if (this.applying || !this.importFile) return

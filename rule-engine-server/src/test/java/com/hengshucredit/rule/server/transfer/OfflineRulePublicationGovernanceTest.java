@@ -42,7 +42,7 @@ public class OfflineRulePublicationGovernanceTest {
             }
         });
         var options = new TransferImportOptions(null, "GLOBAL", "REUSE", "SUFFIX", "_copy", false, null, null, Map.of(), publish);
-        Long id = ReflectionTestUtils.invokeMethod(service, "importRuleDraft", Map.of("ruleCode", "copy", "content", Map.of("modelJson", "{\"script\":\"return 1;\"}")), null, options, 0L, "reviewer");
+        Long id = ReflectionTestUtils.invokeMethod(service, "importRuleDraft", Map.of("ruleCode", "copy", "content", Map.of("modelJson", "{\"script\":\"return 1;\"}")), null, options, 0L, "reviewer", java.util.Set.of());
         assertEquals(Long.valueOf(20), id);
         assertEquals(expectedApproval ? List.of("governed-submit", "governed-approve") : List.of(), events);
     }

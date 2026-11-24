@@ -131,6 +131,26 @@ public final class ModelFileStore {
         return saveOriginal(projectId, filename, bytes, true);
     }
 
+    /** 制品解码已验证原件摘要。目标安装已有相同原件时只校验存储，不展开第二份模型权重。 */
+    public String fromVerifiedSnapshot(Long projectId, String filename, int length, String digest,
+                                       java.util.function.Supplier<byte[]> source) {
+        UploadSecurity.filename(filename);
+        if (length <= 0 || length > fileLimit || digest == null || !digest.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("冻结模型文件大小或摘要无效");
+        String lower = filename.toLowerCase(Locale.ROOT);
+        if (!lower.endsWith(".onnx") && !lower.endsWith(".pmml")) throw new IllegalArgumentException("仅支持 ONNX 或 PMML 原始模型文件");
+        String reference = key(scope(projectId), filename, digest);
+        if (shared != null ? shared.contains(reference) : Files.exists(path(reference), LinkOption.NOFOLLOW_LINKS)) {
+            if (largeFiles.verifies(reference, digest, length)) return reference;
+            if (verifiedRead(reference, digest).length != length) throw new IllegalArgumentException("冻结模型大小不匹配");
+            return reference;
+        }
+        byte[] original = source.get();
+        if (original.length != length) throw new IllegalArgumentException("冻结模型大小不匹配");
+        checkDigest(original, digest);
+        return accept(projectId, filename, original);
+    }
+
     private String saveOriginal(Long projectId, String filename, byte[] bytes, boolean trustedSnapshot) {
         UploadSecurity.filename(filename);
         if (bytes.length == 0 || bytes.length > fileLimit) throw new IllegalArgumentException("模型大小超过限制或为空");
@@ -164,7 +184,11 @@ public final class ModelFileStore {
             throw new IllegalArgumentException("模型迁移包缺少可验证的原始文件");
         }
         if (data.length() > 4L * ((fileLimit + 2) / 3)) throw new IllegalArgumentException("模型迁移原件超过上传大小上限");
-        byte[] bytes = legacyBytes(data);
+        ingestConfiguration(cfg, owner, legacyBytes(data));
+    }
+
+    public void ingestConfiguration(Map<String,Object> cfg, Long owner, byte[] bytes) {
+        if (bytes.length > fileLimit) throw new IllegalArgumentException("模型迁移原件超过上传大小上限");
         checkDigest(bytes, (String) cfg.get("modelDigest"));
         String ref = accept(owner, (String) cfg.get("modelFileName"), bytes);
         cfg.put("modelContent", ref);

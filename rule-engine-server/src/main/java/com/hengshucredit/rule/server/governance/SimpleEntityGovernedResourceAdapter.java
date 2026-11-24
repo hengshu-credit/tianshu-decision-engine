@@ -184,6 +184,10 @@ public class SimpleEntityGovernedResourceAdapter<T>
                 Long id = longValue(entry.getValue());
                 String targetType = dependencyType(
                         entry.getKey(), map);
+                if ("targetVarId".equals(entry.getKey()) && path.contains(".openApiConfigJson") && path.contains(".requestMappings["))
+                    targetType = refType(map.get("targetRefType"));
+                if ("sourceVarId".equals(entry.getKey()) && path.contains(".openApiConfigJson") && path.contains(".responseMappings["))
+                    targetType = refType(map.get("sourceRefType"));
                 if (targetType != null && id != null && id > 0) {
                     DependencyVersionSelection selection = DependencyVersionSelection.forReference(entry.getKey(), map, id);
                     if (selection != null) targetType = "CONSTANT".equals(selection.refType()) ? "VARIABLE" : selection.refType();

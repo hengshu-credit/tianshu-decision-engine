@@ -351,8 +351,8 @@ public class ArtifactRuntimeSnapshotService {
         model.setStatus(1);
         if (catalog) model.setModelContent(null);
         else model.setModelContent(modelFiles == null ? modelContent(component, packageDigest)
-                : modelFiles.fromSnapshot(executionProjectId, model.getModelFileName() == null
-                        ? "model." + model.getModelFormat().toLowerCase(java.util.Locale.ROOT) : model.getModelFileName(), component.getContent()));
+                : modelFiles.fromVerifiedSnapshot(executionProjectId, model.getModelFileName() == null
+                        ? "model." + model.getModelFormat().toLowerCase(java.util.Locale.ROOT) : model.getModelFileName(), component.size(), component.digest(), component::getContent));
         model.setInputFields(parseList(component.getMetadata().get("inputFields"), RuleModelInputField.class));
         model.setOutputFields(parseList(component.getMetadata().get("outputFields"), RuleModelOutputField.class));
         return model;

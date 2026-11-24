@@ -1,7 +1,7 @@
 package com.hengshucredit.rule.server.testdata;
 
 /** 仅使用固定的资源表与归属字段构建用例目录查询。 */
-enum TestResource {
+public enum TestResource {
     RULE("rule_definition","rule_name","rule_code","rule_api_doc_scenario","definition_id","RULE"),
     VARIABLE("rule_variable","var_label","var_code","rule_variable_test_case","variable_id","VARIABLE"),
     MODEL("rule_model","model_name","model_code","rule_model_test_case","model_id","MODEL"),

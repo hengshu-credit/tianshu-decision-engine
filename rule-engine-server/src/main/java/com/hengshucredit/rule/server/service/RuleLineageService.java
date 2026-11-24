@@ -82,6 +82,8 @@ public class RuleLineageService {
     @Resource private RuleDataObjectFieldMapper dataObjectFieldMapper;
     @Resource private RuleDataObjectMapper dataObjectMapper;
     @Resource private RuleFunctionMapper functionMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleBillingConfigMapper billingConfigMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleFieldValidationMapper fieldValidationMapper;
     @Resource private RuleExperimentMapper experimentMapper;
     @Resource private com.hengshucredit.rule.server.mapper.GovernedResourceMapper governedResourceMapper;
 
@@ -106,6 +108,8 @@ public class RuleLineageService {
             case "DATA_OBJECT" -> new OptionSource(dataObjectMapper, "object_code", "object_label", true, "project_id");
             case "FUNCTION" -> new OptionSource(functionMapper, "func_code", "func_name", true, "project_id");
             case "MODEL" -> new OptionSource(modelMapper, "model_code", "model_name", true, "project_id");
+            case "BILLING_CONFIG" -> new OptionSource(billingConfigMapper, "billing_code", "billing_name", true, "project_id");
+            case "FIELD_VALIDATION" -> new OptionSource(fieldValidationMapper, "validation_code", "validation_name", true, "project_id");
             case "EXPERIMENT" -> new OptionSource(experimentMapper, "experiment_code", "experiment_name", false, "project_id");
             case "DB" -> new OptionSource(dbDatasourceMapper, "datasource_code", "datasource_name", true, "project_id");
             case "SFTP" -> new OptionSource(sftpDatasourceMapper, "datasource_code", "datasource_name", true, "project_id");

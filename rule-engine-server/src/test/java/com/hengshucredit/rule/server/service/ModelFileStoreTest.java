@@ -16,6 +16,17 @@ import java.util.concurrent.Executors;
 import static org.junit.Assert.*;
 
 public class ModelFileStoreTest {
+    @Test public void verifiedSnapshotReusesOnlyExactStoredBytes() {
+        var files = store(temp.getRoot().toPath(), "CLEAN");
+        byte[] original = "<PMML version='4.4'/>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String reference = files.accept(7L, "sample.pmml", original);
+        String digest = com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(original);
+        assertEquals(reference, files.fromVerifiedSnapshot(7L, "sample.pmml", original.length, digest,
+                () -> { throw new AssertionError("不应展开第二份已验证的原件"); }));
+        assertThrows(IllegalArgumentException.class, () -> files.fromVerifiedSnapshot(7L, "sample.pmml",
+                original.length + 1, digest, () -> original));
+    }
+
     @Rule public TemporaryFolder temp = new TemporaryFolder();
     static ModelFileStore store(Path root, String status) {
         UploadSecurity scanner = new UploadSecurity(new UploadScanProperties()) {

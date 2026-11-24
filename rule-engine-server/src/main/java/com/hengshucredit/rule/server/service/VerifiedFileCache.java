@@ -33,6 +33,33 @@ final class VerifiedFileCache implements AutoCloseable {
         return null;
     }
 
+    synchronized boolean verifies(String key, String digest, int length) {
+        Entry entry = entries.get(key);
+        if (entry == null) return false;
+        try {
+            var hash = java.security.MessageDigest.getInstance("SHA-256");
+            ByteBuffer block = ByteBuffer.allocate(65536);
+            long pos = 0;
+            if (entry.size() == length && entry.file().size() == length) {
+                while (pos < length) {
+                    block.clear();
+                    int count = entry.file().read(block, pos);
+                    if (count <= 0) break;
+                    pos += count;
+                    block.flip();
+                    hash.update(block);
+                }
+                if (pos == length && java.util.HexFormat.of().formatHex(hash.digest()).equals(digest)) return true;
+            }
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        } catch (IOException unavailable) {
+            // Evict the local copy; the caller verifies the database object instead.
+        }
+        remove(key);
+        return false;
+    }
+
     synchronized void put(String key, byte[] content, long limit) {
         if (content.length == 0 || content.length > limit || entries.containsKey(key)) return;
         while (entries.size() >= 64 || !entries.isEmpty() && bytes > limit - content.length) remove(entries.keySet().iterator().next());
