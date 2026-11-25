@@ -1202,7 +1202,8 @@ test('变量示例可在内容选择器绑定规则，也可组合生成固定�
   await page.goto('http://tianshu.local/#/variable?projectId=1')
   await page.getByRole('button', { name: '新建字段', exact: true }).click()
   const field = page.getByRole('dialog', { name: '新建字段', exact: true })
-  await field.getByText('自动匹配', { exact: true }).click()
+  await field.getByRole('textbox', { name: '固定示例值' }).fill('手工示例')
+  await field.getByText('固定值', { exact: true }).click()
   await page.getByRole('option', { name: '绑定 MOCK 规则', exact: true }).click()
   await field.getByRole('button', { name: '打开内容选择器选择 MOCK 规则' }).click()
   const bind = page.getByRole('dialog', { name: '内容选择器 · 绑定 MOCK 规则' })
@@ -1237,3 +1238,63 @@ test('变量示例可在内容选择器绑定规则，也可组合生成固定�
   expect(savedVariable).toMatchObject({ exampleMode: 'FIXED', exampleValue: '陈明-P0142', mockRuleId: null })
   assertClean()
 })
+
+for (const source of ['手动填写', 'MOCK 自动生成', '从 MOCK 填入']) {
+  test(`数据对象可保存整体 JSON 示例 · ${source}`, async ({ page }) => {
+    const apiData = createManagementApiData()
+    apiData.set('/api/rule/variable/source-options', { apiOptions: [], databaseOptions: [], listOptions: [], sftpOptions: [] })
+    const tree = apiData.get('/api/rule/dataobject/tree')
+    const node = tree.tree[0]
+    apiData.set('/api/rule/dataobject/tree/1', tree)
+    apiData.set('/api/rule/dataobject/' + node.object.id, node)
+    apiData.set('/api/rule/dataobject/field/' + node.variables[0].id + '/options', [])
+    apiData.set('/api/rule/function/project/1/all', [])
+    apiData.set('/api/rule/model/project/1/all', [])
+    const json = '{"scores":[0],"approved":false}'
+    const objectRule = { id: 43, name: '申请信息示例', valueType: 'OBJECT', generator: 'FIXED', configJson: json }
+    apiData.set('GET /api/rule/test-data/rules', [objectRule])
+    apiData.set('POST /api/rule/test-data/rules/preview', ({ request }) => {
+      expect(request.postDataJSON()).toMatchObject(objectRule)
+      return { valueJson: json }
+    })
+    let savedObject
+    apiData.set('/api/rule/governance/workspaces/DATA_OBJECT/' + node.object.id, () =>
+      savedObject ? { draftSnapshotJson: JSON.stringify(savedObject) } : null)
+    apiData.set('POST /api/rule/governance/drafts', ({ request }) => {
+      const body = request.postDataJSON()
+      expect(body.resourceType).toBe('DATA_OBJECT')
+      savedObject = JSON.parse(body.snapshotJson)
+      return { ...body, id: 992, status: 'EDITING', draftSnapshotJson: body.snapshotJson }
+    })
+    const { assertClean } = await installDistRoutes(page, { apiData })
+    await page.goto('http://tianshu.local/#/variable?projectId=1')
+    await page.getByRole('tab', { name: '数据对象', exact: true }).click()
+    const edit = page.getByRole('row').filter({ hasText: node.object.objectLabel }).getByRole('button', { name: '编辑', exact: true })
+    await edit.click()
+    const dialog = page.getByRole('dialog', { name: '编辑数据对象' })
+    const input = dialog.getByRole('textbox', { name: '固定示例值' })
+    await expect(dialog.getByText('MOCK 自动生成', { exact: true })).toBeVisible()
+    if (source === '从 MOCK 填入') {
+      await dialog.getByRole('button', { name: '从 MOCK 生成' }).click()
+      const picker = page.getByRole('dialog', { name: '内容选择器 · 生成示例值' })
+      await picker.getByRole('row').filter({ hasText: objectRule.name }).press('Enter')
+      await picker.getByRole('button', { name: '生成并填入' }).click()
+    } else {
+      await input.fill(json)
+    }
+    await expect(input).toHaveValue(json)
+    const auto = source === 'MOCK 自动生成'
+    if (auto) {
+      await dialog.getByText('固定值', { exact: true }).click()
+      await page.getByRole('option', { name: 'MOCK 自动生成' }).click()
+      await expect(input).toHaveValue('')
+    }
+    await dialog.getByRole('button', { name: '保存草稿', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    expect(savedObject).toMatchObject({ exampleMode: auto ? 'AUTO' : 'FIXED', exampleValue: auto ? '' : json, mockRuleId: null })
+    await edit.click()
+    await expect(dialog.getByText(auto ? 'MOCK 自动生成' : '固定值', { exact: true })).toBeVisible()
+    await expect(input).toHaveValue(auto ? '' : json)
+    assertClean()
+  })
+}

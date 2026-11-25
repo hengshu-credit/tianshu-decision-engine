@@ -57,9 +57,9 @@ jobs:
               ...context.repo, artifact_id: artifact, pages_build_version: process.env.BUILD_SHA,
               oidc_token: await core.getIDToken()
             })
-            const deployment = data.id || data.status_url.split('/').pop()
+            const deployment = data.id || process.env.BUILD_SHA
             for (;;) {
-              const { data: report } = await github.rest.repos.getPagesDeployment({
+              const { data: report } = await github.request('GET /repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}', {
                 ...context.repo, pages_deployment_id: deployment
               })
               if (report.status === 'succeed') break

@@ -1088,8 +1088,15 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="isObjectField" label="示例值">
-          <example-value-editor :project-id="form.projectId" v-model:case-binding="form.exampleCaseBinding" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
+        <el-form-item label="示例值">
+          <example-value-editor
+            v-model:mode="form.exampleMode"
+            v-model:value="form.exampleValue"
+            v-model:rule-id="form.mockRuleId"
+            v-model:case-binding="form.exampleCaseBinding"
+            :project-id="form.scope === 'GLOBAL' ? 0 : form.projectId"
+            :field-type="form.varType"
+          />
         </el-form-item>
         <el-form-item v-if="isObjectField && objectHasExternalSource && !objectFieldApiId" label="来源路径">
           <el-input
@@ -1377,14 +1384,10 @@
         <section v-if="!isObjectField" class="variable-advanced-section" aria-label="更多说明与发布设置">
           <div class="variable-advanced-title">
             <strong>更多说明与发布设置</strong>
-            <span>取值范围、示例、排序、状态和备注</span>
+            <span>取值范围、排序、状态和备注</span>
           </div>
           <el-form-item label="取值范围">
             <el-input v-model="form.valueRange" placeholder="如：0~100、A/B/C" />
-          </el-form-item>
-          <el-form-item label="示例值">
-            <example-value-editor v-if="form.varSource !== 'CONSTANT'" :project-id="form.scope === 'GLOBAL' ? 0 : form.projectId" v-model:case-binding="form.exampleCaseBinding" v-model:mode="form.exampleMode" v-model:value="form.exampleValue" v-model:rule-id="form.mockRuleId" :field-type="form.varType" />
-            <el-input v-else v-model="form.exampleValue" placeholder="可留空" />
           </el-form-item>
           <el-form-item label="排序">
             <el-input-number v-model="form.sortOrder" :min="0" :max="9999" />
