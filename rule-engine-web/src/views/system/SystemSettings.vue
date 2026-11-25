@@ -42,18 +42,52 @@
             <el-form-item label="邮箱授权码 / SMTP 密码"><el-input v-model="mailPassword" type="password" show-password autocomplete="new-password" :placeholder="mailPasswordConfigured ? '已设置，留空保留' : '请输入邮箱授权码'" /><small>填写替换，留空保留；授权码不在浏览器持久保存。</small></el-form-item>
             <el-button :disabled="!canTestMail" @click="openMailTest">发送测试邮件</el-button><small v-if="mailResult" role="status">{{ mailResult }}</small>
           </el-form>
-          <div class="mail-preview"><div class="mail-preview-heading"><small>邮件效果预览</small><el-select v-model="mailTemplate" size="small"><el-option label="密码重置" value="reset" /><el-option label="注册验证" value="verify" /><el-option label="系统通知" value="notice" /></el-select></div><article class="mail-letter"><header><strong>{{ mailPreview.title }}</strong><div class="mail-brand"><img :src="brand.logoUrl" :alt="brand.systemName" /><div><b>{{ brand.systemName }}</b><small>{{ brand.subtitle }}</small></div></div></header><p>尊敬的{{ mailTemplate === 'notice' ? '管理员' : '用户' }}：</p><p>{{ mailPreview.text }}</p><div v-if="mailPreview.highlight" class="mail-highlight">{{ mailPreview.highlight }}</div><span v-if="mailPreview.action" class="preview-button">{{ mailPreview.action }}</span><p v-if="mailPreview.action" class="mail-note">若非您本人操作，请忽略此邮件。请勿转发验证或重置链接。</p><footer>
-            <p>如有任何问题，欢迎随时沟通。</p>
-            <div class="mail-signature">
-              <p>顺颂商祺！</p>
-              <a href="mailto:hscredit@hengshucredit.com">hscredit@hengshucredit.com</a><br>
-              <span>上海衡枢真信科技有限公司</span>
+          <div class="mail-preview">
+            <div class="mail-preview-heading">
+              <small>邮件效果预览</small>
+              <el-select v-model="mailTemplate" size="small" aria-label="邮件预览类型">
+                <el-option label="密码重置" value="reset" />
+                <el-option label="注册验证" value="verify" />
+                <el-option label="系统通知" value="notice" />
+                <el-option label="数据账单" value="billing" />
+              </el-select>
             </div>
-            <div class="mail-brand-line">
-              <span>HENGSHU CREDIT · 鉴真伪，斟信用，衡风险，枢定策</span>
-              <a href="https://www.hengshucredit.com" target="_blank" rel="noopener noreferrer">www.hengshucredit.com</a>
-            </div>
-          </footer></article></div>
+            <article class="mail-letter">
+              <header><strong>{{ mailPreview.title }}</strong><div class="mail-brand"><img :src="brand.logoUrl" :alt="brand.systemName" /><div><b>{{ brand.systemName }}</b><small>{{ brand.subtitle }}</small></div></div></header>
+              <p>尊敬的{{ mailPreview.recipient || '用户' }}：</p>
+              <p>{{ mailPreview.text }}</p>
+              <template v-if="mailTemplate === 'billing'">
+                <h3 class="bill-heading">CNY 账单</h3>
+                <div class="bill-scroll" role="region" aria-label="账单明细" tabindex="0">
+                  <table>
+                    <thead><tr><th v-for="label in ['月份', '产品', '请求次数', '调用次数', '计费次数', '计费单价', '账单费用']" :key="label" scope="col">{{ label }}</th></tr></thead>
+                    <tbody>
+                      <tr class="bill-total"><th scope="row">本期合计</th><td>—</td><td>1500</td><td>1520</td><td>1450</td><td>—</td><td>364.50</td></tr>
+                      <tr class="bill-month"><th scope="row">2026-10</th><td>月度合计</td><td>1500</td><td>1520</td><td>1450</td><td>—</td><td>364.50</td></tr>
+                      <tr><th scope="row">2026-10</th><td>身份核验</td><td>1000</td><td>1010</td><td>960</td><td>0.15</td><td>144.00</td></tr>
+                      <tr><th scope="row">2026-10</th><td>企业查询</td><td>500</td><td>510</td><td>490</td><td>0.45</td><td>220.50</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="mail-note">请求次数按各产品的日汇总累加。</p>
+              </template>
+              <div v-if="mailPreview.highlight" class="mail-highlight">{{ mailPreview.highlight }}</div>
+              <span v-if="mailPreview.action" class="preview-button">{{ mailPreview.action }}</span>
+              <p v-if="mailPreview.action" class="mail-note">若非您本人操作，请忽略此邮件。请勿转发验证或重置链接。</p>
+              <footer>
+                <p>如有任何问题，欢迎随时沟通。</p>
+                <div class="mail-signature">
+                  <p>顺颂商祺！</p>
+                  <a href="mailto:hscredit@hengshucredit.com">hscredit@hengshucredit.com</a><br>
+                  <span>上海衡枢真信科技有限公司</span>
+                </div>
+                <div class="mail-brand-line">
+                  <span>HENGSHU CREDIT · 鉴真伪，斟信用，衡风险，枢定策</span>
+                  <a href="https://www.hengshucredit.com" target="_blank" rel="noopener noreferrer">www.hengshucredit.com</a>
+                </div>
+              </footer>
+            </article>
+          </div>
         </div>
       </el-tab-pane>
       <el-tab-pane lazy label="登录与安全" name="access">
@@ -132,7 +166,14 @@ export default {
     filteredCodes() { const q = this.codeSearch.trim().toLowerCase(); return this.catalog.filter(row => (!this.codeGroup || row.code.startsWith(this.codeGroup)) && (!q || [row.code, row.message, this.mappingValue(row.code, 'code'), this.mappingValue(row.code, 'message')].some(value => String(value).toLowerCase().includes(q)))) },
     visibleCodes() { return this.filteredCodes.slice((this.codePage - 1) * 10, this.codePage * 10) },
     mappingPreview() { const row = this.catalog.find(item => item.code === this.previewCode) || { code: '000000', message: '成功', httpStatus: 200 }; const original = { success: row.code === '000000', code: row.code, message: row.message }; const external = this.form.codes?.enabled ? { ...original, code: this.mappingValue(row.code, 'code') || row.code, message: this.mappingValue(row.code, 'message') || row.message } : original; return { original: JSON.stringify(original, null, 2), external: JSON.stringify(external, null, 2), httpStatus: row.httpStatus } },
-    mailPreview() { return { reset: { title: '密码重置通知', text: '我们收到了您的密码重置请求，请点击下方按钮设置新密码。', highlight: `链接有效期：${this.effectiveAccess.passwordResetTtlMinutes || 30} 分钟`, action: '设置新密码' }, verify: { title: '账户邮箱验证', text: '请验证您的邮箱以完成账户激活，之后由管理员为您分配业务权限。', highlight: `链接有效期：${this.effectiveAccess.verificationTtlMinutes || 30} 分钟`, action: '验证邮箱并激活' }, notice: { title: '系统配置变更通知', text: '系统配置已更新并生效，请登录控制台查看变更记录。' } }[this.mailTemplate] },
+    mailPreview() {
+      return {
+        reset: { title: '密码重置通知', text: '我们收到了您的密码重置请求，请点击下方按钮设置新密码。', highlight: `链接有效期：${this.effectiveAccess.passwordResetTtlMinutes || 30} 分钟`, action: '设置新密码' },
+        verify: { title: '账户邮箱验证', text: '请验证您的邮箱以完成账户激活，之后由管理员为您分配业务权限。', highlight: `链接有效期：${this.effectiveAccess.verificationTtlMinutes || 30} 分钟`, action: '验证邮箱并激活' },
+        notice: { title: '系统配置变更通知', recipient: '管理员', text: '系统配置已更新并生效，请登录控制台查看变更记录。' },
+        billing: { title: '2026-10 数据服务账单', recipient: '示例项目团队', text: '您好！随信附上示例项目从 2026-10-01 到 2026-10-31 已汇总的数据服务账单，共 2 项产品，结算币种为 CNY。请核对下列费用，逐日明细见附件。' },
+      }[this.mailTemplate]
+    },
   },
   watch: {
     watermarkPreviewConfig: { deep: true, immediate: true, handler(value) { setWatermarkPreview(value) } },
@@ -251,6 +292,18 @@ export default {
 .settings-pair > * { min-width: 0; }
 .mail-preview-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
 .mail-preview-heading .el-select { width: 140px; }
+.mail-preview { min-width: 0; }
+.bill-heading { margin: 16px 0 6px; font-size: inherit; }
+.bill-scroll { overflow-x: auto; }
+.bill-scroll table { min-width: 100%; border-collapse: collapse; white-space: nowrap; line-height: 1.5; }
+.bill-scroll th, .bill-scroll td { padding: 5px; border-bottom: 1px solid var(--tianshu-border-subtle); }
+.bill-scroll thead { background: var(--el-color-primary); color: var(--tianshu-brand-foreground); }
+.bill-scroll tbody th, .bill-scroll tbody td:first-of-type { text-align: left; }
+.bill-scroll tbody th { font-weight: inherit; }
+.bill-scroll td { text-align: right; font-variant-numeric: tabular-nums; }
+.bill-total, .bill-month { font-weight: bold; }
+.bill-total { background: var(--tianshu-primary-soft-bg); }
+.bill-month { background: var(--tianshu-bg-soft); }
 .mail-letter { border: 1px solid var(--tianshu-border-subtle); border-radius: 0; padding: 20px; font-size: 12px; line-height: 1.7; }
 .mail-letter header { display: flex; justify-content: space-between; gap: 18px; align-items: center; border-bottom: 2px solid var(--el-color-primary); padding-bottom: 6px; }
 .mail-letter header > strong { font-size: 15px; }
