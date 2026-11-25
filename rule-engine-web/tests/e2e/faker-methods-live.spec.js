@@ -7,9 +7,9 @@ test('逐条点击全局 Faker 规则并核对默认结果和带参结果', asyn
   test.skip(!process.env.E2E_BASE_URL, '需要已初始化且启用了默认 Mock 规则的联调环境')
   test.setTimeout(900000)
   await page.setViewportSize({ width: 1600, height: 1050 })
-  await login(page, '/test')
+  await login(page, '/variable')
   const listed = page.waitForResponse(r => r.url().endsWith('/test-data/rules') && r.request().method() === 'GET')
-  await page.getByRole('tab', { name: 'Mock 规则', exact: true }).click()
+  await page.getByRole('tab', { name: 'MOCK 规则', exact: true }).click()
   const rows = (await (await listed).json()).data.filter(r => r.builtin && r.generator === 'FAKER' && r.projectId == null)
   const defaultRules = new Map(rows.map(row => {
     const cfg = JSON.parse(row.configJson)
@@ -17,7 +17,7 @@ test('逐条点击全局 Faker 规则并核对默认结果和带参结果', asyn
   }))
   expect(rows.length).toBe(262)
   expect(defaultRules.size).toBe(262)
-  const pane = page.locator('.test-management:visible')
+  const pane = page.getByRole('tabpanel', { name: 'MOCK 规则' })
   const dialog = page.getByRole('dialog', { name: '测试 Mock 规则', exact: true })
   const evidence = []
   const keyword = pane.getByPlaceholder('规则名称、方法或匹配字段')
@@ -45,7 +45,7 @@ test('逐条点击全局 Faker 规则并核对默认结果和带参结果', asyn
   }
   for (const group of groups) {
     await keyword.fill('')
-    await pane.getByRole('combobox', { name: '规则类型' }).click()
+    await pane.getByRole('combobox', { name: 'MOCK 分类', exact: true }).click()
     await page.getByRole('option', { name: group.label + ' · ' + group.module, exact: true }).click()
     await pane.getByRole('button', { name: '查询', exact: true }).click()
     for (const method of group.methods) {

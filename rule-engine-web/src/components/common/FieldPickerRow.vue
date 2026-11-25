@@ -2,7 +2,7 @@
   <div class="fp-row" :class="{ 'fp-row--selected': selected, 'fp-row--parent': node.children.length, 'fp-row--disabled': !node.selectable && node.item && !node.item._versionGroup }" :style="{ '--field-depth': depth }" role="row" :aria-selected="selected" :aria-level="depth + 1" :aria-expanded="node.children.length ? expanded : undefined" tabindex="0" @click.stop="$emit('preview', $event)" @dblclick.stop="$emit('confirm')" @keydown.enter.prevent.stop="$emit('confirm')" @keydown.space.prevent.stop="$emit('preview', $event)">
     <div class="fp-content">
       <div v-for="(part, index) in columns" :key="part.key" class="fp-cell" :class="'fp-cell--' + part.key" :style="{ gridColumn: index + 1 }" role="gridcell" :aria-label="part.title" :title="part.title">
-        <span v-if="part.key === 'version'" class="fp-version-cell" @click.stop @dblclick.stop @keydown.stop><slot name="version"><span :class="partClass(part)">{{ part.text }}</span></slot></span>
+        <span v-if="part.key === 'version' && !part.override" class="fp-version-cell" @click.stop @dblclick.stop @keydown.stop><slot name="version"><span :class="partClass(part)">{{ part.text }}</span></slot></span>
         <span v-else :class="partClass(part)" :data-content-part="part.key" :style="part.key === 'name' ? { marginLeft: Math.min(depth, 3) * 8 + 'px' } : {}"><span v-if="part.key === 'name' && node.children.length" class="fp-branch" aria-hidden="true">{{ expanded ? '▾' : '▸' }}</span>{{ part.text }}</span>
         <button v-if="part.key === 'name' && node.item && node.selectable && node.children.length" type="button" class="fp-select-parent" title="选择整个字段" @click.stop="$emit('confirm')">选</button>
       </div>
@@ -22,6 +22,8 @@ export default {
     columns() {
       const parts = contentReferenceParts(this.content)
       return FIELD_PICKER_COLUMNS.map(({ key }) => {
+        const value = this.node.item?.pickerColumns?.[key]
+        if (value) return { key, text: value, title: value, override: true }
         const part = parts.filter(part => part.key === key)
         return { key, text: part.map(item => item.text).join(' · ') || '—', title: part.map(item => item.title).join(' · ') || '—', family: part[0]?.family }
       })

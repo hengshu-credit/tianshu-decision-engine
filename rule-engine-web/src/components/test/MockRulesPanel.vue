@@ -4,7 +4,7 @@
     empty-text="暂无匹配规则" :action-width="230" :create-label="canCreate ? '新增规则' : ''"
     @search="search" @reset="reset" @refresh="load" @create="edit()">
     <template #filters>
-      <el-form-item label="规则类型"><el-select v-model="filters.category" clearable filterable placeholder="全部" style="width: 160px">
+      <el-form-item label="MOCK 分类"><el-select v-model="filters.category" clearable filterable placeholder="全部" style="width: 160px">
         <el-option label="基础规则" value="base" />
         <el-option v-for="group in fakerGroups" :key="group.module" :label="group.label + ' · ' + group.module" :value="group.module" />
       </el-select></el-form-item>
@@ -36,9 +36,8 @@
         </template>
         <el-descriptions v-if="selectedMethod || testMode" :column="2" size="small" border class="method-summary">
           <el-descriptions-item v-if="testMode" label="规则名称" :span="2">{{ draft.name }}</el-descriptions-item>
-          <el-descriptions-item label="规则类型">{{ selectedInfo?.category || '基础规则' }}</el-descriptions-item>
-          <el-descriptions-item label="规则类型编码">{{ selectedInfo?.module || 'base' }}</el-descriptions-item>
-          <el-descriptions-item v-if="testMode" label="生成方式" :span="2">{{ selectedMethod || generatorNames[draft.generator] }}</el-descriptions-item>
+          <el-descriptions-item label="MOCK 分类">{{ selectedInfo?.category || '基础规则' }}</el-descriptions-item>
+          <el-descriptions-item label="实际规则">{{ selectedMethod || generatorNames[draft.generator] }}</el-descriptions-item>
         </el-descriptions>
         <faker-arguments-editor v-if="selectedInfo?.parameters?.length" v-model="argsText" :method="selectedInfo" />
         <el-form-item v-if="configLabel" :label="configLabel"><el-input v-model="draft.configJson" type="textarea" :rows="4" /></el-form-item>
@@ -61,16 +60,14 @@ import MockFieldBindings from './MockFieldBindings.vue'
 import { previewMockRule, listMockRules, saveMockRule, deleteMockRule } from '@/api/testData'
 import { hasPermission } from '@/security/permissionState'
 import { fakerGroups, fakerMethod } from '@/utils/fakerMethods'
-import { generatorNames, mockTypes } from '@/utils/mockTypes'
+import { generatorNames, mockRuleDetails, mockTypes } from '@/utils/mockTypes'
 const columnStorageKey = 'tianshu:table-columns:test-mock:v3'
-// 将新列插在原有的分类列之后，同时保留用户设置的排序和隐藏列。
+// 旧版和新版沿用同一列标识，由表格忽略已移除的分类编码列。
 try {
   const old = JSON.parse(localStorage.getItem('tianshu:table-columns:test-mock') || 'null')
   const keys = Array.isArray(old) ? old : old?.visibleKeys
   if (!localStorage.getItem(columnStorageKey) && Array.isArray(keys) && keys.length) {
-    const visibleKeys = [...keys]
-    if (keys.includes('category') && !keys.includes('ruleTypeCode')) visibleKeys.splice(keys.indexOf('category') + 1, 0, 'ruleTypeCode')
-    localStorage.setItem(columnStorageKey, JSON.stringify({ version: 2, visibleKeys }))
+    localStorage.setItem(columnStorageKey, JSON.stringify({ version: 2, visibleKeys: keys }))
   }
 } catch { /* 浏览器存储不可用时使用默认列。 */ }
 const canCreate = computed(() => hasPermission('field:edit'))
@@ -80,22 +77,20 @@ const bindingRule = ref(null), preview = ref(''), previewing = ref(false)
 const rules = ref([]), loading = ref(false), error = ref(''), draft = ref({}), visible = ref(false), saving = ref(false)
 const argsText = ref(''), testMode = ref(false), previewError = ref('')
 const page = ref(1), pageSize = 20
-const baseCategory = { module: 'base', category: '基础规则' }
 const initialFilters = () => ({ category: '', keyword: '', scope: '', projectId: null })
 const filters = ref(initialFilters()), applied = ref(initialFilters())
 const columns = [
   { key: 'scope', label: '作用范围', minWidth: 95, align: 'center', required: true },
   { key: 'projectName', label: '项目名称', minWidth: 130 },
   { key: 'name', label: '规则名称', minWidth: 160, required: true },
-  { key: 'category', label: '规则类型', minWidth: 105, align: 'center', tag: true },
-  { key: 'ruleTypeCode', label: '规则类型编码', minWidth: 125 },
+  { key: 'category', label: 'MOCK 分类', minWidth: 110, align: 'center', tag: true },
+  { key: 'generator', label: '实际规则', minWidth: 165, format: row => row.actualRule },
   { key: 'valueType', label: '字段类型', minWidth: 100, format: row => mockTypes[row.valueType] },
-  { key: 'generator', label: '生成方式', minWidth: 165, format: row => row.method.key || generatorNames[row.generator] },
   { key: 'matchNames', label: '自动匹配字段', minWidth: 180, format: row => row.matchNames === '*' ? '同类型字段' : row.matchNames || '仅手动绑定' }
 ]
 function matches(row, filter) {
-  const keywords = [row.name, row.matchNames, row.method.category, row.method.key, generatorNames[row.generator]].join(' ').toLowerCase()
-  return (!filter.category || filter.category === row.method.module)
+  const keywords = [row.name, row.matchNames, row.category, row.categoryCode, row.actualRule].join(' ').toLowerCase()
+  return (!filter.category || filter.category === row.categoryCode)
     && (!filter.scope || filter.scope === row.scope) && (!filter.projectId || String(row.projectId) === String(filter.projectId))
     && keywords.includes(filter.keyword.trim().toLowerCase())
 }
@@ -126,10 +121,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    rules.value = (await listMockRules()).data.map(row => {
-      const method = fakerMethod(row) || baseCategory
-      return { ...row, method, category: row.ruleType || method.category, ruleTypeCode: row.ruleTypeCode || method.module, scope: row.projectId ? 'PROJECT' : 'GLOBAL' }
-    })
+    rules.value = (await listMockRules()).data.map(row => ({ ...row, ...mockRuleDetails(row), scope: row.projectId ? 'PROJECT' : 'GLOBAL' }))
   } catch (e) { error.value = e.message || '规则加载失败' } finally { loading.value = false }
 }
 let previewRequest = 0
@@ -170,7 +162,7 @@ function edit(row, testing = false) {
     if (config.args) argsText.value = stringifyExactJson(config.args, 2)
   }
   preview.value = ''
-  draft.value = row ? { ...row, method: undefined } : { scope: canEdit({ scope: 'GLOBAL' }) ? 'GLOBAL' : 'PROJECT', projectId: null, name: '', matchNames: '', valueType: 'STRING', generator: 'FIXED', configJson: '""' }
+  draft.value = row ? { ...row } : { scope: canEdit({ scope: 'GLOBAL' }) ? 'GLOBAL' : 'PROJECT', projectId: null, name: '', matchNames: '', valueType: 'STRING', generator: 'FIXED', configJson: '""' }
   visible.value = true
 }
 function setGenerator(method) {

@@ -525,9 +525,6 @@
           <template #footer><el-button @click="reportsVisible = true">查看回归结果</el-button><el-button @click="caseToolsVisible = false">关闭</el-button></template>
         </el-dialog>
       </el-tab-pane>
-      <el-tab-pane label="Mock 规则" name="mock" class="test-management management-table-region" lazy>
-        <mock-rules-panel v-if="activeTestTab === 'mock'" />
-      </el-tab-pane>
     </el-tabs>
     <regression-report-drawer v-if="reportsVisible && selectedRuleId" :definition-id="selectedRuleId" :revision-id="inputExecutionIdentity?.revisionId || null" @close="reportsVisible = false" />
   </div>
@@ -535,7 +532,6 @@
 
 <script>
 import { pageTabState } from '@/mixins/pageTabState'
-import MockRulesPanel from '@/components/test/MockRulesPanel.vue'
 import TestCasesPanel from '@/components/test/TestCasesPanel.vue'
 import { generateTestInput } from '@/api/testData'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
@@ -593,8 +589,8 @@ import {
 } from '@/utils/testCaseTools'
 
 export default {
-  mixins: [pageTabState('activeTestTab', ['test', 'cases', 'mock'])],
-  components: { MockRulesPanel, TestCasesPanel, DismissibleGuidance, ExecutionImpactPanel, ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
+  mixins: [pageTabState('activeTestTab', ['test', 'cases'])],
+  components: { TestCasesPanel, DismissibleGuidance, ExecutionImpactPanel, ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
     TraceTree,
     AsyncState,
     ConfigLayerGuide,

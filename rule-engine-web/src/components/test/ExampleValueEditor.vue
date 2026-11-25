@@ -5,14 +5,15 @@
       <el-option label="不生成 Mock" value="NONE" />
       <el-option label="固定值" value="FIXED" />
       <el-option label="绑定测试用例" value="CASE" />
-      <el-option label="指定 Mock 方法" value="RULE" />
+      <el-option label="绑定 MOCK 规则" value="RULE" />
     </el-select>
     <el-input v-if="selected==='FIXED'" :model-value="value" :type="structured ? 'textarea' : 'text'"
       :placeholder="structured ? '输入 JSON，可留空' : '输入固定示例，可留空'" aria-label="固定示例值" @update:model-value="$emit('update:value',$event)" />
     <case-example-picker v-if="selected === 'CASE'" :binding="caseBinding" :project-id="projectId" :field-type="fieldType"
       @change="$emit('update:caseBinding', $event)" />
-    <mock-rule-select v-if="selected==='RULE'" :model-value="ruleId" :field-type="fieldType" :project-id="projectId"
-      @update:model-value="$emit('update:ruleId',$event)" />
+    <mock-rule-select v-if="['AUTO', 'FIXED', 'RULE'].includes(selected)" :key="selected === 'RULE' ? 'bind' : 'generate'"
+      :bind-rule="selected === 'RULE'" :model-value="ruleId" :field-type="fieldType" :project-id="projectId"
+      @update:model-value="$emit('update:ruleId', $event)" @generated="applyGenerated" />
   </div>
 </template>
 <script setup>
@@ -33,9 +34,13 @@ function change(mode) {
   if (mode !== 'RULE') emit('update:ruleId',null)
   if (mode !== 'FIXED') emit('update:value','')
 }
+function applyGenerated(value) {
+  change('FIXED')
+  emit('update:value', value)
+}
 </script>
 <style scoped>
 .example-editor { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
 .example-editor > :first-child { flex: 0 1 145px; }
-.example-editor > :nth-child(2) { flex: 1 1 180px; min-width: 0; }
+.example-editor > .el-input, .example-editor > .el-textarea, .example-editor > .case-example-picker { flex: 1 1 180px; min-width: 0; }
 </style>

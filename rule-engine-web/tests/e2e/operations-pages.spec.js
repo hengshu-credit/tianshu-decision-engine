@@ -2,6 +2,7 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
+const { createManagementApiData } = require('./support/managementFixtures.cjs')
 const { withTestExecutionIdentity } = require('./support/testExecutionFixtures.cjs')
 const { DEFAULT_THEME_CONFIG } = require('../../src/theme/themeConfig.js')
 
@@ -1091,18 +1092,16 @@ test('预期模式按钮在明暗实时预览后仍使用可读文字色', async
 
 test('规则测试刷新恢复管理页签，默认跨类型展示用例并保留筛选栏底部间距', async ({ page }) => {
   const fixtures = createOperationsApiData()
-  fixtures.set('GET /api/rule/test-data/rules', [])
   fixtures.set('GET /api/rule/test-data/cases', { total: 2, records: [
     { type: 'VARIABLE', source: 'CASE', ownerId: 8, id: '1', name: '低收入申请', resourceName: '收入', code: 'income' },
     { type: 'API', source: 'API_NAMED', ownerId: 9, id: 'high', name: '高分响应', resourceName: '风险评分', code: 'score' },
   ] })
   const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
   await page.goto('http://tianshu.local/index.html#/test')
-  for (const tab of ['Mock 规则','测试用例']) {
-    await page.getByRole('tab', { name: tab, exact: true }).click()
-    await page.reload()
-    await expect(page.getByRole('tab', { name: tab, exact: true })).toHaveAttribute('aria-selected','true')
-  }
+  const cases = page.getByRole('tab', { name: '测试用例', exact: true })
+  await cases.click()
+  await page.reload()
+  await expect(cases).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText('低收入申请', { exact: true })).toBeVisible()
   await expect(page.getByText('高分响应', { exact: true })).toBeVisible()
   const toolbar = page.locator('.test-management:visible .uiue-filter-toolbar')
@@ -1116,7 +1115,7 @@ test('规则测试刷新恢复管理页签，默认跨类型展示用例并保�
 })
 
 test('Mock 规则按项目范围排列，可按 Faker 类别和方法查询、预览并重置筛选', async ({ page }) => {
-  const apiData = createOperationsApiData()
+  const apiData = createManagementApiData()
   const person = { id: 39, name: '全名', valueType: 'STRING', generator: 'FAKER', configJson: '"person.fullName"', builtin: true, matchNames: '' }
   apiData.set('GET /api/rule/test-data/rules', [
     person, { ...person, id: 40, name: '作者', configJson: '"book.author"' },
@@ -1127,12 +1126,18 @@ test('Mock 规则按项目范围排列，可按 Faker 类别和方法查询、�
     return { valueJson: '"陈明"' }
   })
   const { assertClean } = await installDistRoutes(page, { apiData })
-  await page.goto('http://tianshu.local/#/test')
-  await page.getByRole('tab', { name: 'Mock 规则', exact: true }).click()
-  const pane = page.locator('.test-management:visible')
+  await page.goto('http://tianshu.local/#/variable')
+  await expect(page.locator('.var-tabs > .el-tabs__header').getByRole('tab')).toHaveText([
+    '变量列表', '数据对象', '常量列表', '字段校验', 'MOCK 规则',
+  ])
+  const mockTab = page.getByRole('tab', { name: 'MOCK 规则', exact: true })
+  await mockTab.click()
+  await page.reload()
+  await expect(mockTab).toHaveAttribute('aria-selected', 'true')
+  const pane = page.getByRole('tabpanel', { name: 'MOCK 规则' })
   const headers = pane.locator('.el-table__header th:not(.gutter)')
-  await expect(headers).toHaveText(['作用范围', '项目名称', '规则名称', '规则类型', '规则类型编码', '字段类型', '生成方式', '自动匹配字段', '操作'])
-  await pane.getByRole('combobox', { name: '规则类型' }).click()
+  await expect(headers).toHaveText(['作用范围', '项目名称', '规则名称', 'MOCK 分类', '实际规则', '字段类型', '自动匹配字段', '操作'])
+  await pane.getByRole('combobox', { name: 'MOCK 分类', exact: true }).click()
   await page.getByRole('option', { name: '个人资料 · person', exact: true }).click()
   await pane.getByPlaceholder('规则名称、方法或匹配字段').fill('fullName')
   await pane.getByPlaceholder('规则名称、方法或匹配字段').press('Enter')
@@ -1148,7 +1153,7 @@ test('Mock 规则按项目范围排列，可按 Faker 类别和方法查询、�
 })
 
 test('Mock 数值上下界可依次输入并与 JSON 参数同步', async ({ page }) => {
-  const apiData = createOperationsApiData()
+  const apiData = createManagementApiData()
   const row = { id: 7, name: '整数', valueType: 'NUMBER', generator: 'FAKER', configJson: '"number.int"', builtin: true, matchNames: '' }
   apiData.set('GET /api/rule/test-data/rules', [row])
   apiData.set('POST /api/rule/test-data/rules/preview', ({ request }) => {
@@ -1158,15 +1163,77 @@ test('Mock 数值上下界可依次输入并与 JSON 参数同步', async ({ pag
   await page.addInitScript(() => localStorage.setItem('tianshu:table-columns:test-mock',
     JSON.stringify({ version: 2, visibleKeys: ['scope','name','category','generator'] })))
   const { assertClean } = await installDistRoutes(page, { apiData })
-  await page.goto('http://tianshu.local/#/test')
-  await page.getByRole('tab', { name: 'Mock 规则', exact: true }).click()
-  const pane = page.locator('.test-management:visible')
-  await expect(pane.locator('.el-table__header th:not(.gutter)')).toHaveText(['作用范围','规则名称','规则类型','规则类型编码','生成方式','操作'])
+  await page.goto('http://tianshu.local/#/variable')
+  await page.getByRole('tab', { name: 'MOCK 规则', exact: true }).click()
+  const pane = page.getByRole('tabpanel', { name: 'MOCK 规则' })
+  await expect(pane.locator('.el-table__header th:not(.gutter)')).toHaveText(['作用范围', '规则名称', 'MOCK 分类', '实际规则', '操作'])
   await pane.getByRole('button', { name: '编辑', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Mock 规则详情' })
   await dialog.getByLabel('最小值', { exact: true }).fill('42')
   await dialog.getByLabel('最大值', { exact: true }).fill('42')
   await dialog.getByRole('button', { name: '试生成' }).click()
   await expect(dialog.getByLabel('生成预览')).toHaveText('42')
+  assertClean()
+})
+
+test('变量示例可在内容选择器绑定规则，也可组合生成固定示例', async ({ page }) => {
+  const apiData = createManagementApiData()
+  apiData.set('/api/rule/variable/source-options', { apiOptions: [], databaseOptions: [], listOptions: [], sftpOptions: [] })
+  let savedVariable
+  apiData.set('POST /api/rule/governance/drafts', ({ request }) => {
+    const body = request.postDataJSON()
+    savedVariable = JSON.parse(body.snapshotJson)
+    return { ...body, id: 991, resourceId: 301, status: 'EDITING', draftSnapshotJson: body.snapshotJson }
+  })
+  const fullName = { id: 39, name: '全名', valueType: 'STRING', generator: 'FAKER', configJson: '"person.fullName"', matchNames: '' }
+  const projectCode = { id: 40, name: '项目标记', projectId: 1, valueType: 'STRING', generator: 'FIXED', configJson: '"P01"', matchNames: '' }
+  apiData.set('GET /api/rule/test-data/rules', [
+    fullName, projectCode,
+    { ...projectCode, id: 41, name: '其他项目规则', projectId: 2 },
+    { ...projectCode, id: 42, name: '数值规则', valueType: 'NUMBER', configJson: '42' },
+  ])
+  const requested = []
+  apiData.set('POST /api/rule/test-data/rules/preview', ({ request }) => {
+    const { id, configJson } = request.postDataJSON()
+    requested.push(id)
+    return { valueJson: id === fullName.id ? '"陈明"' : configJson }
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.goto('http://tianshu.local/#/variable?projectId=1')
+  await page.getByRole('button', { name: '新建字段', exact: true }).click()
+  const field = page.getByRole('dialog', { name: '新建字段', exact: true })
+  await field.getByText('自动匹配', { exact: true }).click()
+  await page.getByRole('option', { name: '绑定 MOCK 规则', exact: true }).click()
+  await field.getByRole('button', { name: '打开内容选择器选择 MOCK 规则' }).click()
+  const bind = page.getByRole('dialog', { name: '内容选择器 · 绑定 MOCK 规则' })
+  await expect(bind.getByRole('columnheader', { name: 'MOCK 分类' })).toBeVisible()
+  await expect(bind.getByRole('columnheader', { name: '实际规则' })).toBeVisible()
+  await expect(bind.getByRole('row').filter({ hasText: '其他项目规则' })).toHaveCount(0)
+  await expect(bind.getByRole('row').filter({ hasText: '数值规则' })).toHaveCount(0)
+  const person = bind.getByRole('row').filter({ hasText: 'person.fullName' })
+  await expect(person.getByRole('gridcell', { name: '个人资料' })).toBeVisible()
+  await person.dblclick()
+  await expect(field.getByRole('button', { name: '打开内容选择器选择 MOCK 规则' })).toHaveText('全名')
+  expect(requested).toEqual([])
+
+  await field.getByText('绑定 MOCK 规则', { exact: true }).click()
+  await page.getByRole('option', { name: '固定值', exact: true }).click()
+  await page.setViewportSize({ width: 620, height: 820 })
+  await field.getByRole('button', { name: '从 MOCK 生成' }).click()
+  const generate = page.getByRole('dialog', { name: '内容选择器 · 生成示例值' })
+  await generate.getByRole('row').filter({ hasText: 'person.fullName' }).press('Enter')
+  await generate.getByRole('button', { name: '添加固定文本' }).click()
+  await generate.getByRole('textbox', { name: '固定文本 2' }).fill('-')
+  await generate.getByRole('row').filter({ hasText: '项目标记' }).press('Enter')
+  await generate.getByRole('row').filter({ hasText: '数值规则' }).press('Enter')
+  await expectNoRootOverflow(page)
+  await generate.getByRole('button', { name: '生成并填入' }).click()
+  await expect(field.getByRole('textbox', { name: '固定示例值' })).toHaveValue('陈明-P0142')
+  expect(requested).toEqual([39, 40, 42])
+  await field.getByPlaceholder('英文标识，如 taxAmount').fill('mockExample')
+  await field.getByPlaceholder('中文名称，如 应纳税额').fill('组合示例')
+  await field.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await expect(field).toBeHidden()
+  expect(savedVariable).toMatchObject({ exampleMode: 'FIXED', exampleValue: '陈明-P0142', mockRuleId: null })
   assertClean()
 })

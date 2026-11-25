@@ -1,6 +1,6 @@
 <template>
   <div class="uiue-list-page management-list-page">
-    <dismissible-guidance v-if="activeTab !== 'objects'" class="variable-intro" guide-id="variable.intro" label="变量管理提示">
+    <dismissible-guidance v-if="activeTab !== 'objects' && activeTab !== 'mock'" class="variable-intro" guide-id="variable.intro" label="变量管理提示">
       <el-icon><el-icon-info /></el-icon> 变量在规则设计时使用，<router-link
         to="/test"
         >规则测试</router-link
@@ -8,7 +8,7 @@
     </dismissible-guidance>
 
     <config-layer-guide
-      v-if="activeTab !== 'objects'"
+      v-if="activeTab !== 'objects' && activeTab !== 'mock'"
       guide-id="variable.steps"
       title="变量配置步骤"
       test-id="variable-config-layers"
@@ -894,6 +894,9 @@
             }
           "
         />
+      </el-tab-pane>
+      <el-tab-pane label="MOCK 规则" lazy name="mock" class="management-table-region">
+        <mock-rules-panel v-if="activeTab === 'mock'" />
       </el-tab-pane>
     </el-tabs>
 
@@ -2204,6 +2207,7 @@
 import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import ExampleValueEditor from '@/components/test/ExampleValueEditor.vue'
+import MockRulesPanel from '@/components/test/MockRulesPanel.vue'
 import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
@@ -2337,7 +2341,7 @@ function isVariableListTimeout(error) {
 }
 
 export default {
-  mixins: [pageTabState('activeTab', ['list', 'objects', 'constants', 'validations']), governanceWorkspaceMixin, configurationDialogsMixin([
+  mixins: [pageTabState('activeTab', ['list', 'objects', 'constants', 'validations', 'mock']), governanceWorkspaceMixin, configurationDialogsMixin([
     { visible: 'dialogVisible', draft: vm => vm.form, busy: vm => vm.variableSubmitting || vm.objectFieldSubmitting || vm.objectFieldReferenceValidating },
     { visible: 'objectDialogVisible', draft: vm => vm.objectForm, busy: vm => vm.objectSubmitting },
     { visible: 'validationDialogVisible', draft: vm => vm.validationForm, busy: vm => vm.validationSaving },
@@ -2661,7 +2665,7 @@ export default {
       canEditFields: hasPermission('field:edit'),
     }
   },
-  components: { ExampleValueEditor, ResourceTestCases, DismissibleGuidance,
+  components: { ExampleValueEditor, MockRulesPanel, ResourceTestCases, DismissibleGuidance,
     SourceSummaryCard, ProjectResourceSelect, GovernancePublishAction,
     GovernanceResourceStatus,
     ApiSourceBinding,
@@ -2696,7 +2700,7 @@ export default {
     if (this.activeTab === 'objects') this.loadObjectTree()
     else if (this.activeTab === 'constants') this.loadConstants()
     else if (this.activeTab === 'validations') this.loadFieldValidations()
-    else this.loadData()
+    else if (this.activeTab === 'list') this.loadData()
   },
   created() {
     this.currentProjectId =

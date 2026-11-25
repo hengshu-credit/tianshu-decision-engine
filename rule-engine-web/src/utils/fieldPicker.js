@@ -173,12 +173,13 @@ export function filterFieldTree(tree, expectedType) {
 /** Query matching preserves ancestors without materializing any DOM. */
 export function visibleFieldRows(tree, expanded, category, query) {
   const keyword = String(query || '').trim().toLowerCase()
+  const searchFields = node => [node.name, node.code, node.item?.searchText || '']
   const matches = new Set()
   const ranks = new Map()
   if (keyword) {
     for (const node of tree.nodes.values()) {
       if (category !== 'all' && node.category !== category) continue
-      if ([node.name, node.code].some(value => value.toLowerCase().includes(keyword))) {
+      if (searchFields(node).some(value => value.toLowerCase().includes(keyword))) {
         matches.add(node.key)
         const rank = [node.name, node.code].some(value => value.toLowerCase().startsWith(keyword)) ? 1 : 2
         ranks.set(node.key, Math.min(ranks.get(node.key) || 3, rank))
@@ -192,7 +193,7 @@ export function visibleFieldRows(tree, expanded, category, query) {
     if (category !== 'all' && node.category !== category) return
     if (keyword && !inheritedMatch && !matches.has(node.key)) return
     result.push({ node, depth })
-    const ownMatch = inheritedMatch || (keyword && [node.name, node.code].some(value => value.toLowerCase().includes(keyword)))
+    const ownMatch = inheritedMatch || (keyword && searchFields(node).some(value => value.toLowerCase().includes(keyword)))
     if (keyword || expanded.has(node.key)) ordered(node.children).forEach(child => visit(child, depth + 1, ownMatch))
   }
   ordered(tree.roots).forEach(node => visit(node, 0))
