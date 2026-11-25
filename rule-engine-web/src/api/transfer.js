@@ -1,4 +1,5 @@
 import request from './request'
+import { executeTransferTask } from './transferTask'
 import { metadataResponse } from '@/utils/metadataResponse'
 
 // 含模型原件的迁移请求还需要等待安全扫描、审批及事务提交。
@@ -8,7 +9,8 @@ export function listTransferResources(params) {
   return request({ ...metadataResponse, url: '/rule/transfer/resources', method: 'get', params })
 }
 
-export function exportResourceTransfer(roots, options = null) {
+export function exportResourceTransfer(roots, options = null, activity = null) {
+  if (activity) return executeTransferTask({ operation: 'EXPORT', selection: { roots, ...options } }, null, activity)
   return request({
     url: options ? '/rule/transfer/export/options' : '/rule/transfer/export',
     method: 'post',
@@ -31,14 +33,16 @@ export function listTransferVersionCandidates(refType, resourceId) {
   return request({ ...metadataResponse, url: '/rule/transfer/version-candidates', method: 'get', params: { refType, resourceId } })
 }
 
-export function transferProjectSet(file, digest = null) {
+export function transferProjectSet(file, digest = null, activity = null, serverEnd = 98) {
+  if (activity) return executeTransferTask({ operation: digest ? 'SET_IMPORT' : 'SET_PREVIEW', digest }, file, activity, serverEnd)
   const data = new FormData()
   data.append('file', file)
   if (digest) data.append('digest', digest)
   return request({ url: '/rule/transfer/project-set/' + (digest ? 'import' : 'preview'), method: 'post', data, timeout: transferFileTimeoutMs })
 }
 
-export function previewResourceTransfer(file, options = null) {
+export function previewResourceTransfer(file, options = null, activity = null) {
+  if (activity) return executeTransferTask({ operation: 'PREVIEW', options }, file, activity)
   const form = new FormData()
   form.append('file', file)
   if (options) form.append('options', JSON.stringify(options))
@@ -52,7 +56,8 @@ export function previewResourceTransfer(file, options = null) {
   })
 }
 
-export function importResourceTransfer(file, options) {
+export function importResourceTransfer(file, options, activity = null) {
+  if (activity) return executeTransferTask({ operation: 'IMPORT', options }, file, activity)
   const form = new FormData()
   form.append('file', file)
   form.append('options', JSON.stringify(options || {}))

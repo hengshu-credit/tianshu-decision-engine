@@ -34,12 +34,12 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
         for (var rows = visibilityIndex.unindexed(); !rows.isEmpty(); rows = visibilityIndex.unindexed()) rows.forEach(this::indexVisibility);
     }
 
-    public void recordExport(List<TransferRootRequest> roots, ExportedPackage exported, String operator) {
+    public Long recordExport(List<TransferRootRequest> roots, ExportedPackage exported, String operator) {
         Map<String, Object> content = new LinkedHashMap<>();
         content.put("roots", roots == null ? List.of() : roots);
         TransferBundle bundle = exported.bundle();
         content.put("lineage", lineageSnapshot(bundle, null));
-        saveLog("EXPORT", "SUCCESS", operator, Sha256Digests.bytes(exported.bytes()),
+        return saveLog("EXPORT", "SUCCESS", operator, Sha256Digests.bytes(exported.bytes()),
                 bundle.roots(), bundle.resources().size(), content, null);
     }
 
@@ -183,13 +183,14 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
         return result;
     }
 
-    private void saveLog(String operationType, String status, String operator, String digest,
+    private Long saveLog(String operationType, String status, String operator, String digest,
                          List<String> roots, int count, Map<String, Object> content, String error) {
         OfflineTransferLog log = new OfflineTransferLog();
         log.setOperationType(operationType); log.setStatus(status); log.setOperator(operator);
         log.setPackageDigest(digest); log.setRootsJson(JSON.toJSONString(roots)); log.setResourceCount(count);
         log.setContentJson(JSON.toJSONString(content)); log.setErrorMessage(error); save(log);
         if (visibilityIndex != null) indexVisibility(log);
+        return log.getId();
     }
 
     private void indexVisibility(OfflineTransferLog log) {

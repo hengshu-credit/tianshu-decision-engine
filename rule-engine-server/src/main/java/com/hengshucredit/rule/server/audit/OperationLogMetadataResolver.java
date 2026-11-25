@@ -46,6 +46,14 @@ public class OperationLogMetadataResolver {
             log.setTargetType("TRANSFER_PACKAGE");
             log.setTargetName("迁移配置包");
             Object roots = body instanceof Collection<?> ? body : property(body, "roots");
+            if (body instanceof com.hengshucredit.rule.server.transfer.TransferTaskService.Request task && task.operation() != null) {
+                log.setAction(switch (task.operation()) {
+                    case EXPORT -> "EXPORT";
+                    case IMPORT, SET_IMPORT -> "IMPORT";
+                    case PREVIEW, SET_PREVIEW -> "READ";
+                });
+                roots = task.selection() == null ? null : task.selection().roots();
+            }
             if (roots instanceof Collection<?> items) {
                 List<String> identities = new ArrayList<>();
                 for (Object item : items) {

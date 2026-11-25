@@ -66,7 +66,11 @@ public final class TransferBundleCodec {
     }
 
     public Decoded decodeDeferred(java.nio.file.Path file) {
-        return decode(zip.decodeTransferFile(file), true);
+        return decode(file, true);
+    }
+
+    Decoded decode(java.nio.file.Path file, boolean deferred) {
+        return decode(zip.decodeTransferFile(file), deferred);
     }
 
     private Decoded decode(DecisionArtifactPackageCodec.DecodedPackage decoded, boolean deferred) {

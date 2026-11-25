@@ -120,16 +120,20 @@
           <el-button size="small" @click="navigateTo(navigation.error.fullPath)">重新加载</el-button>
         </el-alert>
         <router-view v-slot="{ Component }">
+          <!-- 上传与回归发布在整个工作台会话内继续，迁移页拥有独立的缓存位置。 -->
+          <keep-alive :key="transferIdentity">
+            <component :is="Component" v-if="$route.name === 'OfflineTransfer'" />
+          </keep-alive>
           <keep-alive :max="12">
             <component
               :is="Component"
-              v-if="$route.meta.keepAlive"
+              v-if="$route.meta.keepAlive && $route.name !== 'OfflineTransfer'"
               :key="currentViewKey"
             />
           </keep-alive>
           <component
             :is="Component"
-            v-if="!$route.meta.keepAlive"
+            v-if="!$route.meta.keepAlive && $route.name !== 'OfflineTransfer'"
             :key="currentViewKey"
           />
         </router-view>
@@ -293,6 +297,10 @@ export default {
     activeTabPath() {
       if (this.pendingRoute) return this.pendingRoute.fullPath
       return this.$store.getters['workspaceTabs/activePath'] || ''
+    },
+    transferIdentity() {
+      const user = getCurrentUser()
+      return JSON.stringify([user?.userId, user?.username, user?.permissionVersion])
     },
     currentViewKey() {
       const viewKey = this.$store.getters['workspaceTabs/viewKey']

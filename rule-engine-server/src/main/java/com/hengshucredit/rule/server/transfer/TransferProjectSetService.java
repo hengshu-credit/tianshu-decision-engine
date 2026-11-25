@@ -76,8 +76,17 @@ public class TransferProjectSetService {
     }
 
     private Result process(MultipartFile file, String expected, String actor) {
-        if (file.isEmpty() || file.getSize() > MAX_BYTES) throw new IllegalArgumentException("项目合集为空或超过 512 MiB");
-        try (var zip = new ZipInputStream(file.getInputStream())) {
+        try {
+            return process(file.getInputStream(), file.getSize(), expected, actor, TransferProgress.NONE);
+        } catch (IOException invalid) {
+            throw new IllegalArgumentException("无法读取项目合集", invalid);
+        }
+    }
+
+    Result process(java.io.InputStream input, long size, String expected, String actor, TransferProgress progress) {
+        try (var zip = new ZipInputStream(new java.io.BufferedInputStream(input, 65536))) {
+            if (size <= 0 || size > MAX_BYTES) throw new IllegalArgumentException("项目合集为空或超过 512 MiB");
+            progress.report(0, "读取项目清单并校验预检摘要");
             byte[] header = read(zip, "project-set.json", 64 * 1024);
             String digest = Sha256Digests.bytes(header);
             if (expected != null && !digest.equals(expected)) throw new IllegalArgumentException("项目合集已变化，请重新预检");
@@ -95,6 +104,10 @@ public class TransferProjectSetService {
                 if (member == null || member.code() == null || member.code().isBlank() || !codes.add(member.code())
                         || member.sha256() == null || !member.sha256().matches("[a-f0-9]{64}"))
                     throw new IllegalArgumentException("项目编码或子包摘要无效");
+                int count = manifest.projects().size();
+                var memberProgress = progress.range(100 * projects.size() / count, 100 * (projects.size() + 1) / count,
+                        "项目 " + (projects.size() + 1) + "/" + count + " · " + member.code() + " · ");
+                memberProgress.report(0, "读取子包并核对 SHA-256");
                 ZipEntry entry = checkedEntry(zip, "projects/" + (projects.size() + 1) + ".zip", remaining);
                 remaining -= Math.toIntExact(entry.getSize());
                 var spool = Files.createTempFile("tianshu-project-set-", ".zip");
@@ -105,10 +118,11 @@ public class TransferProjectSetService {
                         throw new IllegalArgumentException("项目子包大小不匹配");
                     if (!member.sha256().equals(HexFormat.of().formatHex(hasher.digest())))
                         throw new IllegalArgumentException("子包摘要不符：" + member.code());
+                    memberProgress.report(10, "校验配置清单、模型文件和扩展摘要");
                     var decoded = new TransferBundleCodec().decodeDeferred(spool);
                     if (!member.sha256().equals(decoded.packageDigest())) throw new IllegalArgumentException("子包摘要不符：" + member.code());
                     var options = new TransferImportOptions(null, "PROJECT", "REUSE", "REUSE", "", true, member.code(), null, Map.of());
-                    var preview = transfer.preview(decoded, options);
+                    var preview = transfer.preview(decoded, options, memberProgress.range(20, expected == null ? 97 : 40, ""));
                     var profile = installation.load(member.sha256());
                     Project project = summarize(member, preview, profile);
                     projects.add(project);
@@ -125,7 +139,8 @@ public class TransferProjectSetService {
                     }
                     if (expected != null) {
                         if (!project.issues().isEmpty()) throw new IllegalArgumentException(member.code() + "：" + String.join("，", project.issues()));
-                        var applied = importer.apply(decoded, options, actor, profile, true);
+                        var applied = importer.apply(decoded, options, actor, profile, true, memberProgress.range(40, 94, ""));
+                        memberProgress.report(95, "核对预置名单、发布步骤并记录导入结果");
                         addExamples(member, applied, actor);
                         var memberSteps = new ArrayList<Step>();
                         addSteps(applied, published, memberSteps);

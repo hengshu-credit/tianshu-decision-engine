@@ -75,6 +75,12 @@ public class OfflineResourceImportService {
     }
 
     Map<String,Object> apply(TransferBundleCodec.Decoded decoded, TransferImportOptions options, String actor, TransferInstallationBindings.Profile bindings, boolean preserveSourceScope) {
+        return apply(decoded, options, actor, bindings, preserveSourceScope, TransferProgress.NONE);
+    }
+
+    Map<String,Object> apply(TransferBundleCodec.Decoded decoded, TransferImportOptions options, String actor,
+                             TransferInstallationBindings.Profile bindings, boolean preserveSourceScope, TransferProgress progress) {
+        progress.report(1, "校验导入权限、目标范围和资源依赖");
         if (options == null) throw new IllegalArgumentException("请选择导入作用范围及目标项目");
         if (actor == null || actor.isBlank()) actor = ConsoleOperatorResolver.SYSTEM_CONSOLE;
         TransferBundle decodedBundle = decoded.bundle();
@@ -157,12 +163,15 @@ public class OfflineResourceImportService {
             if (template != null && "SUFFIX".equals(options.normalizedResourcePolicy())) {
                 addSuffix(projectConfig, TransferResourceType.PROJECT, options.normalizedSuffix());
             }
+            progress.report(5, "创建目标项目 · " + options.projectCode());
             effectiveTargetProjectId = importProject(projectConfig, options, actor);
             if (template != null) idMap.put(template.key(), effectiveTargetProjectId);
             createdProject = true;
         }
         for (TransferBundle.Resource resource : ordered) {
             TransferKey sourceKey = TransferKey.parse(resource.key());
+            progress.report(10 + 80 * result.size() / ordered.size(), "导入配置 " + (result.size() + 1) + "/"
+                    + ordered.size() + " · " + resource.key() + " · " + resource.configuration().get(sourceKey.type().codeField));
             if (sourceKey.type() == TransferResourceType.RULE_VERSION) {
                 Long targetBinding = versionTransfers.bindLegacyRule(resource, options, idMap, effectiveTargetProjectId);
                 idMap.put(resource.key(), targetBinding);
@@ -367,6 +376,7 @@ public class OfflineResourceImportService {
                 throw new IllegalArgumentException("带项目鉴权的配置包必须选择项目范围");
             var policy = options.normalizedResourceActions().getOrDefault(resource.key(),
                     type == TransferResourceType.VARIABLE ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy());
+            progress.report(92, "写入附属配置 · " + resource.key());
             pageSettings.apply(resource, idMap, "OVERWRITE".equals(policy), bindings);
         }
         Map<String, Object> response = new LinkedHashMap<>();

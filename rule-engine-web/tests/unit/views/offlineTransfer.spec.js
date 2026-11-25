@@ -180,7 +180,7 @@ describe('OfflineTransfer', () => {
     await wrapper.vm.exportPackage()
     expect(transferApi.exportResourceTransfer).toHaveBeenCalledWith(
       [{ resourceType: 'RULE', resourceId: 101 }],
-      { includeDependencies: false },
+      { includeDependencies: false }, expect.objectContaining({ title: '导出配置' }),
     )
     wrapper.unmount()
   })
@@ -224,7 +224,7 @@ describe('OfflineTransfer', () => {
     wrapper.vm.resourceActionsDraft['RULE:1'] = 'SUFFIX'
     await wrapper.vm.applyPackage()
     expect(transferApi.importResourceTransfer).toHaveBeenCalledWith(expect.any(File),
-      expect.objectContaining({ selectedResourceKeys: ['VARIABLE:7', 'RULE:1'], resourceActions: { 'RULE:1': 'SUFFIX' } }))
+      expect.objectContaining({ selectedResourceKeys: ['VARIABLE:7', 'RULE:1'], resourceActions: { 'RULE:1': 'SUFFIX' } }), expect.objectContaining({ title: '导入配置' }))
     wrapper.unmount()
   })
 
@@ -299,7 +299,7 @@ describe('OfflineTransfer', () => {
     expect(ElMessageBox.confirm).toHaveBeenCalledTimes(1)
     expect(transferApi.importResourceTransfer).toHaveBeenCalledTimes(1)
     expect(transferApi.importResourceTransfer).toHaveBeenCalledWith(originalFile,
-      expect.objectContaining({ targetScope: 'GLOBAL', createProject: false, targetProjectId: null }))
+      expect.objectContaining({ targetScope: 'GLOBAL', createProject: false, targetProjectId: null }), expect.objectContaining({ title: '导入配置' }))
     expect(ElMessageBox.confirm.mock.calls[0][0]).toContain('全局')
     expect(wrapper.vm.resultVisible).toBe(true)
     expect(wrapper.vm.preview).toBeNull()
@@ -413,6 +413,17 @@ describe('OfflineTransfer', () => {
     expect(wrapper.vm.resourceActionsDraft).toEqual({ 'VARIABLE:1': 'REUSE' })
     wrapper.vm.resourceActionsDraft['VARIABLE:1'] = 'SUFFIX'
     expect(wrapper.vm.normalizedOptions().resourceActions).toEqual({ 'VARIABLE:1': 'SUFFIX' })
+    wrapper.unmount()
+  })
+
+  test('切换默认冲突策略只清理对应类型的自动建议，保留逐项选择', async () => {
+    const wrapper = await previewGlobal()
+    wrapper.vm.resourceActionsDraft = { 'VARIABLE:1': 'REUSE', 'FUNCTION:2': 'REUSE', 'FUNCTION:3': 'OVERWRITE' }
+    wrapper.vm.explicitActionKeys.add('FUNCTION:3')
+    wrapper.vm.options.resourcePolicy = 'OVERWRITE'
+    expect(wrapper.vm.normalizedOptions().resourceActions).toEqual({ 'VARIABLE:1': 'REUSE', 'FUNCTION:3': 'OVERWRITE' })
+    wrapper.vm.options.variablePolicy = 'SUFFIX'
+    expect(wrapper.vm.normalizedOptions().resourceActions).toEqual({ 'FUNCTION:3': 'OVERWRITE' })
     wrapper.unmount()
   })
 
@@ -548,7 +559,7 @@ describe('OfflineTransfer', () => {
 
     expect(transferApi.previewResourceTransfer).toHaveBeenCalledWith(
       file,
-      expect.objectContaining({ targetScope: 'GLOBAL', targetProjectId: null })
+      expect.objectContaining({ targetScope: 'GLOBAL', targetProjectId: null }), expect.objectContaining({ title: '预览冲突' })
     )
     expect(wrapper.vm.preview.packageDigest).toBe('digest-1')
     wrapper.unmount()

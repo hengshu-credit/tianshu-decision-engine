@@ -47,6 +47,7 @@
           <el-button size="small" :disabled="exporting" @click="addRoot">添加根资源</el-button>
           <el-button v-permission="'transfer:export'" type="primary" :loading="exporting" @click="exportPackage">生成并下载配置包</el-button>
         </div>
+        <transfer-activity :activity="exportActivity" :active="pageActive" />
         <section v-if="exportLineageRoots.length" class="inline-lineage-panel">
           <div class="inline-lineage-toolbar">
             <strong>导出内容血缘</strong>
@@ -83,7 +84,6 @@
           <el-checkbox v-if="setResult?.publicationCount && !setResult.applied" v-model="restoreAfterImport" :disabled="applying">执行固定用例并恢复源端已发布的规则和实验（{{ setResult.publicationCount }} 项）</el-checkbox>
           <p v-if="setResult?.publicationCount && !setResult.applied && restoreAfterImport">回归使用目标环境的外数和名单，可能发生调用费用和名单写入。</p>
           <p v-if="setResult?.applied" role="status">项目合集已导入</p>
-          <p v-if="activationMessage" role="status">{{ activationMessage }}</p>
           <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" />
           <div class="card-actions">
             <el-button v-permission="'transfer:import'" :loading="previewing" :disabled="applying" @click="reviewSet(false)">预检项目合集</el-button>
@@ -150,6 +150,7 @@
           <el-button v-permission="'transfer:import'" type="primary" :disabled="!hasCurrentPreview || applying" :loading="applying" @click="applyPackage">确认导入</el-button>
         </div>
         </template>
+        <transfer-activity :activity="importActivity" :active="pageActive" :has-result="!!importResult && !importActivity?.preview" @show-result="resultVisible = true" />
       </article>
     </section>
 
@@ -188,6 +189,7 @@
               size="small"
               class="resource-action-select"
               aria-label="迁移处理方式"
+              @change="explicitActionKeys.add(item.key)"
             >
               <el-option v-for="action in resourceActionOptions(item)" :key="action.value" :label="action.label" :value="action.value" />
             </el-select>
@@ -292,13 +294,13 @@
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog v-model="resultVisible" title="导入结果" width="620px">
+    <el-dialog v-if="pageActive" v-model="resultVisible" title="导入结果" width="620px">
       <el-alert type="success" :closable="false" title="配置已导入">
         {{ appliedOptions?.publishRules ? '规则已按所选策略发布。' : '规则保存为目标环境草稿。' }}其他资源已通过治理流程导入生效；复用、覆盖和新建明细见下方结果。
       </el-alert>
       <pre class="result-json">{{ JSON.stringify(importResult, null, 2) }}</pre>
     </el-dialog>
-    <el-dialog v-model="logDetailVisible" title="迁移日志详情" width="900px">
+    <el-dialog v-if="pageActive" v-model="logDetailVisible" title="迁移日志详情" width="900px">
       <el-alert v-if="logDetail" :description="logDetail.errorMessage || undefined" :type="logDetail.status === 'SUCCESS' ? 'success' : 'warning'" :closable="false" :title="`${logDetail.operationType === 'EXPORT' ? '导出' : '导入'} · ${logDetail.status}`" />
       <pre v-if="logDetail" class="result-json">{{ logDetail.contentJson || '{}' }}</pre>
       <section class="log-lineage-section">
@@ -325,6 +327,8 @@ import LineageGraph from '@/views/lineage/LineageGraph.vue'
 import TransferAssociationPanel from '@/components/transfer/TransferAssociationPanel.vue'
 import { hasPermission } from '@/security/permissionState'
 import { resourceViewPermission } from '@/security/pickerAccess'
+import TransferActivity from '@/components/transfer/TransferActivity.vue'
+import { startActivity, recordAction, endActivity } from '@/api/transferTask'
 import { restorePublishedStep } from '@/utils/restoreProjectSet'
 
 const RESOURCE_TYPES = [
@@ -354,18 +358,21 @@ export default {
   created() { if (this.activeTab === 'logs') this.loadLogs() },
   mixins: [pageTabState('activeTab', ['transfer', 'logs'])],
   name: 'OfflineTransfer',
-  components: { DismissibleGuidance, RemoteFilterSelect, LineageGraph, TransferAssociationPanel, TransferVersionBindingRow, ResourceVersionSelect },
+  components: { TransferActivity, DismissibleGuidance, RemoteFilterSelect, LineageGraph, TransferAssociationPanel, TransferVersionBindingRow, ResourceVersionSelect },
   data() {
     return {
       roots: [newRoot(1, this.fetchRootOptionsByKey)],
       nextRootKey: 2,
       exporting: false,
+      exportActivity: null,
+      importActivity: null,
+      pageActive: true,
       exportOnlySelected: false,
       exportError: '',
       previewing: false,
       applying: false,
       importFile: null,
-      setResult: null, restoreAfterImport: true, activationIndex: 0, activationMessage: '',
+      setResult: null, restoreAfterImport: true, activationIndex: 0,
       preview: null,
       previewFile: null,
       previewOptionsSignature: '',
@@ -393,6 +400,7 @@ export default {
       },
       selectedResourceKeysDraft: [],
       resourceActionsDraft: {},
+      explicitActionKeys: new Set(),
       resourceBindingsDraft: {},
       fieldBindingsDraft: {},
       versionBindingsDraft: {},
@@ -456,9 +464,23 @@ export default {
     }
   },
   watch: {
-    options: { deep: true, flush: 'sync', handler() { this.invalidatePreview() } }
+    options: { deep: true, flush: 'sync', handler() { this.invalidatePreview() } },
+    'options.variablePolicy': { flush: 'sync', handler() { this.clearSuggestedActions(true) } },
+    'options.resourcePolicy': { flush: 'sync', handler() { this.clearSuggestedActions(false) } }
   },
-  beforeUnmount() { this.invalidatePreview(); this.logRequestId++ },
+  activated() { this.pageActive = true },
+  deactivated() {
+    this.pageActive = false
+    this.resultVisible = false
+    this.logDetailVisible = false
+  },
+  beforeUnmount() {
+    this.exportActivity?.controller.abort()
+    this.importActivity?.controller.abort()
+    this.importFile = null
+    this.invalidatePreview()
+    this.logRequestId++
+  },
   methods: {
     reservedCodeError,
     onTabChange(tab) { if (tab === 'logs') this.loadLogs() },
@@ -600,6 +622,12 @@ export default {
       return version == null ? '' : `指定 v${version}`
     },
     invalidatePreview() {
+      if (this.importActivity?.preview && this.importActivity.status === 'running') {
+        this.importActivity.controller.abort()
+        this.importActivity = null
+      } else if (this.preview && this.importActivity?.preview && !this.importActivity.controller.signal.aborted) {
+        endActivity(this.importActivity, 'warning', '导入选项已更改，请重新预检')
+      }
       this.previewRequestId += 1
       this.preview = null
       this.previewFile = null
@@ -607,15 +635,25 @@ export default {
       this.previewError = ''
       this.previewing = false
     },
+    clearSuggestedActions(variables) {
+      // 切换默认策略时丢弃旧预检自动回填的建议，保留用户逐项指定的处理方式。
+      for (const key of Object.keys(this.resourceActionsDraft)) {
+        if (key.startsWith('VARIABLE:') === variables && !this.explicitActionKeys.has(key)) delete this.resourceActionsDraft[key]
+      }
+    },
     selectFile(upload) {
+      this.resultVisible = false
+      this.importResult = null
       this.setResult = null
       this.activationIndex = 0
-      this.activationMessage = ''
+      this.importActivity?.controller.abort()
+      this.importActivity = null
       this.restoreAfterImport = true
       this.importFile = upload?.raw || null
       this.selectedLineageRoot = ''
       this.selectedResourceKeysDraft = []
       this.resourceActionsDraft = {}
+      this.explicitActionKeys.clear()
       this.resourceBindingsDraft = {}
       this.fieldBindingsDraft = {}
       this.versionBindingsDraft = {}
@@ -648,35 +686,46 @@ export default {
         return
       }
       this.exporting = true
+      const activity = this.exportActivity = startActivity('导出配置')
       try {
-        const response = await exportResourceTransfer(roots, { includeDependencies: !this.exportOnlySelected })
+        const response = await exportResourceTransfer(roots, { includeDependencies: !this.exportOnlySelected }, activity)
+        activity.controller.signal.throwIfAborted()
         const url = URL.createObjectURL(response.data)
         const anchor = document.createElement('a')
         anchor.href = url
         anchor.download = 'tianshu-resource-transfer.zip'
         anchor.click()
         URL.revokeObjectURL(url)
+        endActivity(activity, 'success', '导出完成，已开始下载配置包')
       } catch (error) {
+        if (activity.controller.signal.aborted) return
         this.exportError = error.message || '配置包生成失败，请重试'
+        endActivity(activity, 'failed', this.exportError)
       } finally { this.exporting = false }
     },
     async resumeActivation() {
       if (this.applying) return
       this.applying = true
       this.previewError = ''
-      try { await this.runActivation() }
-      catch (error) { this.previewError = error.message || '发布未完成' }
-      finally { this.applying = false }
+      const activity = this.importActivity = startActivity('继续验证发布', false, this.importActivity)
+      try {
+        await this.runActivation(activity, 0)
+        endActivity(activity, 'success', `已恢复 ${this.activationIndex} 项发布状态`)
+      } catch (error) {
+        if (activity.controller.signal.aborted) return
+        this.previewError = error.message || '发布未完成'
+        endActivity(activity, 'failed', this.previewError)
+      } finally { this.applying = false }
     },
-    async runActivation() {
+    async runActivation(activity, start) {
       const steps = this.setResult?.steps || []
       for (; this.activationIndex < steps.length; this.activationIndex++) {
         const step = steps[this.activationIndex]
         const state = `验证发布 ${this.activationIndex + 1}/${steps.length} · ${step.code}`
-        this.activationMessage = state
-        await restorePublishedStep(step, detail => { this.activationMessage = `${state} · ${detail}` })
+        const percent = start + (99 - start) * this.activationIndex / steps.length
+        recordAction(activity, percent, state)
+        await restorePublishedStep(step, detail => recordAction(activity, percent, `${state} · ${detail}`))
       }
-      if (steps.length) this.activationMessage = `已恢复 ${steps.length} 项发布状态`
     },
     async reviewSet(apply) {
       if (!this.isProjectSet || this.previewing || this.applying) return
@@ -686,23 +735,33 @@ export default {
       this.previewError = ''
       if (apply) this.applying = true
       else { this.previewing = true; this.setResult = null }
+      let activity
       try {
-        const restore = this.restoreAfterImport && this.setResult?.publicationCount > 0
+        const restore = apply && this.restoreAfterImport && this.setResult?.publicationCount > 0
         if (apply) await ElMessageBox.confirm(restore ? '新建项目后，将在本环境运行启用的固定用例并审批发布。回归会按配置实际调用外数和名单。确认继续？' : '将按清单新建所有项目，规则保存为草稿。确认导入？', '确认导入项目合集', { type: 'warning' })
         if (file !== this.importFile) return
-        const response = await transferProjectSet(file, digest)
-        if (file === this.importFile) {
-          this.setResult = response.data
-          this.activationIndex = 0
-          this.activationMessage = ''
-          if (apply && restore) await this.runActivation()
-        }
+        activity = this.importActivity = startActivity(apply ? '导入项目合集' : '预检项目合集', !apply, apply ? this.importActivity : null)
+        const response = await transferProjectSet(file, digest, activity, restore ? 75 : 98)
+        activity.controller.signal.throwIfAborted()
+        this.setResult = response.data
+        this.activationIndex = 0
+        if (restore) await this.runActivation(activity, 75)
+        const conflicts = this.setResult.projects.reduce((total, project) => total + project.issues.length, 0)
+        const message = apply ? (restore ? `项目合集已导入，已恢复 ${this.activationIndex} 项发布状态` : '项目合集已导入')
+          : this.setResult.applied ? '预检完成，已找回原导入记录' : conflicts ? `预检完成，有 ${conflicts} 项冲突待处理` : '预检通过，可以导入项目合集'
+        endActivity(activity, !apply && !this.setResult.applied && conflicts ? 'warning' : 'success', message)
       } catch (error) {
-        if (file === this.importFile && error !== 'cancel' && error !== 'close') {
+        if (file === this.importFile && error !== 'cancel' && error !== 'close' && !activity?.controller.signal.aborted) {
           if (!this.setResult?.applied) this.setResult = null
           this.previewError = error.message || '项目合集处理失败'
+          endActivity(activity, 'failed', this.previewError)
         }
-      } finally { this.applying = false; this.previewing = false }
+      } finally {
+        if (file === this.importFile && (!activity || this.importActivity === activity)) {
+          this.applying = false
+          this.previewing = false
+        }
+      }
     },
     async previewPackage() {
       if (this.applying || !this.importFile) return
@@ -717,9 +776,14 @@ export default {
       const options = this.normalizedOptions()
       const signature = JSON.stringify(options)
       this.previewing = true
+      const activity = this.importActivity = startActivity('预览冲突', true)
       try {
-        const response = await previewResourceTransfer(file, options)
-        if (requestId !== this.previewRequestId || file !== this.importFile || signature !== this.optionsSignature) return
+        const response = await previewResourceTransfer(file, options, activity)
+        if (requestId !== this.previewRequestId || file !== this.importFile) return
+        if (signature !== this.optionsSignature) {
+          endActivity(activity, 'warning', '导入选项已更改，请重新预览冲突')
+          return
+        }
         if (!response.data?.packageDigest) throw new Error('预检未返回有效的配置包摘要，请重新预览冲突')
         this.preview = response.data
         this.selectedResourceKeysDraft = (response.data.selectedResourceKeys
@@ -736,8 +800,13 @@ export default {
         this.previewFile = file
         // 服务端回填的资源选择和处理策略属于本次预检结果；后续手工修改仍使签名失效。
         this.previewOptionsSignature = this.optionsSignature
+        const count = this.preview.conflictCount || 0
+        endActivity(activity, count ? 'warning' : 'success', count ? `预检完成，发现 ${count} 项冲突` : '预检完成，请核对导入选项')
       } catch (error) {
-        if (requestId === this.previewRequestId) this.previewError = error.message || '预检失败，请重新预览冲突'
+        if (requestId === this.previewRequestId) {
+          this.previewError = error.message || '预检失败，请重新预览冲突'
+          endActivity(activity, 'failed', this.previewError)
+        }
       } finally {
         if (requestId === this.previewRequestId) this.previewing = false
       }
@@ -768,12 +837,16 @@ export default {
         }
         this.resultVisible = false
         this.importResult = null
-        this.importResult = (await importResourceTransfer(file, options)).data
+        const activity = this.importActivity = startActivity('导入配置', false, this.importActivity)
+        this.importResult = (await importResourceTransfer(file, options, activity)).data
+        activity.controller.signal.throwIfAborted()
+        endActivity(activity, 'success', '导入完成，已保存处理结果')
         this.appliedOptions = options
-        this.resultVisible = true
+        this.resultVisible = this.pageActive
         this.invalidatePreview()
       } catch (error) {
-        if (error === 'cancel' || error === 'close') return
+        if (error === 'cancel' || error === 'close' || this.importActivity?.controller.signal.aborted) return
+        endActivity(this.importActivity, 'failed', error.message || '导入失败')
         this.invalidatePreview()
         if (!error.requestErrorNotified) ElMessage.error(error.message || '导入失败，请核对目标环境后重新预览冲突')
       } finally { this.applying = false }
@@ -860,7 +933,7 @@ export default {
 .export-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .transfer-page { padding-bottom: 36px; }
 .transfer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.transfer-card { background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color-light); border-radius: 14px; padding: 20px; box-shadow: 0 8px 28px rgba(15, 23, 42, .05); }
+.transfer-card { min-width: 0; background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color-light); border-radius: 14px; padding: 20px; box-shadow: 0 8px 28px rgba(15, 23, 42, .05); }
 .export-card { min-width: 0; container: export-card / inline-size; }
 .export-card .card-heading, .export-card .card-actions, .export-card .inline-lineage-toolbar { flex-wrap: wrap; }
 .export-card .inline-lineage-toolbar :deep(.el-select) { max-width: 100%; }

@@ -87,6 +87,11 @@ public class OfflineResourceTransferService {
 
     @Transactional(readOnly = true)
     public ExportedPackage exportPackage(List<TransferRootRequest> requests, boolean includeDependencies) {
+        return exportPackage(requests, includeDependencies, TransferProgress.NONE);
+    }
+
+    ExportedPackage exportPackage(List<TransferRootRequest> requests, boolean includeDependencies, TransferProgress progress) {
+        progress.report(1, "检查导出起点和版本");
         List<TransferKey> roots = normalizeRoots(requests);
         Map<String, TransferRootRequest> selectedVersions = new LinkedHashMap<>();
         for (TransferRootRequest request : requests) {
@@ -118,6 +123,8 @@ public class OfflineResourceTransferService {
             if (accessGuard != null) accessGuard.requireResource(key.type().name(), "view");
             if (consoleResources != null) consoleResources.require(key.type().name(), key.id(), "view");
             if (resources.containsKey(key.value())) continue;
+            int done = resources.size();
+            progress.report(5 + 75 * done / (done + queue.size() + 1), "读取配置和依赖 · " + key.value());
             if (!visiting.add(key.value())) throw new IllegalArgumentException("离线导出依赖形成循环: " + key.value());
             if (key.type() == TransferResourceType.RULE_VERSION) {
                 resources.put(key.value(), exportRuleVersion(key, queue, warnings, includeDependencies));
@@ -209,6 +216,7 @@ public class OfflineResourceTransferService {
                             ? List.of() : pageSettings.export(key)));
             visiting.remove(key.value());
         }
+        progress.report(82, "核对随包函数扩展");
         Map<String,TransferFunctionLibraries.Library> libraries = new LinkedHashMap<>();
         var jarCache = new java.util.HashMap<java.nio.file.Path,TransferFunctionLibraries.Library>();
         if (functionLibraries != null) {
@@ -224,6 +232,7 @@ public class OfflineResourceTransferService {
         }
         var bundle = new TransferBundle(roots.stream().map(TransferKey::value).toList(),
                 new ArrayList<>(resources.values()), warnings);
+        progress.report(90, "打包 " + resources.size() + " 项配置并计算摘要");
         return new ExportedPackage(bundle, codec.encode(bundle, libraries));
     }
 
@@ -273,6 +282,10 @@ public class OfflineResourceTransferService {
     }
 
     Map<String,Object> preview(TransferBundleCodec.Decoded decoded, TransferImportOptions options) {
+        return preview(decoded, options, TransferProgress.NONE);
+    }
+
+    Map<String,Object> preview(TransferBundleCodec.Decoded decoded, TransferImportOptions options, TransferProgress progress) {
         List<TransferBundle.Resource> selectedResources = TransferSelection.select(decoded.bundle(), options);
         List<Map<String, Object>> resources = new ArrayList<>();
         List<TransferConflict> conflicts = new ArrayList<>();
@@ -281,6 +294,9 @@ public class OfflineResourceTransferService {
         for (TransferBundle.Resource resource : OfflineResourceImportService.topologicalOrder(selectedResources)) {
             TransferKey key = TransferKey.parse(resource.key());
             if (accessGuard != null) accessGuard.requireResource(key.type().name(), "view");
+            progress.report(90 * resources.size() / selectedResources.size(), "核对冲突和引用 "
+                    + (resources.size() + 1) + "/" + selectedResources.size() + " · " + resource.key()
+                    + " · " + identity(resource.configuration(), key.type()));
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("key", resource.key());
             item.put("resourceType", key.type().name());
@@ -330,6 +346,7 @@ public class OfflineResourceTransferService {
             }
         }
         Map<String, Object> result = new LinkedHashMap<>();
+        progress.report(92, "核对固定版本映射和目标环境函数库");
         result.put("packageKind", TransferBundleCodec.PACKAGE_KIND);
         result.put("versionAssociations", versionTransfers == null ? List.of() : versionTransfers.preview(selectedResources, options));
         result.put("packageDigest", decoded.packageDigest());

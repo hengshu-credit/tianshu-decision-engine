@@ -18,4 +18,6 @@ python3 scripts/package-project-set.py release.project-set.zip project-a.zip pro
 
 绑定文件以源资源键为第一层。数据库可指定 `host/port/jdbcUrl/username/password`，SFTP 可指定 `host/port/username/password/knownHosts`，外数数据源可指定 `baseUrl/authConfig`，接口可指定 `authApiConfig` 与包中声明的回调签名秘密路径。项目资源内以鉴权配置编码为键，可指定本安装生成的 `identifier/secret`。配置只在导入时读取；包内可选的 Java 扩展、模型扫描以及部署端的数据库、HTTP、SFTP 服务仍按已有机制准备。
 
-合集包含一个先写入的 `project-set.json` 和依序命名的 `projects/1.zip` 等子包，各条目以 ZIP 的 STORED 模式存储。服务端校验预检清单摘要、每个子包摘要、包内组件与来源项目。当前最多 16 个项目，合集上限 512 MiB。部署时还须满足原有模型单文件扫描限制、反向代理上传限制和服务内存要求。
+合集包含一个先写入的 `project-set.json` 和依序命名的 `projects/1.zip` 等子包，各条目以 ZIP 的 STORED 模式存储。服务端校验预检清单摘要、每个子包摘要、包内组件与来源项目。当前最多 16 个项目，合集上限 512 MiB。控制台按 1 MiB 分块上传，预检和导入复用该文件。代理需允许 1 MiB 的请求体。模型原件仍按目标环境的扫描和内存配置处理。
+
+在同一控制台切换菜单或工作区页签时，上传、后台导入和后续回归发布会继续。返回「离线迁移」后，按钮下方显示进度和当前动作。点击动作可查看按时间顺序记录的执行日志。服务端保留临时文件和任务结果约一天，成功导入的项目及业务审计按原有策略保留。
