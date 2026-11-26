@@ -37,6 +37,10 @@
 
 Compose 自动兼容现代 `docker compose` 与 `docker-compose`，优先前者；要求支持 `config --format json`、`up --wait`，不支持旧 Python Compose v1。服务器需要 Python 3.8+ 标准库和 Docker，无需 Maven、Node.js 或第三方 Python 包。构建入口见 [跨平台发布构建](release-packaging.md)。
 
+## 停止部署
+
+将与发布包一同提供的 `compose-down.sh` 放在安装目录，在该目录运行 `bash compose-down.sh --dry-run` 可查看目标项目和服务。运行 `bash compose-down.sh` 停止并移除 server、web 及已部署的 SDK 容器。需要同时关闭本安装管理的 MySQL、Redis、Kafka 等服务时，使用 `bash compose-down.sh --all`，也可加 `--dry-run` 预览。两种模式均保留数据卷和宿主机文件。
+
 ## 首次部署和日常更新
 
 在安装目录运行同一个 `install-release.sh`。首次将发布包旁的入口脚本、ZIP 和同名 `.zip.sha256` 上传到该目录并准备实际的服务端 env、主密钥和可连接的 MySQL、Redis。安装目录已有当前入口时，以后只需上传新 ZIP 和校验文件，替换命令中的包名即可。

@@ -85,7 +85,7 @@ function listFiles(directory) {
 
 async function main() {
   if (process.argv.includes('--help')) {
-    console.log('用法：node scripts/package-deployment.mjs [--with-tests]\nWindows: ./scripts/package-deployment.ps1\nmacOS/Linux: sh scripts/package-deployment.sh\n需要 Node.js 20.19+、Docker Linux 容器和现代 docker compose 或 docker-compose。\n输出 output/ 下的 ZIP、.zip.sha256 和统一入口 install-release.sh。')
+    console.log('用法：node scripts/package-deployment.mjs [--with-tests]\nWindows: ./scripts/package-deployment.ps1\nmacOS/Linux: sh scripts/package-deployment.sh\n需要 Node.js 20.19+、Docker Linux 容器和现代 docker compose 或 docker-compose。\n输出 output/ 下的 ZIP、.zip.sha256、install-release.sh 和 compose-down.sh。')
     return
   }
   for (const arg of process.argv.slice(2)) if (arg !== '--with-tests') throw new Error(`未知参数：${arg}`)
@@ -121,7 +121,8 @@ async function main() {
   await copyKycExample(root, stageRoot)
   copyDeploymentMigrations(sourceRoot, stageRoot)
   cpSync(path.join(sourceRoot, 'scripts/deploy.py'), path.join(stageRoot, 'deploy.py'))
-  cpSync(path.join(sourceRoot, 'scripts/install-release.sh'), path.join(stageRoot, 'install-release.sh'))
+  const entryScripts = ['install-release.sh', 'compose-down.sh']
+  for (const script of entryScripts) cpSync(path.join(sourceRoot, 'scripts', script), path.join(stageRoot, script))
   writeDeploymentReadme(sourceRoot, stageRoot)
   if (configRoot) for (const name of ['.env.server', '.env.client']) cpSync(path.join(configRoot, name), path.join(stageRoot, name))
   mkdirSync(runtimeRoot, { recursive: true })
@@ -170,8 +171,8 @@ async function main() {
   const digest = await sha256(archive)
   writeFileSync(`${archive}.sha256`, `${digest}  ${path.basename(archive)}\n`)
   const entry = path.join(outputRoot, 'install-release.sh')
-  cpSync(path.join(stageRoot, 'install-release.sh'), entry)
-  console.log(`\n部署包：${archive}\nSHA256：${digest}\n校验文件：${archive}.sha256\n部署与更新入口：${entry}\n在安装目录执行 bash install-release.sh ${path.basename(archive)}`)
+  for (const script of entryScripts) cpSync(path.join(stageRoot, script), path.join(outputRoot, script))
+  console.log(`\n部署包：${archive}\nSHA256：${digest}\n校验文件：${archive}.sha256\n部署与更新入口：${entry}\n停止入口：${path.join(outputRoot, 'compose-down.sh')}\n在安装目录执行 bash install-release.sh ${path.basename(archive)}`)
 }
 
 if (process.argv[1] && normalizedPath(process.argv[1]) === normalizedPath(fileURLToPath(import.meta.url))) {
