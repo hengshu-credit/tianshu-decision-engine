@@ -988,6 +988,7 @@ public class VariableSourceResolver {
             }
             resolvedParams.put(scriptName, normalizeSourceValue(variable, value, effectiveOptions));
         } catch (Exception e) {
+            if (e instanceof com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) throw denied;
             ExecutionCapacityException capacity = ExecutionCapacityException.find(e);
             if (capacity != null) throw capacity;
             if (e instanceof RuleRuntimeCallLogService.HistoryLogWriteException failure) throw failure;
@@ -2051,7 +2052,9 @@ public class VariableSourceResolver {
         Object configuredPath = path instanceof Map<?, ?>
                 ? ExternalApiRequestPlan.evaluate(path, params, sourceReferencePaths(variable, options))
                 : parseConfiguredValue(path, params);
-        String remotePath = stringValue(configuredPath).trim();
+        String evaluatedPath = stringValue(configuredPath).trim();
+        // 账户归属必须在根执行缓存、跨请求缓存及远端访问之前验证。
+        String remotePath = internal ? engineSftpFiles.projectPath(project, evaluatedPath) : evaluatedPath;
         if (!hasText(remotePath)) throw new IllegalArgumentException("SFTP变量缺少远端文件路径");
         String fileAddress = stringValue(parseConfiguredValue(config.get("fileAddress"), params)).trim();
         boolean uploadEnabled = hasText(fileAddress);

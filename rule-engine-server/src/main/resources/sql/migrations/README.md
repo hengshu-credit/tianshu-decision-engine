@@ -136,3 +136,5 @@ docker compose --project-name tianshu-server --env-file config/.env.server \
 - `2026-11-23-example-case-binding.sql` 在测试示例迁移后执行，支持变量、对象和子字段绑定固定用例，并扩大变量固定示例的容量。
 
 - `2026-11-26-engine-sftp.sql` 建立内置 SFTP 授权和素材文件引用表。在共享模型文件仓迁移后执行，历史素材仍可按原方式读取。
+
+- `2026-11-26-sftp-service-security.sql` 在引擎 SFTP 账户表建立后执行。为已有账户补齐读写模式，建立服务策略与认证封禁表，重复执行保留现场配置。升级独立 SFTP 进程前先完成此脚本。

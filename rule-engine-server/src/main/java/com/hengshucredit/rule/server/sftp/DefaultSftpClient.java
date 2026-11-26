@@ -24,17 +24,25 @@ import java.util.List;
 import java.util.UUID;
 
 @Component
+@org.springframework.context.annotation.DependsOn("dataSourceScriptDatabaseInitializer")
 public final class DefaultSftpClient {
     private final SshClient ssh = SshClient.setUpDefaultClient();
     private final String host, user, password, fingerprint;
     private final int port;
     private ClientSession session;
+    private final EngineSftpProtection protection;
 
+    public DefaultSftpClient(String host, int port, String user, String password, String fingerprint) {
+        this(host, port, user, password, fingerprint, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
     public DefaultSftpClient(@Value("${engine.sftp.host:127.0.0.1}") String host,
                              @Value("${engine.sftp.port:2222}") int port,
                              @Value("${engine.sftp.username:engine-storage}") String user,
                              @Value("${engine.sftp.password:}") String password,
-                             @Value("${engine.sftp.host-fingerprint:}") String fingerprint) {
+                             @Value("${engine.sftp.host-fingerprint:}") String fingerprint, EngineSftpProtection protection) {
+        this.protection = protection;
         this.host = host; this.port = port; this.user = user;
         this.password = password; this.fingerprint = fingerprint.trim();
     }
@@ -50,9 +58,17 @@ public final class DefaultSftpClient {
         try (var sftp = channel()) {
             directories(sftp, "/managed");
         } catch (IOException | RuntimeException e) {
+            if (e instanceof VerifiedServiceBan) {
+                org.slf4j.LoggerFactory.getLogger(DefaultSftpClient.class).warn("默认 SFTP 认证被服务策略封禁，控制台可解封，文件请求仍需通过 SFTP 认证");
+                return;
+            }
             close();
             throw new IllegalStateException("默认 SFTP 启动连接失败，请检查可达性、主机指纹和服务账号权限", e);
         }
+    }
+
+    private static final class VerifiedServiceBan extends IOException {
+        VerifiedServiceBan(IOException cause) { super("默认 SFTP 服务账户认证已被拒绝", cause); }
     }
 
     private synchronized SftpClient channel() throws IOException {
@@ -63,7 +79,18 @@ public final class DefaultSftpClient {
         session = ssh.connect(user, host, port).verify(10000).getSession();
         try {
             session.addPasswordIdentity(password);
-            session.auth().verify(10000);
+            try {
+                session.auth().verify(10000);
+            } catch (IOException rejected) {
+                for (Throwable cause = rejected; cause != null; cause = cause.getCause()) {
+                    if (cause instanceof org.apache.sshd.common.SshException sshError
+                            && sshError.getDisconnectCode() == org.apache.sshd.common.SshConstants.SSH2_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE
+                            && session.getServerKey() != null && fingerprint.equals(KeyUtils.getFingerPrint(BuiltinDigests.sha256, session.getServerKey()))
+                            && protection != null && protection.consumeServiceDenial(session.getSessionId()))
+                        throw new VerifiedServiceBan(rejected);
+                }
+                throw rejected;
+            }
             return SftpClientFactory.instance().createSftpClient(session);
         } catch (IOException | RuntimeException e) {
             session.close(true);

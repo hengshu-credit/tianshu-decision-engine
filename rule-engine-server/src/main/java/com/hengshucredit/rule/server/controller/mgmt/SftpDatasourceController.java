@@ -103,6 +103,8 @@ public class SftpDatasourceController {
             headers.setContentDisposition(ContentDisposition.inline()
                     .filename(fileName(String.valueOf(remotePath)), StandardCharsets.UTF_8).build());
             return ResponseEntity.ok().headers(headers).body(content);
+        } catch (com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) {
+            throw denied;
         } catch (Exception e) {
             throw new com.hengshucredit.rule.model.PlatformException(com.hengshucredit.rule.model.PlatformCode.SFTP_ERROR, e.getMessage(), e);
         }

@@ -22,9 +22,19 @@ public class EngineSftpFiles {
         this.access = access;
     }
 
-    public byte[] readProject(Long project, String path) {
+    public String projectPath(Long project, String path) {
         if (project == null || project <= 0) throw new IllegalArgumentException("读取项目 SFTP 文件需要确定执行项目");
-        return client.read("/projects/" + project + "/" + DefaultSftpClient.relative(path), 10L << 20);
+        String relative = DefaultSftpClient.relative(path);
+        int slash = relative.indexOf('/');
+        if (slash < 0 || !relative.substring(0,slash).matches("u[1-9][0-9]{0,17}")) throw new IllegalArgumentException("请提供带上传账户的项目文件路径");
+        var scope = access == null ? null : access.current();
+        if (scope != null && (!scope.allowsProject(project) || scope.userId() == null || !relative.startsWith("u" + scope.userId() + "/")))
+            throw new com.hengshucredit.rule.server.security.ConsoleAccessDeniedException("仅可读取本人在授权项目中的文件");
+        return relative;
+    }
+
+    public byte[] readProject(Long project, String path) {
+        return client.read("/projects/" + project + "/" + projectPath(project,path), 10L << 20);
     }
 
     public MultipartFile input(MultipartFile uploaded, String address) {

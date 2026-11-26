@@ -5,6 +5,7 @@
     </dismissible-guidance>
 
     <el-descriptions title="引擎内置 SFTP" :column="1" border size="small">
+      <template #extra><engine-sftp-settings /></template>
       <el-descriptions-item label="系统连接">只读 · 用于项目进件文件、素材和模型上传</el-descriptions-item>
     </el-descriptions>
 
@@ -59,6 +60,7 @@
 
 <script>
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
+import EngineSftpSettings from './EngineSftpSettings.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { createSftpDatasource, deleteSftpDatasource, getSftpDatasource, listSftpDatasources, testSftpDatasource, testSftpDatasourceDraft, updateSftpDatasource } from '@/api/sftp'
 import { editableResource } from '@/api/governance'
@@ -82,7 +84,7 @@ function emptyForm() {
 export default {
   name: 'SftpDatasourceList',
   mixins: [credentialEditMixin, draftProtection],
-  components: { DismissibleGuidance, ProjectFilterSelect, GovernanceWorkspaceToolbar, GovernanceResourceStatus, GovernancePublishAction, ScopeProjectFields, TableColumnSettings },
+  components: { EngineSftpSettings, DismissibleGuidance, ProjectFilterSelect, GovernanceWorkspaceToolbar, GovernanceResourceStatus, GovernancePublishAction, ScopeProjectFields, TableColumnSettings },
   data() {
     return {
       repairDatasourceCode: false,

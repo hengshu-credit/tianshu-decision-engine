@@ -83,6 +83,11 @@ public class VariableSourceResolverTest {
                 Map<String,Object> values = resolver.resolve(project, Map.of("address", "u7/result.json"), VariableResolveOptions.defaults());
                 assertEquals(project, ((Number)((Map<?,?>)values.get("report")).get("score")).longValue());
             }
+            var restricted = new com.hengshucredit.rule.server.security.ConsoleProjectAccess() {
+                @Override public Scope current() { return new Scope(8L, java.util.Set.of(1L),java.util.Set.of()); }
+            };
+            setField(resolver, "engineSftpFiles", new com.hengshucredit.rule.server.sftp.EngineSftpFiles(fixture.nodeB, restricted));
+            org.junit.Assert.assertThrows(com.hengshucredit.rule.server.security.ConsoleAccessDeniedException.class, () -> resolver.resolve(1L, Map.of("address", "u7/result.json"), VariableResolveOptions.defaults()));
         } finally {
             try (var paths = java.nio.file.Files.walk(root)) {
                 for (var path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) java.nio.file.Files.delete(path);
