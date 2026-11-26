@@ -35,6 +35,11 @@ final class TransferSelection {
         return result;
     }
 
+    static int ruleCaseCount(List<TransferBundle.Resource> selected) {
+        return selected.stream().filter(resource -> resource.key().startsWith("RULE:"))
+                .mapToInt(resource -> resource.pageSettings().size()).sum();
+    }
+
     static String referenceKey(String sourceKey, TransferBundle.Reference reference) {
         return sourceKey + "|" + reference.path() + "|" + reference.targetKey()
                 + "|" + (reference.childPath() == null ? "" : reference.childPath());

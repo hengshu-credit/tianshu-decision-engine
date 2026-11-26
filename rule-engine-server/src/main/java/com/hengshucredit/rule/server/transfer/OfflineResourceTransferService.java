@@ -347,6 +347,7 @@ public class OfflineResourceTransferService {
         }
         Map<String, Object> result = new LinkedHashMap<>();
         progress.report(92, "核对固定版本映射和目标环境函数库");
+        result.put("ruleCaseCount", TransferSelection.ruleCaseCount(selectedResources));
         result.put("packageKind", TransferBundleCodec.PACKAGE_KIND);
         result.put("versionAssociations", versionTransfers == null ? List.of() : versionTransfers.preview(selectedResources, options));
         result.put("packageDigest", decoded.packageDigest());

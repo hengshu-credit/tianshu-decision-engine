@@ -69,6 +69,27 @@ public class OfflineTransferLogServiceTest {
     }
 
     @Test
+    public void failedImportKeepsVerifiedPackageIdentityAndLineageWithoutSnapshots() {
+        var bundle = new TransferBundle(List.of("RULE:1"), List.of(new TransferBundle.Resource("RULE:1",
+                Map.of("ruleCode", "check", "description", "private configuration body"), List.of(), List.of())), List.of());
+        var codec = new TransferBundleCodec();
+        var decoded = codec.decodeDeferred(codec.encode(bundle));
+        var logs = new java.util.ArrayList<OfflineTransferLog>();
+        var service = new OfflineTransferLogService() {
+            @Override public boolean save(OfflineTransferLog log) { return logs.add(log); }
+        };
+        service.recordDecodedImport(decoded, decoded.packageDigest(), Map.of("taskId", "abc"), "reviewer", "目标项目冲突");
+        var log = logs.get(0);
+        assertEquals("FAILED", log.getStatus());
+        assertEquals(decoded.packageDigest(), log.getPackageDigest());
+        var content = com.alibaba.fastjson.JSON.parseObject(log.getContentJson());
+        assertEquals("RULE:1", content.getJSONArray("roots").getString(0));
+        assertEquals("check", content.getJSONObject("lineage").getJSONArray("nodes").getJSONObject(0).getString("code"));
+        assertEquals("abc", content.getJSONObject("result").getString("taskId"));
+        org.junit.Assert.assertFalse(log.getContentJson().contains("private configuration body"));
+    }
+
+    @Test
     public void exportCountsSharedDependencyOnceAndKeepsRequestedRootsSeparate() {
         var dependency = new TransferBundle.Reference("/dependencyId", "VARIABLE:9", null);
         var roots = List.of("RULE:1", "RULE:2");

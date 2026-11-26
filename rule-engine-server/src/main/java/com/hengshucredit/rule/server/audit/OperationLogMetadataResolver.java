@@ -49,7 +49,7 @@ public class OperationLogMetadataResolver {
             if (body instanceof com.hengshucredit.rule.server.transfer.TransferTaskService.Request task && task.operation() != null) {
                 log.setAction(switch (task.operation()) {
                     case EXPORT -> "EXPORT";
-                    case IMPORT, SET_IMPORT -> "IMPORT";
+                    case IMPORT, IMPORT_AND_VERIFY, SET_IMPORT -> "IMPORT";
                     case PREVIEW, SET_PREVIEW -> "READ";
                 });
                 roots = task.selection() == null ? null : task.selection().roots();

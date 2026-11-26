@@ -53,6 +53,7 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
         List<String> roots = decoded == null ? List.of() : decoded.bundle().roots();
         int count = decoded == null ? 0 : decoded.bundle().resources().size();
         Map<String, Object> content = new LinkedHashMap<>();
+        content.put("roots", roots);
         content.put("options", result == null ? Map.of() : result.getOrDefault("options", Map.of()));
         content.put("result", result == null ? Map.of() : result);
         if (decoded != null) {

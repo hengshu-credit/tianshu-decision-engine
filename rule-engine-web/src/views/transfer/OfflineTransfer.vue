@@ -144,10 +144,14 @@
           </div>
         </el-form>
         <p class="import-hint">项目级导入请选择目标项目，或勾选“导入时新建项目”；全局导入会把项目级资源转换为全局范围。修改文件或选项后需重新预览冲突。</p>
+        <p v-if="options.publishRules && preview?.ruleCaseCount" class="import-hint">
+          所选规则携带 {{ preview.ruleCaseCount }} 个固定用例。确认后先导入草稿和用例，再逐条回归、审批发布。回归可能调用已配置的外部服务。
+        </p>
         <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" />
         <div class="card-actions">
           <el-button v-permission="'transfer:import'" :disabled="!importFile || applying" :loading="previewing" @click="previewPackage">预览冲突</el-button>
-          <el-button v-permission="'transfer:import'" type="primary" :disabled="!hasCurrentPreview || applying" :loading="applying" @click="applyPackage">确认导入</el-button>
+          <el-button v-if="pendingPublication" v-permission="'transfer:import'" type="primary" :loading="applying" @click="resumeActivation">继续验证发布</el-button>
+          <el-button v-else v-permission="'transfer:import'" type="primary" :disabled="!hasCurrentPreview || applying" :loading="applying" @click="applyPackage">确认导入</el-button>
         </div>
         </template>
         <transfer-activity :activity="importActivity" :active="pageActive" :has-result="!!importResult && !importActivity?.preview" @show-result="resultVisible = true" />
@@ -296,7 +300,7 @@
 
     <el-dialog v-if="pageActive" v-model="resultVisible" title="导入结果" width="620px">
       <el-alert type="success" :closable="false" title="配置已导入">
-        {{ appliedOptions?.publishRules ? '规则已按所选策略发布。' : '规则保存为目标环境草稿。' }}其他资源已通过治理流程导入生效；复用、覆盖和新建明细见下方结果。
+        {{ pendingPublication ? '配置已保存，规则发布尚未完成，可继续验证发布。' : appliedOptions?.publishRules ? '规则已按所选策略发布。' : '规则保存为目标环境草稿。' }}其他资源已通过治理流程导入生效；复用、覆盖和新建明细见下方结果。
       </el-alert>
       <pre class="result-json">{{ JSON.stringify(importResult, null, 2) }}</pre>
     </el-dialog>
@@ -407,6 +411,8 @@ export default {
     }
   },
   computed: {
+    activationSteps() { return this.isProjectSet ? this.setResult?.steps || [] : this.importResult?.publicationSteps || [] },
+    pendingPublication() { return this.activationIndex < this.activationSteps.length },
     isProjectSet() { return this.importFile?.name?.toLowerCase().endsWith('.project-set.zip') },
     resourceTypes() { return RESOURCE_TYPES.filter(item => hasPermission(resourceViewPermission(item.value))) },
     optionsSignature() { return JSON.stringify(this.normalizedOptions()) },
@@ -710,15 +716,16 @@ export default {
       const activity = this.importActivity = startActivity('继续验证发布', false, this.importActivity)
       try {
         await this.runActivation(activity, 0)
-        endActivity(activity, 'success', `已恢复 ${this.activationIndex} 项发布状态`)
+        endActivity(activity, 'success', this.isProjectSet ? `已恢复 ${this.activationIndex} 项发布状态` : `已完成 ${this.activationIndex} 项验证发布`)
+        if (!this.isProjectSet) this.resultVisible = this.pageActive
       } catch (error) {
         if (activity.controller.signal.aborted) return
-        this.previewError = error.message || '发布未完成'
+        this.previewError = '配置已导入，发布未完成：' + (error.message || '请核对失败步骤')
         endActivity(activity, 'failed', this.previewError)
       } finally { this.applying = false }
     },
     async runActivation(activity, start) {
-      const steps = this.setResult?.steps || []
+      const steps = this.activationSteps
       for (; this.activationIndex < steps.length; this.activationIndex++) {
         const step = steps[this.activationIndex]
         const state = `验证发布 ${this.activationIndex + 1}/${steps.length} · ${step.code}`
@@ -812,7 +819,7 @@ export default {
       }
     },
     async applyPackage() {
-      if (this.applying) return
+      if (this.applying || this.pendingPublication) return
       if (this.preview?.resources?.length && !this.selectedResourceKeysDraft.length) {
         ElMessage.warning('请至少选择一项要导入的内容')
         return
@@ -827,7 +834,9 @@ export default {
       const requestId = this.previewRequestId
       const projectHint = options.targetScope === 'GLOBAL' ? '全局范围'
         : options.createProject ? `新项目「${options.projectName || options.projectCode}」` : '所选项目'
-      const ruleHint = options.publishRules ? '规则将按选项发布，固定依赖使用预检确认的目标版本' : '规则只创建目标环境草稿'
+      const verify = options.publishRules && this.preview.ruleCaseCount > 0
+      const ruleHint = verify ? `先保存草稿和 ${this.preview.ruleCaseCount} 个固定用例，在目标环境运行启用用例并审批发布。回归可能实际调用外数、写入名单`
+        : options.publishRules ? '规则将按选项发布，固定依赖使用预检确认的目标版本' : '规则只创建目标环境草稿'
       this.applying = true
       try {
         await ElMessageBox.confirm(`确认导入到${projectHint}？普通资源将通过治理流程导入生效，${ruleHint}。`, '确认导入', { type: 'warning' })
@@ -838,16 +847,21 @@ export default {
         this.resultVisible = false
         this.importResult = null
         const activity = this.importActivity = startActivity('导入配置', false, this.importActivity)
-        this.importResult = (await importResourceTransfer(file, options, activity)).data
+        this.activationIndex = 0
+        const response = verify ? await importResourceTransfer(file, options, activity, true)
+          : await importResourceTransfer(file, options, activity)
+        this.importResult = response.data
         activity.controller.signal.throwIfAborted()
-        endActivity(activity, 'success', '导入完成，已保存处理结果')
         this.appliedOptions = options
-        this.resultVisible = this.pageActive
         this.invalidatePreview()
+        if (verify) await this.runActivation(activity, 75)
+        endActivity(activity, 'success', this.activationIndex ? `配置已导入，已完成 ${this.activationIndex} 项验证发布` : '导入完成，已保存处理结果')
+        this.resultVisible = this.pageActive
       } catch (error) {
         if (error === 'cancel' || error === 'close' || this.importActivity?.controller.signal.aborted) return
-        endActivity(this.importActivity, 'failed', error.message || '导入失败')
         this.invalidatePreview()
+        this.previewError = this.importResult ? '配置已导入，发布未完成：' + (error.message || '请核对失败步骤') : error.message || '导入失败'
+        endActivity(this.importActivity, 'failed', this.previewError)
         if (!error.requestErrorNotified) ElMessage.error(error.message || '导入失败，请核对目标环境后重新预览冲突')
       } finally { this.applying = false }
     },

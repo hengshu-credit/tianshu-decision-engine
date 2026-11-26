@@ -139,11 +139,10 @@ public class TransferProjectSetService {
                     }
                     if (expected != null) {
                         if (!project.issues().isEmpty()) throw new IllegalArgumentException(member.code() + "：" + String.join("，", project.issues()));
-                        var applied = importer.apply(decoded, options, actor, profile, true, memberProgress.range(40, 94, ""));
+                        var applied = importer.apply(decoded, options, actor, profile, true, false, memberProgress.range(40, 94, ""));
                         memberProgress.report(95, "核对预置名单、发布步骤并记录导入结果");
                         addExamples(member, applied, actor);
-                        var memberSteps = new ArrayList<Step>();
-                        addSteps(applied, published, memberSteps);
+                        var memberSteps = publicationSteps(applied, published);
                         steps.addAll(memberSteps);
                         applied.put("projectSetDigest", digest);
                         applied.put("publicationSteps", memberSteps);
@@ -215,7 +214,8 @@ public class TransferProjectSetService {
         return raw.stream().map(value -> JSON.convertValue(value, Step.class)).toList();
     }
 
-    private void addSteps(Map<String,Object> applied, Map<String,String> requested, List<Step> steps) {
+    List<Step> publicationSteps(Map<String,Object> applied, Map<String,String> requested) {
+        List<Step> steps = new ArrayList<>();
         for (Object value : (List<?>)applied.get("resources")) {
             var row = (Map<?,?>)value;
             String source = (String)row.get("sourceKey");
@@ -233,6 +233,7 @@ public class TransferProjectSetService {
                         draft.getContentDigest(), draft.getLockVersion()));
             }
         }
+        return steps;
     }
 
     private void addExamples(Member member, Map<String,Object> result, String actor) {

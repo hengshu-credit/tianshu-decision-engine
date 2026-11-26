@@ -75,19 +75,19 @@ public class OfflineResourceImportService {
     }
 
     Map<String,Object> apply(TransferBundleCodec.Decoded decoded, TransferImportOptions options, String actor, TransferInstallationBindings.Profile bindings, boolean preserveSourceScope) {
-        return apply(decoded, options, actor, bindings, preserveSourceScope, TransferProgress.NONE);
+        return apply(decoded, options, actor, bindings, preserveSourceScope, false, TransferProgress.NONE);
     }
 
     Map<String,Object> apply(TransferBundleCodec.Decoded decoded, TransferImportOptions options, String actor,
-                             TransferInstallationBindings.Profile bindings, boolean preserveSourceScope, TransferProgress progress) {
+                             TransferInstallationBindings.Profile bindings, boolean preserveSourceScope, boolean verifyAfterImport, TransferProgress progress) {
         progress.report(1, "校验导入权限、目标范围和资源依赖");
         if (options == null) throw new IllegalArgumentException("请选择导入作用范围及目标项目");
         if (actor == null || actor.isBlank()) actor = ConsoleOperatorResolver.SYSTEM_CONSOLE;
         TransferBundle decodedBundle = decoded.bundle();
         List<TransferBundle.Resource> selectedResources = TransferSelection.select(decodedBundle, options);
         selectedResources.forEach(TransferVersionReferences::descriptors);
-        if (Boolean.TRUE.equals(options.publishRules()) && selectedResources.stream().anyMatch(resource ->
-                resource.key().startsWith("RULE:") && !resource.pageSettings().isEmpty()))
+        boolean publishImmediately = Boolean.TRUE.equals(options.publishRules()) && !verifyAfterImport;
+        if (publishImmediately && TransferSelection.ruleCaseCount(selectedResources) > 0)
             throw new IllegalArgumentException("随包携带固定用例的规则请先导入草稿，运行回归检查后再发布");
         if (accessGuard != null) {
             accessGuard.require("transfer:import");
@@ -302,7 +302,7 @@ public class OfflineResourceImportService {
                 TransferModelFields.prepare(configuration, existingId == null ? null : existing.configuration());
             }
             ResourceSnapshot snapshot = ResourceSnapshot.ofJson(CanonicalJson.write(configuration));
-            if (preserveSourceScope && sourceKey.type() == TransferResourceType.EXPERIMENT && existingId == null
+            if ((preserveSourceScope || verifyAfterImport) && sourceKey.type() == TransferResourceType.EXPERIMENT && existingId == null
                     && resource.references().stream().anyMatch(ref -> ref.targetKey().startsWith("RULE:") && newRuleDrafts.contains(idMap.get(ref.targetKey())))) {
                 var draft = new GovernanceDraftRequest();
                 draft.setResourceType("EXPERIMENT"); draft.setProjectId(resourceTargetProjectId); draft.setAction("CREATE");
@@ -323,8 +323,8 @@ public class OfflineResourceImportService {
                         .eq(RuleDefinition::getRuleCode, configuration.get("ruleCode"))) != null) {
                     throw new IllegalArgumentException("目标规则编码已被占用，请修改新建后缀: " + configuration.get("ruleCode"));
                 }
-                targetId = importRuleDraft(configuration, existingId, options, resourceTargetProjectId, actor, newRuleDrafts);
-                if (!Boolean.TRUE.equals(options.publishRules())) newRuleDrafts.add(targetId);
+                targetId = importRuleDraft(configuration, existingId, options, resourceTargetProjectId, actor, newRuleDrafts, publishImmediately);
+                if (!publishImmediately) newRuleDrafts.add(targetId);
             } else {
                 Map<Long, Long> appliedFields = new HashMap<>();
                 targetId = approveResource(sourceKey.type(), existingId, options, resourceTargetProjectId, snapshot, actor, appliedFields);
@@ -438,7 +438,7 @@ public class OfflineResourceImportService {
     }
 
     private Long importRuleDraft(Map<String, Object> configuration, Long existingId,
-                                 TransferImportOptions options, Long targetProjectId, String actor, Set<Long> newRuleDrafts) {
+                                 TransferImportOptions options, Long targetProjectId, String actor, Set<Long> newRuleDrafts, boolean publishImmediately) {
         if (existingId != null) throw new IllegalArgumentException("规则覆盖必须通过规则审批流程选择目标修订");
         RuleDefinition definition = JSON.parseObject(CanonicalJson.write(configuration), RuleDefinition.class);
         definition.setId(null);
@@ -455,7 +455,7 @@ public class OfflineResourceImportService {
         save.setOpenApiConfigJson(content.get("openApiConfigJson") == null ? null : String.valueOf(content.get("openApiConfigJson")));
         save.setUpdateOpenApiConfig(true);
         var saved = newRuleDrafts.isEmpty() ? draftService.save(save) : draftService.saveImportedDraft(save, newRuleDrafts);
-        if (Boolean.TRUE.equals(options.publishRules())) {
+        if (publishImmediately) {
             RuleRevision savedRevision = saved.getRevision();
             RuleLifecycleActionRequest action = new RuleLifecycleActionRequest();
             action.setComment("离线配置迁移按显式选项发布规则");

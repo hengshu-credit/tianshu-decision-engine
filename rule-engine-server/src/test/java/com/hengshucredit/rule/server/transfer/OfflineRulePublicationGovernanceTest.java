@@ -13,6 +13,7 @@ public class OfflineRulePublicationGovernanceTest {
     @Test public void publishedImportsCreateUnifiedApprovalAndRequireItsSuccess() {
         verifyImport(true, true);
         verifyImport(false, false);
+        verifyImport(true, false); // 固定用例先落库，由提交后的回归流程处理发布。
     }
 
     private void verifyImport(boolean publish, boolean expectedApproval) {
@@ -42,7 +43,7 @@ public class OfflineRulePublicationGovernanceTest {
             }
         });
         var options = new TransferImportOptions(null, "GLOBAL", "REUSE", "SUFFIX", "_copy", false, null, null, Map.of(), publish);
-        Long id = ReflectionTestUtils.invokeMethod(service, "importRuleDraft", Map.of("ruleCode", "copy", "content", Map.of("modelJson", "{\"script\":\"return 1;\"}")), null, options, 0L, "reviewer", java.util.Set.of());
+        Long id = ReflectionTestUtils.invokeMethod(service, "importRuleDraft", Map.of("ruleCode", "copy", "content", Map.of("modelJson", "{\"script\":\"return 1;\"}")), null, options, 0L, "reviewer", java.util.Set.of(), expectedApproval);
         assertEquals(Long.valueOf(20), id);
         assertEquals(expectedApproval ? List.of("governed-submit", "governed-approve") : List.of(), events);
     }

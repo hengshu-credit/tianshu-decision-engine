@@ -4,7 +4,7 @@ import {
 } from '@/api/definition'
 import { approveGovernanceRequest, getGovernanceRequest, submitGovernanceRequest } from '@/api/governance'
 
-const comment = '离线项目合集：按源发布状态在目标环境回归并发布'
+const comment = '离线迁移：在目标环境回归并发布'
 
 async function approve(id, type, owner, digest, progress) {
   progress('核对审批单和目标资源')

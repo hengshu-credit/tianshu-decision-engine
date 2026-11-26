@@ -17,6 +17,8 @@ vi.mock('@/api/lineage', () => ({
   getLineageGraph: vi.fn(),
 }))
 
+vi.mock('@/utils/restoreProjectSet', () => ({ restorePublishedStep: vi.fn() }))
+import { restorePublishedStep } from '@/utils/restoreProjectSet'
 import * as transferApi from '@/api/transfer'
 import * as lineageApi from '@/api/lineage'
 import { listProjects } from '@/api/project'
@@ -305,6 +307,29 @@ describe('OfflineTransfer', () => {
     expect(wrapper.vm.preview).toBeNull()
     await wrapper.vm.applyPackage()
     expect(transferApi.importResourceTransfer).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  test('带固定用例的单包先保存草稿，再按顺序验证；中断后从失败规则继续', async () => {
+    const wrapper = await previewGlobal()
+    wrapper.vm.options.publishRules = true
+    transferApi.previewResourceTransfer.mockResolvedValueOnce({ data: { packageDigest: 'supplier', resources: [], ruleCaseCount: 47 } })
+    await wrapper.vm.previewPackage()
+    const steps = [{ type: 'RULE', code: 'one', actionId: '51' }, { type: 'RULE', code: 'two', actionId: '52' }]
+    transferApi.importResourceTransfer.mockResolvedValueOnce({ data: { publicationSteps: steps } })
+    restorePublishedStep.mockResolvedValueOnce().mockRejectedValueOnce(new Error('固定用例未通过')).mockResolvedValueOnce()
+    await wrapper.vm.applyPackage()
+    expect(ElMessageBox.confirm.mock.calls[0][0]).toContain('47 个固定用例')
+    expect(transferApi.importResourceTransfer.mock.lastCall[3]).toBe(true)
+    expect(wrapper.vm.pendingPublication).toBe(true)
+    expect(wrapper.vm.previewError).toContain('配置已导入，发布未完成')
+    expect(wrapper.vm.activationIndex).toBe(1)
+    await wrapper.vm.applyPackage()
+    await wrapper.vm.resumeActivation()
+    expect(transferApi.importResourceTransfer).toHaveBeenCalledTimes(1)
+    expect(restorePublishedStep.mock.calls.map(([step]) => step.actionId)).toEqual(['51', '52', '52'])
+    expect(wrapper.vm.pendingPublication).toBe(false)
+    expect(wrapper.vm.resultVisible).toBe(true)
     wrapper.unmount()
   })
 

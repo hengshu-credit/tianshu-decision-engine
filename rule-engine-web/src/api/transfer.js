@@ -56,8 +56,9 @@ export function previewResourceTransfer(file, options = null, activity = null) {
   })
 }
 
-export function importResourceTransfer(file, options, activity = null) {
-  if (activity) return executeTransferTask({ operation: 'IMPORT', options }, file, activity)
+export function importResourceTransfer(file, options, activity = null, verifyAfterImport = false) {
+  if (activity) return executeTransferTask({ operation: verifyAfterImport ? 'IMPORT_AND_VERIFY' : 'IMPORT', options },
+    file, activity, verifyAfterImport ? 75 : 98)
   const form = new FormData()
   form.append('file', file)
   form.append('options', JSON.stringify(options || {}))
