@@ -248,14 +248,10 @@ export default {
       ).length
     },
     nextCheck() {
-      const priority = [
-        'BLOCKED',
-        'ACTION_REQUIRED',
-        'ATTENTION',
-        'UNAVAILABLE',
-      ]
+      // 检查项已按配置依赖排序，先处理可执行的前置步骤。
+      const priority = [['BLOCKED', 'ACTION_REQUIRED'], ['ATTENTION'], ['UNAVAILABLE']]
       return priority
-        .map((status) => this.checks.find((item) => item.status === status && item.actionCode && this.canUseAction(item.actionCode)))
+        .map(statuses => this.checks.find(item => statuses.includes(item.status) && item.actionCode && this.canUseAction(item.actionCode)))
         .find(Boolean)
     },
     metricItems() {

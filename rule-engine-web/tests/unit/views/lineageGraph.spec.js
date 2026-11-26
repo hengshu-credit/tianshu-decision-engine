@@ -87,6 +87,46 @@ function sharedOutputGraph() {
 afterEach(() => vi.clearAllMocks())
 
 describe('LineageGraph', () => {
+  test('切换节点类型时迟到的候选项和图不会写入新起点', async () => {
+    const wrapper = mountPage()
+    try {
+      await nextTick()
+      let finishOptions, finishGraph
+      lineageApi.listLineageOptions.mockImplementationOnce(() => new Promise(resolve => { finishOptions = resolve }))
+      const oldSearch = wrapper.vm.loadOptions('旧变量')
+      wrapper.vm.query.nodeId = 1
+      lineageApi.getLineageGraph.mockImplementationOnce(() => new Promise(resolve => { finishGraph = resolve }))
+      const oldGraph = wrapper.vm.loadGraph()
+      lineageApi.listLineageOptions.mockResolvedValueOnce({ data: [{ type: 'RULE', id: 9, displayName: '新规则' }] })
+      wrapper.vm.query.nodeType = 'RULE'
+      wrapper.vm.onNodeTypeChange()
+      finishOptions({ data: [{ type: 'VARIABLE', id: 1, displayName: '旧变量' }] })
+      finishGraph({ data: graphResponse() })
+      await Promise.all([oldSearch, oldGraph])
+      expect(wrapper.vm.options.map(item => item.type)).toEqual(['RULE'])
+      expect(wrapper.vm.startNode).toBeNull()
+      expect(wrapper.vm.knownEdges).toEqual([])
+    } finally { wrapper.unmount() }
+  })
+
+  test('方向在首次出图前改变时，画布取得新方向的关系', async () => {
+    const wrapper = mountPage()
+    try {
+      wrapper.vm.query.nodeId = 1
+      wrapper.vm.query.direction = 'UPSTREAM'
+      let finishOld
+      lineageApi.getLineageGraph.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+      const old = wrapper.vm.loadGraph()
+      const fresh = graphResponse()
+      lineageApi.getLineageGraph.mockResolvedValueOnce({ data: fresh })
+      wrapper.vm.query.direction = 'DOWNSTREAM'
+      await wrapper.vm.onDirectionChange('DOWNSTREAM')
+      finishOld({ data: { startNode: fresh.startNode, nodes: [], edges: [] } })
+      await old
+      expect(wrapper.vm.downstreamRoots.map(item => item.node.id)).toEqual(['RULE:9'])
+      expect(wrapper.vm.loadedDirections).toEqual({ UPSTREAM: false, DOWNSTREAM: true })
+    } finally { wrapper.unmount() }
+  })
   test('初次生成与嵌入图默认使用直线并关闭小地图，仍可手动开关', async () => {
     const wrapper = mountPage()
     try {

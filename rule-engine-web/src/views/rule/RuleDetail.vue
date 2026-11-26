@@ -1981,7 +1981,7 @@ export default {
     },
     syncDetailTabFromRoute() {
       const focus = this.$route && this.$route.query && this.$route.query.focus
-      if (focus === 'lifecycle') this.activeDetailTab = 'lifecycle'
+      if (focus === 'lifecycle' || focus === 'api-scenarios') this.activeDetailTab = focus
     },
     openApiFieldDisplay(field) {
       return {

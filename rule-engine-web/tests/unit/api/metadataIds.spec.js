@@ -3,6 +3,7 @@ vi.unmock('@/api/definition')
 vi.unmock('@/api/project')
 vi.unmock('@/api/artifact')
 vi.unmock('@/api/transfer')
+vi.unmock('@/api/lineage')
 
 import axios from 'axios'
 import request from '@/api/request'
@@ -10,6 +11,7 @@ import * as definition from '@/api/definition'
 import * as project from '@/api/project'
 import * as artifact from '@/api/artifact'
 import * as transfer from '@/api/transfer'
+import * as lineage from '@/api/lineage'
 
 let wire
 const response = '{"code":200,"data":{"id":9007199254740993,"revisionId":9007199254740994,"lockVersion":9007199254740995}}'
@@ -41,6 +43,8 @@ const metadataCalls = [
   ['version id', () => definition.getVersionById('7', '9')],
   ['timeline', () => definition.getRuleLifecycleTimeline('7')],
   ['project list', () => project.listProjects({})],
+  ['lineage options', () => lineage.listLineageOptions({ nodeType: 'RULE' })],
+  ['lineage graph', () => lineage.getLineageGraph({ nodeType: 'RULE', nodeId: '9007199254740993' })],
   ['artifact import', () => artifact.importArtifact(new Blob(['fixture']))],
   ['artifact options', () => artifact.getArtifactDeploymentOptions('7', 0)],
   ['artifact deploy', () => artifact.deployArtifact({ artifactId: '7' })],

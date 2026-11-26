@@ -135,6 +135,8 @@ test('导出前可只读预览所选资源的准确业务版本', async ({ page 
   await page.keyboard.press('Escape')
   await control.locator('.el-select').click()
   await page.getByRole('option', { name: '指定 v1 · 修订 1' }).click()
+  await expect(page.getByText('源环境当前血缘', { exact: true })).toBeVisible()
+  await expect(page.getByText(/图中版本来自源环境当前配置/)).toBeVisible()
   await control.getByRole('button', { name: '预览' }).click()
   await expect(dialog).toContainText('授信历史 1')
   await expect(dialog).not.toContainText('授信历史 2')

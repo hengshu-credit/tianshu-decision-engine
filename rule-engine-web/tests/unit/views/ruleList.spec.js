@@ -224,6 +224,26 @@ test('创建并继续配置使用返回 ID，且提交期间不会重复创建',
   sessionStorage.removeItem('projectList')
 })
 
+test('创建成功即进入设计器，无需等待列表刷新', async () => {
+  const wrapper = await mountAndWait()
+  wrapper.vm.handleCreate()
+  wrapper.vm.form.scope = 'GLOBAL'
+  wrapper.vm.form.ruleCode = 'Flow'
+  wrapper.vm.form.ruleName = '授信条件'
+  definitionApi.createDefinition.mockResolvedValueOnce({ data: { id: 72 } })
+  let finishRefresh
+  definitionApi.listDefinitions.mockImplementationOnce(() => new Promise(resolve => { finishRefresh = resolve }))
+  const submitting = wrapper.vm.handleSubmit(true)
+  try {
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(wrapper.vm.$router.push).toHaveBeenCalledWith(expect.objectContaining({ params: { id: '72' } }))
+  } finally {
+    finishRefresh?.({ data: { records: [], total: 0 } })
+    await submitting
+    wrapper.unmount()
+  }
+})
+
 describe('RuleList — 初始化与数据加载', () => {
   let wrapper
 

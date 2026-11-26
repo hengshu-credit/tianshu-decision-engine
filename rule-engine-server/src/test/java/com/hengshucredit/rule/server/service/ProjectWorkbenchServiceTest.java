@@ -82,6 +82,7 @@ public class ProjectWorkbenchServiceTest {
         metrics.setDraftRuleCount(1L);
         metrics.setPublishedRuleCount(1L);
         metrics.setTestScenarioCount(2L);
+        metrics.setTestCoveredRuleCount(2L);
         metrics.setRecentExecutionCount(12L);
         metrics.setRecentSuccessCount(12L);
         RuleExecutionLog latest = new RuleExecutionLog();
@@ -95,6 +96,7 @@ public class ProjectWorkbenchServiceTest {
         assertEquals("UNAVAILABLE", checks.get("FIELD").getStatus());
         assertEquals("READY", checks.get("SOURCE").getStatus());
         assertEquals("READY", checks.get("MODEL").getStatus());
+        assertEquals("READY", checks.get("TEST").getStatus());
         assertEquals("READY", checks.get("PUBLISH").getStatus());
         assertEquals("READY", checks.get("RUN").getStatus());
         assertEquals("查看最近执行", checks.get("RUN").getActionLabel());
@@ -226,6 +228,7 @@ public class ProjectWorkbenchServiceTest {
         metrics.setDraftRuleCount(0L);
         metrics.setPublishedRuleCount(0L);
         metrics.setTestScenarioCount(0L);
+        metrics.setTestCoveredRuleCount(0L);
         metrics.setPendingApprovalCount(0L);
         metrics.setRecentExecutionCount(0L);
         metrics.setRecentSuccessCount(0L);

@@ -48,15 +48,21 @@
           <el-button v-permission="'transfer:export'" type="primary" :loading="exporting" @click="exportPackage">生成并下载配置包</el-button>
         </div>
         <transfer-activity :activity="exportActivity" :active="pageActive" />
-        <section v-if="exportLineageRoots.length" class="inline-lineage-panel">
+        <section v-if="selectedExportRoot" class="inline-lineage-panel">
           <div class="inline-lineage-toolbar">
-            <strong>导出内容血缘</strong>
-            <el-select v-model="selectedExportRootKey" size="small" aria-label="选择导出内容血缘" style="width: 250px">
+            <strong>源环境当前血缘</strong>
+            <el-select :model-value="selectedExportRoot.key" size="small" aria-label="选择导出内容血缘" style="width: 250px" @update:model-value="selectedExportRootKey = $event">
               <el-option v-for="item in exportLineageRoots" :key="item.key" :label="item.label" :value="item.key" />
             </el-select>
           </div>
-          <lineage-graph v-if="exportLineageGraph" embedded :initial-graph="exportLineageGraph" />
-          <el-empty v-else-if="!exportLineageLoading" description="该内容暂无可用血缘" />
+          <p v-if="selectedExportRoot.versionSelection?.versionMode === 'FIXED'" class="card-help">图中版本来自源环境当前配置。生成配置包后，可在导入预检核对所选历史版本的依赖。</p>
+          <p v-if="packageLineageOnly(selectedExportRoot)" class="card-help">请在配置包的导入预检中查看此类资源的依赖。</p>
+          <p v-else-if="selectedExportRoot.lineageLoading" role="status">正在读取源环境血缘…</p>
+          <el-alert v-else-if="selectedExportRoot.lineageError" :title="selectedExportRoot.lineageError" type="warning" :closable="false">
+            <el-button link @click="loadExportLineage(selectedExportRoot)">重新加载血缘</el-button>
+          </el-alert>
+          <lineage-graph v-else-if="exportLineageGraph" embedded :initial-graph="exportLineageGraph" />
+          <el-empty v-else description="该内容暂无可用血缘" />
         </section>
       </article>
 
@@ -357,7 +363,11 @@ const emptyLogFilters = () => ({ operationType: '', status: '', keyword: '' })
 
 const LINEAGE_TYPES = { DATABASE: 'DB', SFTP: 'SFTP', EXTERNAL_DATASOURCE: 'DATASOURCE', EXTERNAL_API: 'API', LIST_LIBRARY: 'LIST' }
 
-const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', versionSelection: { versionMode: 'LATEST', versionId: null }, versionLabel: '最新版（当前生产）', loadError: '', requestId: 0, fetchOptions: params => fetch(key, params) })
+const newRoot = (key, fetch) => ({
+  key, resourceType: 'RULE', resourceId: '', versionSelection: { versionMode: 'LATEST', versionId: null },
+  versionLabel: '最新版（当前生产）', loadError: '', requestId: 0, fetchOptions: params => fetch(key, params),
+  lineageRequestId: 0, lineageGraph: null, lineageLoading: false, lineageError: '',
+})
 
 export default {
   created() { if (this.activeTab === 'logs') this.loadLogs() },
@@ -395,8 +405,6 @@ export default {
       logLineageLoading: false,
       selectedLineageRoot: '',
       selectedExportRootKey: '',
-      exportLineageGraphs: {},
-      exportLineageLoading: false,
       options: {
         targetScope: 'PROJECT', targetProjectId: '', createProject: false,
         projectCode: '', projectName: '', publishRules: false,
@@ -435,8 +443,12 @@ export default {
         label: `${item.resourceType} · ${item.resourceId} · ${item.versionLabel || '最新版（当前生产）'}`,
       }))
     },
+    selectedExportRoot() {
+      return this.roots.find(root => root.resourceId && root.key === this.selectedExportRootKey)
+        || this.roots.find(root => root.resourceId)
+    },
     exportLineageGraph() {
-      return this.exportLineageGraphs[this.selectedExportRootKey] || null
+      return this.selectedExportRoot?.lineageGraph || null
     },
     offlineLineageGraph() {
       if (!this.preview || !this.selectedLineageRoot) return null
@@ -555,40 +567,41 @@ export default {
       root.loadError = ''
       root.requestId += 1
       this.exportError = ''
+      this.loadExportLineage(root)
     },
     onRootSelectionChange(root) {
       root.versionSelection = { versionMode: 'LATEST', versionId: null }
       root.versionLabel = '最新版（当前生产）'
       this.exportError = ''
-      if (!root.resourceId) return
-      if (this.roots.some(other => other !== root && other.resourceType === root.resourceType
+      if (root.resourceId && this.roots.some(other => other !== root && other.resourceType === root.resourceType
         && String(other.resourceId) === String(root.resourceId))) {
         root.resourceId = ''
         ElMessage.warning('该资源已添加，请选择其他资源')
       }
-      this.selectedExportRootKey = root.key
-      this.loadExportLineage(root)
+      if (root.resourceId) this.selectedExportRootKey = root.key
+      return this.loadExportLineage(root)
+    },
+    packageLineageOnly(root) {
+      return ['BILLING_CONFIG', 'FIELD_VALIDATION', 'EXPERIMENT'].includes(root.resourceType)
     },
     async loadExportLineage(root) {
-      if (!root || !root.resourceId) return
-      this.exportLineageLoading = true
+      const requestId = ++root.lineageRequestId
+      root.lineageGraph = null
+      root.lineageError = ''
+      root.lineageLoading = Boolean(root.resourceId) && !this.packageLineageOnly(root)
+      if (!root.lineageLoading) return
       try {
         const response = await getLineageGraph({
           nodeType: LINEAGE_TYPES[root.resourceType] || root.resourceType,
-          nodeId: Number(root.resourceId),
+          nodeId: root.resourceId,
           direction: 'ALL',
           maxDepth: 2,
         })
-        const graph = response.data || null
-        if (graph && root.versionLabel && root.versionSelection?.versionMode === 'FIXED') {
-          const nodeKey = `${LINEAGE_TYPES[root.resourceType] || root.resourceType}:${root.resourceId}`
-          const patchNode = node => node?.id === nodeKey ? { ...node, versionLabel: root.versionLabel } : node
-          this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: { ...graph, startNode: patchNode(graph.startNode), nodes: (graph.nodes || []).map(patchNode) } }
-        } else this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: graph }
+        if (requestId === root.lineageRequestId) root.lineageGraph = response.data?.startNode ? response.data : null
       } catch (error) {
-        this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: null }
+        if (requestId === root.lineageRequestId) root.lineageError = error?.message || '源环境血缘读取失败'
       } finally {
-        this.exportLineageLoading = false
+        if (requestId === root.lineageRequestId) root.lineageLoading = false
       }
     },
     fetchRootOptionsByKey(key, params) {
@@ -620,7 +633,6 @@ export default {
     onRootVersionChange(root, selection) {
       if (!root || !selection) return
       root.versionLabel = selection.label || (selection.versionMode === 'LATEST' ? '最新版（当前生产）' : `指定 v${selection.version || selection.versionId}`)
-      this.loadExportLineage(root)
     },
     resourceVersionLabel(item) {
       if (!item) return ''

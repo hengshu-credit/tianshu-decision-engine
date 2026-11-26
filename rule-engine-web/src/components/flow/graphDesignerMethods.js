@@ -419,7 +419,7 @@ export default {
     this.commitConnectedNode(option.type)
   },
 
-  commitConnectedNode(type, terminationScope) {
+  async commitConnectedNode(type, terminationScope) {
     const pending = this.pendingConnectedNode
     this.pendingConnectedNode = null
     if (!pending) return
@@ -431,8 +431,8 @@ export default {
         edgeType: this.globalEdgeLineType,
       })
       this.selectNodeData({ id: result.node.id })
-      this.lf.focusOn(result.node.id)
       this.updateSelectedBusinessNodeCount()
+      await this.focusGraphElement(result.node.id)
     } catch (error) {
       this.$message.warning(error.message || '新增节点失败')
     }

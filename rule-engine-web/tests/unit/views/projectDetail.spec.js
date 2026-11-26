@@ -74,6 +74,32 @@ describe('ProjectDetail 规则生命周期入口', () => {
     wrapper.unmount()
   })
 
+  test('项目内新建规则可放弃或保留编辑，下一次打开从空表单开始', async () => {
+    const { wrapper } = await mountPage()
+    wrapper.vm.openCreateRule()
+    wrapper.vm.fm.ruleCode = 'Keep_Mixed'
+    wrapper.vm.$confirm.mockRejectedValueOnce('cancel')
+    await wrapper.vm.closeConfigurationDialog('dlgVis')
+    expect(wrapper.vm.dlgVis).toBe(true)
+    expect(wrapper.vm.fm.ruleCode).toBe('Keep_Mixed')
+    await wrapper.vm.closeConfigurationDialog('dlgVis')
+    expect(wrapper.vm.dlgVis).toBe(false)
+    wrapper.vm.openCreateRule()
+    expect(wrapper.vm.fm.ruleCode).toBe('')
+    expect(wrapper.vm.fm.modelType).toBe('TABLE')
+    wrapper.unmount()
+  })
+
+  test('工作台直接进入待补规则的用例页，保留大整数规则 ID 和项目范围', async () => {
+    const { wrapper, router } = await mountPage()
+    wrapper.vm.workbench.metrics.firstUncoveredRuleId = '9007199254740993'
+    await wrapper.vm.openWorkbenchAction({ actionCode: 'CONFIGURE_TEST_CASES' })
+    expect(router.push).toHaveBeenCalledWith({
+      name: 'RuleDetail', params: { id: '9007199254740993' }, query: { projectId: 9, focus: 'api-scenarios' },
+    })
+    wrapper.unmount()
+  })
+
   test('项目内新增、绑定和移除规则受规则编辑权限控制', async () => {
     const permissions = []
     const { wrapper } = await mountPage(permissions)

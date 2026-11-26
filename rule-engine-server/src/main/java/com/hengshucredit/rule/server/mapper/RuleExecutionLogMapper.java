@@ -19,7 +19,6 @@ import org.apache.ibatis.annotations.ConstructorArgs;
 import org.apache.ibatis.annotations.Arg;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Mapper
 public interface RuleExecutionLogMapper extends BaseMapper<RuleExecutionLog> {
@@ -74,8 +73,9 @@ public interface RuleExecutionLogMapper extends BaseMapper<RuleExecutionLog> {
     @Select("SELECT id,create_time AS time,es_revision AS revision FROM rule_execution_log WHERE id=#{id}")
     Ref selectAuditIdentity(@Param("id") Serializable id);
 
-    @Select("SELECT * FROM rule_execution_log_current ${ew.customSqlSegment}")
-    List<RuleExecutionLog> selectLogicalList(@Param(Constants.WRAPPER) Wrapper<RuleExecutionLog> wrapper);
+    @Select("SELECT trace_id,rule_code,rule_version,success,execute_time_ms,source,create_time "
+            + "FROM rule_execution_log_current ${ew.customSqlSegment}")
+    RuleExecutionLog selectRecentSummary(@Param(Constants.WRAPPER) Wrapper<RuleExecutionLog> wrapper);
 
     @Select("SELECT l.*," + RESTORED_TRACE + " AS stored_trace FROM rule_execution_log l WHERE id=#{id}")
     @ResultMap("auditLog")

@@ -109,14 +109,14 @@
             size="small"
             :icon="ElIconPlus"
             @click="openAddRuleDialog"
-            >添加规则</el-button
+            >关联全局规则</el-button
           >
           <el-button
             v-permission="'rule:edit'"
             type="primary"
             size="small"
             :icon="ElIconDocumentAdd"
-            @click="dlgVis = true"
+            @click="openCreateRule"
             >新建规则</el-button
           >
         </div>
@@ -124,6 +124,9 @@
     </div>
 
     <!-- 规则列表 -->
+    <el-alert v-if="listError" type="error" :closable="false" :title="listError">
+      <el-button link @click="load">重新加载项目规则</el-button>
+    </el-alert>
     <el-table show-overflow-tooltip
       :data="list"
       border
@@ -269,24 +272,24 @@
     </el-tabs>
 
     <!-- 新建规则对话框 -->
-    <el-dialog title="新建规则" v-model="dlgVis" width="500px" :close-on-click-modal="false" :show-close="!creating" :close-on-press-escape="!creating">
+    <el-dialog title="新建规则" v-model="dlgVis" width="500px" :close-on-click-modal="false" :show-close="!creating" :close-on-press-escape="!creating" :before-close="done => closeConfigurationDialog('dlgVis', done)">
       <el-form
         ref="f"
         :model="fm"
         :disabled="creating"
         :rules="{
-          ruleCode: [reservedCodeRule, { required: true, message: '必填', trigger: 'blur' }],
-          ruleName: [{ required: true, message: '必填', trigger: 'blur' }],
-          modelType: [{ required: true, message: '必选', trigger: 'change' }],
+          ruleCode: [reservedCodeRule, { required: true, message: '请输入规则编码', trigger: 'blur' }],
+          ruleName: [{ required: true, message: '请输入规则名称', trigger: 'blur' }],
+          modelType: [{ required: true, message: '请选择模型类型', trigger: 'change' }],
         }"
         label-width="100px"
         size="small"
       >
         <el-form-item label="规则编码" prop="ruleCode"
-          ><el-input v-model="fm.ruleCode"
+          ><el-input v-model="fm.ruleCode" placeholder="英文标识，如 riskCheckRule"
         /></el-form-item>
         <el-form-item label="规则名称" prop="ruleName"
-          ><el-input v-model="fm.ruleName"
+          ><el-input v-model="fm.ruleName" placeholder="中文名称，如 风控规则"
         /></el-form-item>
         <el-form-item label="模型类型" prop="modelType">
           <el-select v-model="fm.modelType" style="width: 100%">
@@ -308,7 +311,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" :disabled="creating" @click="dlgVis = false">取消</el-button
+          <el-button size="small" :disabled="creating" @click="closeConfigurationDialog('dlgVis')">取消</el-button
           ><el-button
             v-permission="'rule:edit'"
             size="small"
@@ -455,6 +458,7 @@ import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
+import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import { markRaw } from 'vue'
 import {
   Back as ElIconBack,
@@ -479,7 +483,8 @@ import { canUseWorkbenchAction, workbenchActionRoute } from '@/utils/workbenchAc
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 export default {
   name: 'ProjectDetail',
-  mixins: [pageTabState('activeProjectTab', ['workbench', 'rules']), workspaceTabTitleMixin(vm => vm.project?.projectName)],
+  mixins: [pageTabState('activeProjectTab', ['workbench', 'rules']), workspaceTabTitleMixin(vm => vm.project?.projectName),
+    configurationDialogsMixin([{ visible: 'dlgVis', draft: vm => vm.fm, busy: vm => vm.creating }])],
   components: { DismissibleGuidance, GovernanceWorkspaceToolbar, GovernancePublishAction, GovernanceResourceStatus, ProjectWorkbenchOverview, RuleModelTypeHelp, RemoteFilterSelect },
   data() {
     return {
@@ -491,6 +496,8 @@ export default {
       workbenchError: '',
       workbenchRequestId: 0,
       loading: false,
+      listError: '',
+      listRequestId: 0,
       list: [],
       total: 0,
       qp: {
@@ -576,6 +583,11 @@ export default {
         this.loadWorkbench()
         return
       }
+      const uncoveredId = this.workbench?.metrics?.firstUncoveredRuleId
+      if (item.actionCode === 'CONFIGURE_TEST_CASES' && uncoveredId) {
+        return this.$router.push({ name: 'RuleDetail', params: { id: String(uncoveredId) },
+          query: { projectId: this.pid, focus: 'api-scenarios' } })
+      }
       if (item.actionCode === 'RETRY_WARMUP') {
         try {
           await retryRuleWarmup()
@@ -613,7 +625,9 @@ export default {
       })
     },
     async load() {
+      const requestId = ++this.listRequestId
       this.loading = true
+      this.listError = ''
       try {
         // 处理时间范围参数
         if (this.createTimeRange && this.createTimeRange.length === 2) {
@@ -636,10 +650,16 @@ export default {
           method: 'get',
           params: this.qp,
         })
+        if (requestId !== this.listRequestId) return
         this.list = r.data.records
         this.total = r.data.total
+      } catch (error) {
+        if (requestId !== this.listRequestId) return
+        this.list = []
+        this.total = 0
+        this.listError = error.message || '项目规则加载失败'
       } finally {
-        this.loading = false
+        if (requestId === this.listRequestId) this.loading = false
       }
     },
     handleQuery() {
@@ -751,6 +771,12 @@ export default {
         this.$router.push('/approval/' + response.data.approvalRequestId)
       }
     },
+    openCreateRule() {
+      if (this.creating || this.dlgVis) return
+      this.fm = { ruleCode: '', ruleName: '', modelType: 'TABLE', description: '' }
+      this.dlgVis = true
+      this.$nextTick(() => this.$refs.f?.clearValidate?.())
+    },
     async submit(continueEditing = false) {
       if (this.creating) return
       this.creating = true
@@ -760,7 +786,7 @@ export default {
         const response = await createDefinition({ ...this.fm, projectId: this.pid })
         this.$message.success('创建成功')
         this.dlgVis = false
-        await Promise.all([this.load(), this.loadWorkbench()])
+        const refresh = Promise.all([this.load(), this.loadWorkbench()])
         const created = response && response.data
         if (continueEditing && created && created.id) {
           await this.$router.push({ ...ruleDesignerLocation({ ...this.fm, id: created.id }),
@@ -768,6 +794,7 @@ export default {
         } else if (continueEditing) {
           this.$message.warning('规则已创建，请从项目规则列表进入详情继续配置')
         }
+        await refresh
       } catch (e) {
         if (!e || !e.requestErrorNotified) this.$message.error(this.dlgVis ? ((e && e.message) || '创建失败，请重试') : '规则已创建，请从项目规则列表重新进入详情')
       } finally {

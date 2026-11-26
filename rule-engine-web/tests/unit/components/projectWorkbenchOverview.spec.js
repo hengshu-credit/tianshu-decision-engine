@@ -90,18 +90,19 @@ describe('ProjectWorkbenchOverview', () => {
     wrapper.unmount()
   })
 
-  test('优先展示被阻塞的下一步并汇总真实指标', () => {
+  test('尚无规则时先建议创建规则，再处理依赖发布的运行检查', () => {
     const wrapper = shallowMount(ProjectWorkbenchOverview, {
       props: { workbench },
     })
 
-    expect(wrapper.vm.nextCheck.code).toBe('RUN')
+    expect(wrapper.vm.nextCheck.code).toBe('RULE')
     expect(wrapper.vm.readyCount).toBe(1)
     expect(wrapper.vm.remainingCount).toBe(2)
     expect(wrapper.vm.metricItems.map((item) => item.value)).toContain(
       '1 已发布'
     )
-    expect(wrapper.text()).toContain('需要先发布规则')
+    expect(wrapper.get('.next-action-card').text()).toContain('创建规则')
+    expect(wrapper.get('.check-list').text()).toContain('需要先发布规则')
   })
 
   test('可选项计入已处理且缺失指标显示占位符', () => {

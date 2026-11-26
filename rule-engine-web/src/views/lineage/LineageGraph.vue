@@ -32,6 +32,7 @@
             reserve-keyword
             clearable
             :remote-method="loadOptions"
+            @change="resetGraph"
             :loading="optionLoading"
             placeholder="输入编码或名称搜索"
             style="width: 320px"
@@ -43,6 +44,9 @@
               :value="item.id"
             />
           </el-select>
+          <span v-if="optionError" class="option-error" role="alert">
+            {{ optionError }} <el-button link size="small" @click="loadOptions(optionKeyword)">重试搜索</el-button>
+          </span>
         </el-form-item>
         <el-form-item label="方向">
           <el-radio-group v-model="query.direction" @change="onDirectionChange">
@@ -56,6 +60,7 @@
             type="primary"
             :icon="ElIconShare"
             :loading="loading"
+            :disabled="!query.nodeId"
             @click="loadGraph"
             >生成血缘图</el-button
           >
@@ -171,7 +176,8 @@
         :aria-busy="loading || canvasLoading"
         :style="{ height: graphHeight + 'px' }"
       >
-        <async-state v-if="startNode && (canvasLoading || canvasError)" class="canvas-load-state" :loading="canvasLoading" :error="canvasError" loading-text="正在加载血缘图…" @retry="retryCanvas" />
+        <async-state v-if="(!startNode && loading) || graphError" class="canvas-load-state" :loading="loading" :error="graphError" loading-text="正在读取血缘关系…" @retry="loadGraph" />
+        <async-state v-else-if="startNode && (canvasLoading || canvasError)" class="canvas-load-state" :loading="canvasLoading" :error="canvasError" loading-text="正在加载血缘图…" @retry="retryCanvas" />
         <div v-else-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
         <div ref="graphContainer" class="graph-canvas" :class="{ 'is-hidden': !startNode, 'dense-relations': visibleGraph.edges.length > 24 }" aria-label="血缘关系图" />
       </div>
@@ -238,11 +244,17 @@ export default {
         },
       ],
       loading: false,
+      graphRequestId: 0,
+      directionRequestId: 0,
+      graphError: '',
       canvasLoading: false,
       canvasError: '',
       canvasImportFailed: false,
       canvasDisposed: false,
       optionLoading: false,
+      optionRequestId: 0,
+      optionKeyword: '',
+      optionError: '',
       options: [],
       startNode: null,
       upstreamRoots: [],
@@ -314,7 +326,8 @@ export default {
     initialGraph: {
       deep: true,
       handler(graph) {
-        if (graph) this.loadInitialGraph(graph)
+        if (graph?.startNode) this.loadInitialGraph(graph)
+        else this.resetGraph()
       },
     },
     startNode: {
@@ -345,6 +358,8 @@ export default {
     },
   },
   beforeUnmount() {
+    this.graphRequestId++
+    this.optionRequestId++
     this.canvasDisposed = true
     window.removeEventListener('tianshu-theme-change', this.applyCanvasSettings)
     this.$refs.graphWrap?.removeEventListener('wheel', this.onCanvasWheel)
@@ -955,40 +970,54 @@ export default {
       this.preserveCurrentPosition()
       const node = this.knownNodes[id]
       if (!expanded[id] && !this.fieldChildren.has(id) && !this.loadedHierarchy[id]) {
+        const requestId = this.graphRequestId
         this.hierarchyLoading[id] = true
         try {
           const res = await getLineageGraph({ nodeType: node.type, nodeId: node.refId, direction: 'DOWNSTREAM', maxDepth: 1 })
+          if (requestId !== this.graphRequestId) return
           this.mergeGraph(res?.data || {})
           this.loadedHierarchy[id] = true
         } catch (e) {
-          this.$message.error('字段层级加载失败，请重试')
+          if (requestId === this.graphRequestId) this.$message.error('字段层级加载失败，请重试')
           return
         } finally {
-          this.hierarchyLoading[id] = false
+          if (requestId === this.graphRequestId) this.hierarchyLoading[id] = false
         }
       }
       expanded[id] = !expanded[id]
     },
     async loadOptions(keyword) {
+      const requestId = ++this.optionRequestId
+      this.optionKeyword = keyword
+      this.optionError = ''
       this.optionLoading = true
       try {
         const res = await listLineageOptions({
           nodeType: this.query.nodeType,
           keyword,
         })
+        if (requestId !== this.optionRequestId) return
         this.options = (res && res.data) || []
         const selected = this.options.find(item => String(item.id) === String(this.query.nodeId))
         if (selected) this.query.nodeId = selected.id
+      } catch (error) {
+        if (requestId !== this.optionRequestId) return
+        this.options = []
+        this.optionError = error?.message || '无法读取起点列表'
       } finally {
-        this.optionLoading = false
+        if (requestId === this.optionRequestId) this.optionLoading = false
       }
     },
     onNodeTypeChange() {
       this.query.nodeId = ''
+      this.options = []
       this.resetGraph()
       this.loadOptions('')
     },
     resetGraph() {
+      this.graphRequestId++
+      this.loading = false
+      this.graphError = ''
       if (!this.explicitEdgeType) this.globalEdgeLineType = 'line'
       this.canvasError = ''
       this.startNode = null
@@ -1154,36 +1183,50 @@ export default {
         this.$message.warning('请先选择血缘起点')
         return
       }
+      this.resetGraph()
+      const requestId = this.graphRequestId
+      const query = { ...this.query, maxDepth: 2 }
       this.loading = true
       try {
-        const res = await getLineageGraph({ ...this.query, maxDepth: 2 })
+        const res = await getLineageGraph(query)
+        if (requestId !== this.graphRequestId) return
         const data = (res && res.data) || {}
-        this.resetGraph()
-        this.startNode = data.startNode || null
+        if (!data.startNode) {
+          this.graphError = '未找到该起点，请重新选择或重新加载'
+          return
+        }
+        this.startNode = data.startNode
         this.mergeGraph(data)
-        if (this.query.direction !== 'DOWNSTREAM') {
+        if (query.direction !== 'DOWNSTREAM') {
           this.upstreamRoots = this.buildBranches(data, 'UPSTREAM', 2)
           this.loadedDirections.UPSTREAM = true
         }
-        if (this.query.direction !== 'UPSTREAM') {
+        if (query.direction !== 'UPSTREAM') {
           this.downstreamRoots = this.buildBranches(data, 'DOWNSTREAM', 2)
           this.loadedDirections.DOWNSTREAM = true
         }
         this.$nextTick(() => this.fitGraph())
-      } catch (e) {
-        this.resetGraph()
-        this.$message.error('血缘图加载失败，请重试')
+      } catch (error) {
+        if (requestId === this.graphRequestId) this.graphError = error?.message || '血缘关系读取失败，请重新加载'
       } finally {
-        this.loading = false
+        if (requestId === this.graphRequestId) this.loading = false
       }
     },
     async onDirectionChange(direction) {
-      if (!this.query.nodeId || !this.startNode) return
+      if (!this.query.nodeId) return
+      if (!this.startNode) {
+        if (this.loading || this.graphError) return this.loadGraph()
+        return
+      }
+      const graphId = this.graphRequestId
+      const directionId = ++this.directionRequestId
+      const isCurrent = () => graphId === this.graphRequestId && directionId === this.directionRequestId
+      this.graphError = ''
       const required =
         direction === 'ALL' ? ['UPSTREAM', 'DOWNSTREAM'] : [direction]
       const missing = required.filter((item) => !this.loadedDirections[item])
+      this.loading = missing.length > 0
       if (!missing.length) return
-      this.loading = true
       try {
         for (const item of missing) {
           const res = await getLineageGraph({
@@ -1192,19 +1235,23 @@ export default {
             direction: item,
             maxDepth: 2,
           })
+          if (!isCurrent()) return
           const data = (res && res.data) || {}
+          if (data.startNode?.id !== this.startNode.id) {
+            this.graphError = '未找到该起点，请重新选择或重新加载'
+            return
+          }
           this.mergeGraph(data)
-          if (!this.startNode) this.startNode = data.startNode || null
           if (item === 'UPSTREAM')
             this.upstreamRoots = this.buildBranches(data, item, 2)
           if (item === 'DOWNSTREAM')
             this.downstreamRoots = this.buildBranches(data, item, 2)
           this.loadedDirections[item] = true
         }
-      } catch (e) {
-        this.$message.error('血缘方向加载失败，请重试')
+      } catch (error) {
+        if (isCurrent()) this.graphError = error?.message || '所选方向的血缘关系读取失败，请重新加载'
       } finally {
-        this.loading = false
+        if (isCurrent()) this.loading = false
       }
     },
     buildBranches(data, direction, maxDepth) {
@@ -1299,6 +1346,7 @@ export default {
         return
       }
       matching.forEach(item => { item.loading = true })
+      const requestId = this.graphRequestId
       try {
         const res = await getLineageGraph({
           nodeType: branch.node.type,
@@ -1306,6 +1354,7 @@ export default {
           direction: branch.direction,
           maxDepth: 1,
         })
+        if (requestId !== this.graphRequestId) return
         this.mergeGraph((res && res.data) || {})
         matching.forEach(item => {
           item.children = this.buildDirectChildren(item, (res && res.data) || {})
@@ -1314,7 +1363,7 @@ export default {
           item.expanded = item.children.length > 0
         })
       } catch (e) {
-        this.$message.error('血缘分支加载失败，请重试')
+        if (requestId === this.graphRequestId) this.$message.error('血缘分支加载失败，请重试')
       } finally {
         matching.forEach(item => { item.loading = false })
       }
@@ -1387,6 +1436,10 @@ export default {
     border-radius: 4px;
     padding: 12px 12px 0;
     margin-bottom: 12px;
+  }
+  .option-error {
+    width: 100%;
+    color: var(--el-color-danger);
   }
   .legend-row {
     display: flex;
@@ -1670,6 +1723,19 @@ export default {
       right: 0;
       z-index: 8;
       width: min(380px, 88vw);
+    }
+  }
+
+  @media (max-width: 600px) {
+    .query-panel :deep(.el-form-item) {
+      display: flex;
+      margin-right: 0;
+    }
+    .query-panel :deep(.el-form-item__content) {
+      min-width: 0;
+    }
+    .query-panel .el-select {
+      max-width: 100%;
     }
   }
 

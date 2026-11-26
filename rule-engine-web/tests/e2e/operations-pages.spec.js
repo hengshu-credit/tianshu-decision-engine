@@ -243,6 +243,20 @@ test('规则测试在表单与 JSON 间同步输入、生成样例并校验执�
   assertClean()
 })
 
+test('窄屏血缘起点在筛选面板内完整显示并可选择', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await installDistRoutes(page, { apiData: createOperationsApiData() })
+  await page.goto('http://tianshu.local/index.html#/lineage')
+  const form = page.locator('.lineage-page .query-panel')
+  const select = form.locator('.el-select').nth(1)
+  await expect(select).toBeVisible()
+  const panel = await form.boundingBox(), field = await select.boundingBox()
+  expect(field.x + field.width).toBeLessThanOrEqual(panel.x + panel.width)
+  await select.click()
+  await page.getByRole('option').first().click()
+  await expect(page.getByRole('button', { name: '生成血缘图' })).toBeEnabled()
+})
+
 test('血缘默认隐藏小地图、使用直线且可独立调节背景透明度', async ({ page }, testInfo) => {
   const { assertClean } = await installDistRoutes(page, { apiData: createOperationsApiData() })
   await page.setViewportSize({ width: 1440, height: 1000 })

@@ -212,6 +212,41 @@ describe('OfflineTransfer', () => {
     wrapper.unmount()
   })
 
+  test('导出选择保留相邻大整数 ID，迟到的当前图不能覆盖后来选择的资源', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    const root = wrapper.vm.roots[0]
+    let finishOld
+    lineageApi.getLineageGraph.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    root.resourceId = '9007199254740993'
+    const old = wrapper.vm.loadExportLineage(root)
+    const firstId = lineageApi.getLineageGraph.mock.calls[0][0].nodeId
+    root.resourceId = '9007199254740992'
+    wrapper.vm.selectedExportRootKey = root.key
+    const current = { startNode: { id: 'RULE:' + root.resourceId, versionLabel: 'v3' }, nodes: [], edges: [] }
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data: current })
+    await wrapper.vm.loadExportLineage(root)
+    finishOld({ data: { startNode: { id: 'RULE:9007199254740993' } } })
+    await old
+    expect(firstId).toBe('9007199254740993')
+    expect(wrapper.vm.exportLineageGraph).toEqual(current)
+    wrapper.unmount()
+  })
+
+  test('选择导出历史版本时，源环境当前血缘节点保留实际版本', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    const root = wrapper.vm.roots[0]
+    root.resourceId = 101
+    root.versionSelection = { versionMode: 'FIXED', versionId: 12 }
+    root.versionLabel = '指定 v1'
+    wrapper.vm.selectedExportRootKey = root.key
+    const startNode = { id: 'RULE:101', versionLabel: 'v3' }
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data: { startNode, nodes: [startNode], edges: [] } })
+    await wrapper.vm.loadExportLineage(root)
+    expect(wrapper.vm.exportLineageGraph.startNode.versionLabel).toBe('v3')
+    expect(root.versionSelection.versionId).toBe(12)
+    wrapper.unmount()
+  })
+
   async function previewGlobal() {
     const wrapper = shallowMount(OfflineTransfer)
     wrapper.vm.selectFile({ raw: new File(['zip'], 'transfer.zip') })
