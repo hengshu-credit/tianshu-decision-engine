@@ -39,7 +39,7 @@ Compose 自动兼容现代 `docker compose` 与 `docker-compose`，优先前者�
 
 ## 停止部署
 
-将与发布包一同提供的 `compose-down.sh` 放在安装目录，在该目录运行 `bash compose-down.sh --dry-run` 可查看目标项目和服务。运行 `bash compose-down.sh` 停止并移除 server、web 及已部署的 SDK 容器。需要同时关闭本安装管理的 MySQL、Redis、Kafka 等服务时，使用 `bash compose-down.sh --all`，也可加 `--dry-run` 预览。两种模式均保留数据卷和宿主机文件。
+将与发布包一同提供的 `compose-down.sh` 放在安装目录，在该目录运行 `bash compose-down.sh --dry-run` 可查看目标项目和服务。运行 `bash compose-down.sh` 停止并移除 server、web 及已部署的 SDK 容器。需要同时关闭本安装管理的 MySQL、Redis、Kafka 等服务时，使用 `bash compose-down.sh --all`，也可加 `--dry-run` 预览。两种模式均保留数据卷和宿主机文件。停机脚本优先使用 `docker compose`，也支持独立的 `docker-compose` v2+。对于只能整组执行 `down` 的旧版 v2，脚本按选定服务执行 `stop` 和 `rm --force`，保留网络。
 
 ## 首次部署和日常更新
 

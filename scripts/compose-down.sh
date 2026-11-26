@@ -5,6 +5,7 @@ exec python3 - "$@" <<'PY'
 import argparse
 import json
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import sys
@@ -17,6 +18,19 @@ BASE_FILES = {'docker-compose.yml', 'docker-compose.full.yml', 'docker-compose.s
 
 def output(args):
     return subprocess.check_output(args, text=True)
+
+
+def detect_compose():
+    # 独立交付的停机脚本也要在传项目参数前探测入口，与 deploy.py 的版本要求一致。
+    for command in (['docker', 'compose'], ['docker-compose']):
+        try:
+            probe = subprocess.run([*command, 'version', '--short'], capture_output=True, text=True)
+        except FileNotFoundError:
+            continue
+        version = re.match(r'v?(\d+)\.', probe.stdout.strip())
+        if probe.returncode == 0 and version and int(version.group(1)) >= 2:
+            return command
+    raise ValueError('找不到可用的 Compose v2+。请检查 docker compose version 或 docker-compose version。')
 
 
 def commands(root, all_services):
@@ -65,22 +79,32 @@ def commands(root, all_services):
             raise ValueError(f'{project}/{service} 有多套启动配置，请先核对容器归属。')
         groups.setdefault(group, set()).add(service)
 
+    if not groups:
+        return []
+    compose = detect_compose()
+    down_help = output([*compose, 'down', '--help'])
+    selective_down = re.search(r'\[SERVICES?(?:\.\.\.)?\]', down_help, re.IGNORECASE)
     result = []
     for (project, directory, files, envs), services in sorted(groups.items(), key=lambda pair: not bool(pair[1] & APP)):
         if project in outside:
             raise ValueError(f'项目名 {project} 同时被其他部署定义使用，请先核对归属。')
-        args = ['docker', 'compose', '--project-name', project, '--project-directory', directory]
+        args = [*compose, '--project-name', project, '--project-directory', directory]
         for flag, paths in [('--env-file', envs), ('-f', files)]:
             for path in paths:
                 if not path.is_file():
                     raise ValueError(f'缺少原部署文件：{path}')
                 args.extend([flag, str(path)])
-        defined = set(output([*args, '--profile', '*', 'config', '--services']).splitlines())
+        args.extend(['--profile', '*'])
+        defined = set(output([*args, 'config', '--services']).splitlines())
         if services - defined:
             raise ValueError(f'{project} 的容器和当前 Compose 服务定义不一致。')
-        result.append([*args, '--profile', '*', 'down', '--remove-orphans=false', *sorted(services)])
-    if result and '[SERVICES]' not in output(['docker', 'compose', 'down', '--help']).upper():
-        raise ValueError('需要支持 docker compose down [SERVICES] 的 Compose 插件。')
+        selected = sorted(services)
+        if selective_down:
+            result.append([*args, 'down', '--remove-orphans=false', *selected])
+        else:
+            # 早期 v2 的 down 只能关闭整组，逐服务停止并移除，保留共享设施和网络。
+            result.append([*args, 'stop', *selected])
+            result.append([*args, 'rm', '--force', *selected])
     return result
 
 
