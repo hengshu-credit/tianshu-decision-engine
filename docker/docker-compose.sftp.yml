@@ -1,0 +1,36 @@
+name: ${SFTP_PROJECT:-tianshu-sftp}
+services:
+  sftp:
+    image: ${JAVA_IMAGE:-eclipse-temurin:17-jre-jammy}
+    restart: unless-stopped
+    init: true
+    command: ["java", "-Xmx384m", "-jar", "/app/server.jar", "--engine-sftp-server"]
+    environment:
+      MYSQL_HOST: ${MYSQL_HOST:-host.docker.internal}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rule_engine}
+      MYSQL_USERNAME: "${MYSQL_USERNAME:?Set MYSQL_USERNAME}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD}"
+      ENGINE_SFTP_DIRECTORY: /data/sftp
+      ENGINE_SFTP_BIND_ADDRESS: 0.0.0.0
+      ENGINE_SFTP_PORT: 2222
+      ENGINE_SFTP_USERNAME: ${ENGINE_SFTP_USERNAME:-engine-storage}
+      ENGINE_SFTP_PASSWORD: "${ENGINE_SFTP_PASSWORD:?Set ENGINE_SFTP_PASSWORD}"
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports:
+      - "${ENGINE_SFTP_BIND_ADDRESS:-127.0.0.1}:${ENGINE_SFTP_PORT:-2222}:2222"
+    volumes:
+      - sftp-data:/data/sftp
+      - type: bind
+        source: ${SFTP_SERVER_JAR:-${RUNTIME_DIR:-./runtime}/server.jar}
+        target: /app/server.jar
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "bash", "-ec", "read -r banner < /dev/tcp/127.0.0.1/2222 && [[ $$banner == SSH-2.0-* ]]"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+volumes:
+  sftp-data:

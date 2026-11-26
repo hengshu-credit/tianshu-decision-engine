@@ -4,6 +4,10 @@
       维护可复用的 SFTP 连接池。规则执行时的 SFTP 文件读取会沿用当前规则 trace_id，并在查询日志中保留远端文件地址。
     </dismissible-guidance>
 
+    <el-descriptions title="引擎内置 SFTP" :column="1" border size="small">
+      <el-descriptions-item label="系统连接">只读 · 用于项目进件文件、素材和模型上传</el-descriptions-item>
+    </el-descriptions>
+
     <el-tabs model-value="datasource" class="sftp-tabs" :before-leave="navigateTab">
       <el-tab-pane label="数据源配置" name="datasource" />
       <el-tab-pane label="查询日志" name="logs" />
@@ -20,9 +24,6 @@
       <div class="uiue-btn-bar"><div class="btn-right"><table-column-settings v-model="datasourceColumnOrder" :columns="datasourceColumns" storage-key="tianshu:table-columns:sftp-list" /><governance-workspace-toolbar resource-type="SFTP" /><el-button size="small" @click="load">刷新</el-button><el-button v-permission="'database:edit'" type="primary" size="small" @click="openCreate">新建 SFTP 数据源</el-button></div></div>
     </div>
 
-    <el-descriptions title="引擎内置 SFTP" :column="1" border size="small">
-      <el-descriptions-item label="系统连接">只读 · 用于项目进件文件、素材和模型上传</el-descriptions-item>
-    </el-descriptions>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="loadError"><el-button link type="primary" :disabled="loading" @click="load">重新加载</el-button></el-alert>
     <el-table class="management-table" :data="rows" border size="small" :aria-busy="loading" show-overflow-tooltip>
       <el-table-column v-for="column in visibleDatasourceColumns" :key="column.key" :prop="column.key" :label="column.label" :min-width="column.minWidth" :align="column.align">

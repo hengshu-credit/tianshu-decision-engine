@@ -54,7 +54,7 @@ export function writeDeploymentReadme(sourceRoot, stageRoot) {
   writeFileSync(path.join(stageRoot, 'README-DEPLOY.md'), readFileSync(path.join(sourceRoot, 'docs', 'server-upload.md'), 'utf8')
     .replace('(release-packaging.md)', '(docs/release-packaging.md)')
     .replace('(blue-green-deployment-design.md)', '(docs/blue-green-deployment-design.md)')
-    .replace('(../docker/README.md)', '(docker/README.md)')
+    .replaceAll('(../docker/README.md', '(docker/README.md')
     .replace('(deployment-flat-legacy.md)', '(docs/deployment-flat-legacy.md)'))
 }
 

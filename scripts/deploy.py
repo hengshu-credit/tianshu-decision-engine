@@ -111,7 +111,7 @@ def install_app_definitions(release, target, verified, sdk=False):
             'docker-compose.server.yml', 'docker-compose.full.yml', 'docker-compose.yml')):
         print('识别为已有部署，使用现有 Compose 更新应用。', flush=True)
         return
-    names = ('docker/nginx/default.conf', 'docker/nginx/proxy.conf', 'docker/nginx/sftp.stream-template',
+    names = ('docker/nginx/default.conf', 'docker/nginx/proxy.conf', 'docker/docker-compose.sftp.yml',
              'docker/docker-compose.client.yml', 'docker/docker-compose.server.yml')
     for name in names:
         destination = target / name

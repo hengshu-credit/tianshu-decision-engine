@@ -57,9 +57,9 @@ public class LedgerAssetService {
         String name = filename(file.getOriginalFilename());
         byte[] bytes = UploadSecurity.read(file, MAX_UPLOAD_BYTES);
         String type = detect(bytes, name);
-        long id = repository.insert("INSERT INTO rule_ledger_asset (name,content_type,size_bytes,source_size,sha256,scope,owner_user_id,owner_name,scan_status,raw_content) VALUES (?,?,?,?,?,'PRIVATE',?,?,'PENDING',?)",
-                name, type, bytes.length, bytes.length, digest(bytes), access.userId(), access.actor(), bytes);
-        return process(repository.one(TABLE, id, true));
+        long id = repository.insert("INSERT INTO rule_ledger_asset (name,content_type,size_bytes,source_size,sha256,scope,owner_user_id,owner_name,scan_status) VALUES (?,?,?,?,?,'PRIVATE',?,?,'PENDING')",
+                name, type, bytes.length, bytes.length, digest(bytes), access.userId(), access.actor());
+        return process(repository.one(TABLE, id, true), bytes);
     }
 
     @Transactional
@@ -67,14 +67,21 @@ public class LedgerAssetService {
         var row = repository.one(TABLE, id, true);
         access.requireEdit(TABLE, row); LedgerAccess.version(row, version);
         if ("CLEAN".equals(row.get("scan_status"))) return metadata(row);
-        return process(row);
+        return process(row, null);
     }
 
-    private Map<String, Object> process(Map<String, Object> row) {
-        if (!PROCESSING.tryAcquire()) return metadata(row);
+    private Map<String, Object> process(Map<String, Object> row, byte[] upload) {
+        long id = number(row.get("id"));
+        String hash = (String) row.get("sha256");
+        String pending = "ledger/pending/" + id + "/" + hash;
+        boolean stored = upload == null && row.get("raw_content") == null;
+        if (!PROCESSING.tryAcquire()) {
+            if (upload != null) storePending(id, hash, pending, upload, true);
+            return metadata(row);
+        }
         try {
-            byte[] bytes = (byte[]) row.get("raw_content");
-            if (bytes == null) throw new IllegalArgumentException("原始素材已不可用");
+            byte[] bytes = upload == null ? (byte[])row.get("raw_content") : upload;
+            if (bytes == null) bytes = files.read(pending, hash, MAX_UPLOAD_BYTES);
             var result = antivirus.scan(bytes);
             byte[] png = null; Integer width = null, height = null;
             if ("CLEAN".equals(result.status())) {
@@ -86,15 +93,32 @@ public class LedgerAssetService {
                 }
             }
             if (png != null) {
-                String hash = digest(png);
-                files.put("ledger/png/" + hash, hash, png, false);
-                repository.update("INSERT INTO rule_ledger_asset_file(asset_id,png_digest) VALUES(?,?)", row.get("id"), hash);
+                String pngHash = digest(png);
+                files.put("ledger/png/" + pngHash, pngHash, png);
+                repository.update("INSERT INTO rule_ledger_asset_file(asset_id,png_digest) VALUES(?,?)", id, pngHash);
+                if (stored) cleanupPending(id, hash, true);
+            } else if (!stored) {
+                storePending(id, hash, pending, bytes, upload != null);
             }
             repository.update("UPDATE rule_ledger_asset SET scan_status=?,scan_message=?,content=?,raw_content=?,content_type=?,size_bytes=?,width=?,height=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
-                    result.status(), result.message(), null, png == null ? bytes : null, png == null ? row.get("content_type") : "image/png", png == null ? number(row.get("source_size")) : png.length,
+                    result.status(), result.message(), null, null, png == null ? row.get("content_type") : "image/png", png == null ? number(row.get("source_size")) : png.length,
                     width, height, row.get("id"));
             return metadata(repository.one(TABLE, number(row.get("id")), false));
         } finally { PROCESSING.release(); }
+    }
+
+    private void storePending(long id, String hash, String ref, byte[] bytes, boolean newAsset) {
+        files.put(ref, hash, bytes);
+        if (newAsset) cleanupPending(id, hash, false);
+    }
+
+    private void cleanupPending(long id, String hash, boolean onCommit) {
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override public void afterCompletion(int status) {
+                        if (status == (onCommit ? STATUS_COMMITTED : STATUS_ROLLED_BACK)) files.removePending(id, hash);
+                    }
+                });
     }
 
     @Transactional
@@ -121,14 +145,25 @@ public class LedgerAssetService {
         for (long id : ids.stream().distinct().sorted().toList()) {
             var row = repository.one(TABLE, id, true); access.requireEdit(TABLE, row);
             if (repository.referenced("ASSET", id)) throw new IllegalArgumentException("素材已被草稿或历史版本引用，不能删除");
+            if (!"CLEAN".equals(row.get("scan_status")) && row.get("raw_content") == null) cleanupPending(id, (String)row.get("sha256"), true);
         }
         for (long id : ids.stream().distinct().toList()) repository.update("DELETE FROM rule_ledger_asset WHERE id=?", id);
     }
 
+    @Transactional
     public byte[] content(long id) {
         var row = repository.one(TABLE, id, false);
         if (!"CLEAN".equals(row.get("scan_status"))) throw new PlatformException(PlatformCode.RESOURCE_CONFLICT, "素材尚未通过安全检测，不能预览或下载");
-        if (row.get("content") instanceof byte[] legacy) return legacy;
+        if (row.get("content") instanceof byte[] legacy) {
+            row = repository.one(TABLE, id, true);
+            if (row.get("content") instanceof byte[]) {
+                String hash = digest(legacy);
+                files.put("ledger/png/" + hash, hash, legacy);
+                repository.update("INSERT INTO rule_ledger_asset_file(asset_id,png_digest) VALUES(?,?)", id, hash);
+                repository.update("UPDATE rule_ledger_asset SET content=NULL WHERE id=?", id);
+            }
+            return legacy;
+        }
         String hash = repository.queryForObject("SELECT png_digest FROM rule_ledger_asset_file WHERE asset_id=?", String.class, id);
         return files.read("ledger/png/" + hash, hash, 16L * 1024 * 1024);
     }

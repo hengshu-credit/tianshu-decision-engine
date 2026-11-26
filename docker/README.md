@@ -316,10 +316,25 @@ MySQL、Redis、Kafka 的更新、备份、恢复单独维护，应用升级不�
 
 在变量管理选择 SFTP 来源和「引擎内置 SFTP」，远端路径可引用进件字段或上游接口的返回字段。第三方收到引擎调用后，先用获授权的上传账户将结果写入项目目录，再返回相对路径。建议每笔进件使用唯一文件名，先写临时文件再在同一目录重命名，成功后才返回路径。变量支持文本、JSON、Base64 和项目隔离的缓存；需要每次读取原件时，将跨规则缓存设为 0。个人上传单文件上限为 256 MiB，执行变量读取上限为 10 MiB，图片导入上限为 5 MiB。
 
-上传目录是可写的交接区。素材导入会扫描原件并重编码为 PNG，模型新建和替换会校验 PMML/ONNX、记录摘要并创建审批草稿。新通过扫描的素材与默认 MySQL 模型仓共用不可变文件对象，既有素材和既有模型按原引用读取。交接区中的覆盖和删除不改变已导入的素材和模型版本。备份时同时保留业务数据库以及上传目录和主机密钥所在的模型文件卷。
+上传目录是可写的交接区。素材导入会扫描原件并重编码为 PNG，模型新建和替换会校验 PMML/ONNX、记录摘要并创建审批草稿。入库后的内容存放在独立 SFTP 的受管目录，覆盖交接区的文件不会改变已有版本。
 
-### 部署入口
+### 启动独立 SFTP
 
-单独启动 JAR 时监听 `127.0.0.1:2222`，可通过 `RULE_ENGINE_SFTP_BIND`、`RULE_ENGINE_SFTP_PORT` 和 `RULE_ENGINE_SFTP_DIRECTORY` 指定监听地址、端口和持久目录。Compose 部署通过 web 容器的 TCP 转发将多个 server 副本作为一个入口，默认只在宿主机回环地址发布。需要外部上传时，在服务端环境文件中设置 `ENGINE_SFTP_BIND_ADDRESS` 为上传方可达的宿主机地址，`ENGINE_SFTP_PORT` 为分配的 TCP 端口。SFTP 管理页只显示系统连接的用途。
+在一台存储主机部署一个实例。把同版本发布包内的 server.jar 放到稳定路径，在生效的服务端 env 中填写其绝对路径 `SFTP_SERVER_JAR`、SFTP 宿主机内网监听地址 `ENGINE_SFTP_BIND_ADDRESS`、端口 `ENGINE_SFTP_PORT` 和独立生成的 `ENGINE_SFTP_PASSWORD`。该实例还需要能连接控制台使用的 MySQL，以便验证上传账户的公钥、状态和项目授权。以下命令在已整理的安装根目录执行，平铺安装将 env 路径改为 `.env.server`。
 
-已有安装的日常更新会保留原 Compose 和 Nginx 文件。启用本功能时，从新版合并对应 Compose 中的 server 监听设置、web 端口和 stream 模板挂载，并复制 `docker/nginx/sftp.stream-template` 到安装目录的对应位置。所有副本必须共享同一可写模型文件卷；跨主机部署使用支持文件锁和原子重命名的共享存储。已有数据库适用的增量脚本为 `migrations/2026-11-26-engine-sftp.sql`。
+```bash
+docker compose --env-file config/.env.server -f docker/docker-compose.sftp.yml up -d --wait sftp
+docker compose --env-file config/.env.server -f docker/docker-compose.sftp.yml logs sftp
+```
+
+在每台业务节点及样例导入器的 env 中设置同一组 `ENGINE_SFTP_HOST`、`ENGINE_SFTP_PORT`、`ENGINE_SFTP_USERNAME`、`ENGINE_SFTP_PASSWORD` 和 `ENGINE_SFTP_HOST_FINGERPRINT`。最后一项取自存储主机可信日志中的完整 `SHA256:…`。容器内的主机地址必须能到达存储主机。业务节点启动时验证主机身份、认证并打开文件仓。单独运行 JAR 时使用 `java -jar server.jar --engine-sftp-server` 启动存储服务，普通 server 继续用原命令启动。JAR 模式的持久目录可通过 `ENGINE_SFTP_DIRECTORY` 设置。
+
+更新独立服务时，将同版本校验通过的 JAR 放在存储主机的稳定路径，再用上述 Compose 配置加 `--force-recreate` 重建 sftp 容器，保留原数据卷和主机密钥。
+
+独立服务的数据卷内，`host-key` 是主机密钥，`files/private` 和 `files/projects` 是个人与项目交接区，`files/managed` 保存模型和素材。上传账户只看到自己的根目录。备份应同时覆盖该卷和管理库。也可配置现有 SFTP，但需在该服务上配置专用账户根目录及目录隔离，禁止上传方创建链接、访问其他用户目录或受管文件。控制台自动开通、换钥和撤销上传账户由随包的独立服务提供。
+
+### 从上一版升级
+
+1. 停止写入，备份业务库、旧文件卷和主机密钥。将旧 `engine-sftp/private`、`engine-sftp/projects` 分别复制到新数据卷的 `files/private`、`files/projects`。要保留既有主机指纹，将旧 `host-key` 放在新卷顶层。旧卷分散在不同主机时，先核对同路径文件摘要，解决冲突后再合并。
+2. 释放原 web 的 SFTP 映射端口，再启动独立服务。已有安装需合并新版 server 与导入器的 SFTP 环境配置，移除旧 web 的 SFTP 端口及 stream 模板挂载。部署脚本会保留现场 Compose，因此需要显式合并这些变更。
+3. 核对指纹并配置所有节点。旧 MySQL 文件仓中的模型、冻结包和素材按原引用校验后复制到 SFTP。历史文件卷需在迁移节点保持可读，可用 `java -jar server.jar --migrate-model-files` 迁移模型。首次读取旧内联图片时会保存到 SFTP。验证新节点的冷读和备份恢复后，再决定旧卷和旧库的保留期限。

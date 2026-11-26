@@ -1,6 +1,5 @@
 package com.hengshucredit.rule.server.sftp;
 
-import com.hengshucredit.rule.server.security.ConsolePermissionService;
 import org.apache.sshd.common.config.keys.AuthorizedKeyEntry;
 import org.apache.sshd.common.config.keys.KeyUtils;
 import org.apache.sshd.common.digest.BuiltinDigests;
@@ -15,11 +14,9 @@ import java.util.regex.Pattern;
 public final class EngineSftpAccounts {
     private static final Pattern LOGIN = Pattern.compile("u([1-9][0-9]{0,17})(?:-p([1-9][0-9]{0,17}))?");
     private final JdbcTemplate db;
-    private final ConsolePermissionService permissions;
 
-    EngineSftpAccounts(JdbcTemplate db, ConsolePermissionService permissions) {
+    EngineSftpAccounts(JdbcTemplate db) {
         this.db = db;
-        this.permissions = permissions;
     }
 
     public void configure(long account, String publicKey, boolean disable) {
@@ -53,8 +50,10 @@ public final class EngineSftpAccounts {
                         + "WHERE u.id=? AND u.status=1 AND u.registration_status='ACTIVE' AND u.merged_into_user_id IS NULL",
                 (rs, i) -> new Identity(user, project, rs.getString(1), rs.getLong(2)), user);
         if (rows.isEmpty() || !rows.get(0).fingerprint().equals(KeyUtils.getFingerPrint(BuiltinDigests.sha256, key))) return null;
-        if (project != null && (!permissions.scope(user).allowsProject(project)
-                || !Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM rule_project WHERE id=?)", Boolean.class, project)))) return null;
+        if (project != null && !Boolean.TRUE.equals(db.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM rule_project p JOIN console_user u ON u.id=? WHERE p.id=? "
+                        + "AND (u.project_access_mode='ALL' OR EXISTS(SELECT 1 FROM console_user_project a "
+                        + "WHERE a.user_id=u.id AND a.project_id=p.id)))", Boolean.class, user, project))) return null;
         return rows.get(0);
     }
 

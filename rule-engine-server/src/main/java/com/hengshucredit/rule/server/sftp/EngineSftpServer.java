@@ -14,8 +14,6 @@ import org.apache.sshd.server.session.ServerSession;
 import org.apache.sshd.sftp.server.FileHandle;
 import org.apache.sshd.sftp.server.SftpEventListener;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -27,21 +25,24 @@ import java.util.Set;
 
 import static org.apache.sshd.sftp.common.SftpConstants.*;
 
-@Component
-@org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication
 public final class EngineSftpServer {
     private static final AttributeKey<EngineSftpAccounts.Identity> IDENTITY = new AttributeKey<>();
     private static final Set<Integer> OPERATIONS = Set.of(SSH_FXP_INIT, SSH_FXP_OPEN, SSH_FXP_CLOSE, SSH_FXP_READ,
             SSH_FXP_WRITE, SSH_FXP_STAT, SSH_FXP_LSTAT, SSH_FXP_FSTAT, SSH_FXP_OPENDIR, SSH_FXP_READDIR,
             SSH_FXP_REMOVE, SSH_FXP_MKDIR, SSH_FXP_RMDIR, SSH_FXP_REALPATH, SSH_FXP_RENAME, SSH_FXP_EXTENDED);
-    private final EngineSftpFiles files;
+    private final Path directory;
+    private final String username;
+    private final byte[] password;
+    private static final AttributeKey<Boolean> SERVICE = new AttributeKey<>();
     private final EngineSftpAccounts accounts;
     private final SshServer server = SshServer.setUpDefaultServer();
 
-    EngineSftpServer(EngineSftpFiles files, EngineSftpAccounts accounts,
-                     @Value("${rule-engine.sftp.bind:127.0.0.1}") String bind,
-                     @Value("${rule-engine.sftp.port:2222}") int port) {
-        this.files = files;
+    EngineSftpServer(Path directory, EngineSftpAccounts accounts, String bind, int port, String username, String password) {
+        if (username.isBlank() || username.matches("u[0-9]+(-p[0-9]+)?") || password.isBlank())
+            throw new IllegalArgumentException("请配置独立的引擎 SFTP 服务账户与密码");
+        this.directory = directory.toAbsolutePath().normalize();
+        this.username = username;
+        this.password = password.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         this.accounts = accounts;
         server.setHost(bind);
         server.setPort(port);
@@ -49,8 +50,16 @@ public final class EngineSftpServer {
 
     @PostConstruct
     void start() throws IOException {
-        server.setKeyPairProvider(hostKey(files.root()));
-        server.setUserAuthFactories(List.of(UserAuthPublicKeyFactory.INSTANCE));
+        var keys = hostKey(directory);
+        server.setKeyPairProvider(keys);
+        server.setUserAuthFactories(List.of(UserAuthPublicKeyFactory.INSTANCE,
+                org.apache.sshd.server.auth.password.UserAuthPasswordFactory.INSTANCE));
+        server.setPasswordAuthenticator((login, supplied, session) -> {
+            if (!username.equals(login) || !java.security.MessageDigest.isEqual(password,
+                    supplied.getBytes(java.nio.charset.StandardCharsets.UTF_8))) return false;
+            session.setAttribute(SERVICE, true);
+            return true;
+        });
         server.setPublickeyAuthenticator((name, key, session) -> {
             var identity = accounts.authenticate(name, key);
             if (identity == null) return false;
@@ -60,16 +69,19 @@ public final class EngineSftpServer {
         server.setForwardingFilter(RejectAllForwardingFilter.INSTANCE);
         server.setFileSystemFactory(new VirtualFileSystemFactory() {
             @Override public Path getUserHomeDir(SessionContext session) throws IOException {
+                Path storage = directory.resolve("files");
+                if (Boolean.TRUE.equals(session.getAttribute(SERVICE))) return Files.createDirectories(storage);
                 var id = session.getAttribute(IDENTITY);
                 if (id == null) throw new IOException("需要身份验证");
-                return Files.createDirectories(files.home(id.user(), id.project()));
+                Path scope = id.project() == null ? storage.resolve("private") : storage.resolve("projects").resolve(id.project().toString());
+                return Files.createDirectories(scope.resolve("u" + id.user()));
             }
         });
         var sftp = new SftpSubsystemFactory.Builder().build();
         sftp.addSftpEventListener(new SftpEventListener() {
             @Override public void received(ServerSession session, int type, int requestId) throws IOException {
                 if (!OPERATIONS.contains(type)) throw new IOException("不支持该文件操作");
-                if (!accounts.active(session.getAttribute(IDENTITY))) {
+                if (!Boolean.TRUE.equals(session.getAttribute(SERVICE)) && !accounts.active(session.getAttribute(IDENTITY))) {
                     session.close(true);
                     throw new IOException("账户授权已变更");
                 }
@@ -81,10 +93,14 @@ public final class EngineSftpServer {
             @Override public void writing(ServerSession session, String handle, FileHandle file, long offset,
                                           byte[] bytes, int start, int length) throws IOException {
                 long position = file.isOpenAppend() ? file.getFileChannel().size() : offset;
-                if (position < 0 || position > 268435456L - length) throw new IOException("文件超过 256 MiB 限制");
+                long limit = Boolean.TRUE.equals(session.getAttribute(SERVICE)) ? 512L << 20 : 256L << 20;
+                if (position < 0 || position > limit - length) throw new IOException("文件超过单文件大小限制");
             }
         });
         server.setSubsystemFactories(List.of(sftp));
+        var key = keys.loadKeys(null).iterator().next().getPublic();
+        org.slf4j.LoggerFactory.getLogger(EngineSftpServer.class).info("SFTP host fingerprint {}",
+                org.apache.sshd.common.config.keys.KeyUtils.getFingerPrint(org.apache.sshd.common.digest.BuiltinDigests.sha256, key));
         server.start();
     }
 

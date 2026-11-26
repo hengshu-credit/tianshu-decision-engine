@@ -80,10 +80,11 @@ public class LedgerWorkflowTest {
         UploadSecurity antivirus = new UploadSecurity(new UploadScanProperties()) { @Override public Result scan(byte[] bytes) { return scanResult.get(); } };
         var files = new com.hengshucredit.rule.server.service.SharedFileStore() {
             final Map<String,byte[]> content = new java.util.HashMap<>();
-            public void put(String ref, String hash, byte[] bytes, boolean archive) {
+            public void put(String ref, String hash, byte[] bytes) {
                 assertEquals(LedgerAssetService.digest(bytes), hash);
                 content.put(ref, bytes.clone());
             }
+            public void removePending(long id, String hash) { content.remove("ledger/pending/" + id + "/" + hash); }
             public byte[] read(String ref, String hash, long limit) {
                 byte[] bytes = content.get(ref);
                 assertEquals(LedgerAssetService.digest(bytes), hash);

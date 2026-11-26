@@ -275,7 +275,7 @@ ONNX 神经网络模型可在“模型管理”中逐个选择 CPU 或 CUDA，�
 
 启动时使用已有的 `preloadOnStartup` 配置定位已发布版本。审批事务提交后，当前节点与通过 Redis 接收通知的其他 server 节点按模型 ID 和已发布版本预热 ONNX 会话或 PMML evaluator。全局 `RULE_MODEL_PRELOAD_ON_PUBLISH` 默认为 `true`，可在模型配置中用 `preloadOnPublish` 单独覆盖。关闭预热的模型仍可在调用时加载；已运行的请求和固定历史版本继续使用各自的内容摘要。文件字节缓存预算由 `RULE_MODEL_FILE_CACHE_BYTES` 设置，默认 128 MiB。缺失文件和摘要错误会报告失败；热加载失败记录模型 ID 和版本，可恢复文件后重试或重启。
 
-默认使用 `RULE_MODEL_STORAGE_BACKEND=MYSQL`。模型原件按摘要去重，整份无损压缩为一条二进制载荷，仅超过实际服务端单包容量时分段，冻结包使用同一共享文件库。各宿主机指向同一管理库即可冷读，项目继续使用独立的文件标识和权限。旧卷迁移以及显式 `FILESYSTEM` 模式使用 `RULE_MODEL_STORAGE_DIRECTORY`（Compose 为 `MODEL_FILES_MOUNT`）。
+模型原件、冻结模型制品和台账素材统一存入独立 SFTP。所有 server 和导入器连接同一主机，数据库保存元数据、权限和不可变文件引用。旧模型卷可通过 `RULE_MODEL_STORAGE_DIRECTORY`（Compose 为 `MODEL_FILES_MOUNT`）提供给迁移节点。[独立 SFTP 部署与升级](../docker/README.md#启动独立-sftp)
 
 历史内联数据和旧卷引用由 `java -jar server.jar --migrate-model-files` 迁移。先停写，备份管理库和旧卷，并用独立库验证恢复。迁移节点必须能访问真实扫描器和原有文件；迁移后在未挂载旧卷的节点验证原件和固定版本摘要，再切流量。旧 JAR 回滚应使用迁移前的匹配备份。[共享文件库与压缩实测](model-ledger-storage.md)
 

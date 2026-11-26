@@ -71,12 +71,13 @@ public class VariableSourceResolverTest {
         variable.setProjectId(0L);
         variable.setVarType("OBJECT");
         var root = java.nio.file.Files.createTempDirectory("engine-sftp-variable-");
-        try {
+        try (var fixture = new com.hengshucredit.rule.server.sftp.EngineSftpFixture(root)) {
             for (int project : List.of(1, 2)) {
-                var home = java.nio.file.Files.createDirectories(root.resolve("projects/" + project + "/u7"));
-                java.nio.file.Files.writeString(home.resolve("result.json"), "{\"score\":" + project + "}");
+                byte[] bytes = ("{\"score\":" + project + "}").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                fixture.nodeA.publish("/projects/" + project + "/u7/result.json",
+                        com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(bytes), new java.io.ByteArrayInputStream(bytes), bytes.length);
             }
-            setField(resolver, "engineSftpFiles", new com.hengshucredit.rule.server.sftp.EngineSftpFiles(root.toString(), null));
+            setField(resolver, "engineSftpFiles", new com.hengshucredit.rule.server.sftp.EngineSftpFiles(fixture.nodeB, null));
             setField(resolver, "sftpFileCache", new SftpFileCache(new ExternalCallProperties(), (SftpFileDistributedCache) null));
             for (long project : List.of(1L, 2L, 1L)) {
                 Map<String,Object> values = resolver.resolve(project, Map.of("address", "u7/result.json"), VariableResolveOptions.defaults());

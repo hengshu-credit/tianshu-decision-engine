@@ -223,10 +223,13 @@ services:
       LOGGING_FILE_NAME: ""
       JAVA_TOOL_OPTIONS: ${SERVER_JAVA_TOOL_OPTIONS:--Xms256m -Xmx768m -XX:MaxMetaspaceSize=256m -XX:MaxDirectMemorySize=256m -XX:+ExitOnOutOfMemoryError}
       LOGGING_LEVEL_ROOT: ${SERVER_LOG_LEVEL:-WARN}
-      RULE_MODEL_STORAGE_BACKEND: ${RULE_MODEL_STORAGE_BACKEND:-MYSQL}
+      ENGINE_SFTP_HOST: ${ENGINE_SFTP_HOST:-host.docker.internal}
+      ENGINE_SFTP_PORT: ${ENGINE_SFTP_PORT:-2222}
+      ENGINE_SFTP_USERNAME: ${ENGINE_SFTP_USERNAME:-engine-storage}
+      ENGINE_SFTP_PASSWORD: "${ENGINE_SFTP_PASSWORD:-}"
+      ENGINE_SFTP_HOST_FINGERPRINT: "${ENGINE_SFTP_HOST_FINGERPRINT:-}"
       RULE_MODEL_WRITE_PAYLOAD_LIMIT_BYTES: ${RULE_MODEL_WRITE_PAYLOAD_LIMIT_BYTES:-0}
       RULE_MODEL_STORAGE_DIRECTORY: /data/model-files
-      RULE_ENGINE_SFTP_BIND: 0.0.0.0
       RULE_MODEL_MAX_FILE_SIZE_BYTES: ${RULE_MODEL_MAX_FILE_SIZE_BYTES:-268435456}
       RULE_MODEL_PRELOAD_ON_PUBLISH: ${RULE_MODEL_PRELOAD_ON_PUBLISH:-true}
       RULE_MODEL_FILE_CACHE_BYTES: ${RULE_MODEL_FILE_CACHE_BYTES:-134217728}
@@ -358,16 +361,9 @@ services:
         read_only: true
         bind:
           create_host_path: false
-      - type: bind
-        source: ./nginx/sftp.stream-template
-        target: /etc/nginx/templates/sftp.conf.stream-template
-        read_only: true
-        bind:
-          create_host_path: false
     command: ["nginx", "-g", "daemon off;"]
     ports:
       - "${APP_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-9090}:80"
-      - "${ENGINE_SFTP_BIND_ADDRESS:-127.0.0.1}:${ENGINE_SFTP_PORT:-2222}:2222"
       - "${SERVER_PUBLIC_BIND_ADDRESS:-127.0.0.1}:${SERVER_PUBLIC_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/index.html >/dev/null"]

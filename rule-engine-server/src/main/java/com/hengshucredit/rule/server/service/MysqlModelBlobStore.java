@@ -30,7 +30,7 @@ import java.util.zip.InflaterInputStream;
 
 /** Shared immutable files. Normal-size model originals occupy one compressed BLOB, independently of network read size. */
 @Component
-public final class MysqlModelBlobStore implements SharedFileStore {
+public final class MysqlModelBlobStore {
     private static final int PACKET_OVERHEAD = 256;
     private static final int READ_WINDOW = 8 * 1024 * 1024;
     private final JdbcTemplate db;

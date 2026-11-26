@@ -561,7 +561,10 @@ test('新建字段按业务取值方式引导并可在送审前预览外数结�
   await expect(dialog.getByText('按业务取值方式完成字段配置', { exact: true }))
     .toBeVisible()
   await expect(dialog.getByText('3 个可用', { exact: true })).toHaveCount(0)
-  await expect(dialog.getByText('1 个可用', { exact: true })).toHaveCount(3)
+  for (const source of ['外数接口', '数据库查询', '名单匹配', 'SFTP 文件']) {
+    await expect(dialog.getByRole('button', { name: new RegExp(source) }).getByText('1 个可用', { exact: true })).toBeVisible()
+  }
+  await expect(dialog.getByText('1 个可用', { exact: true })).toHaveCount(4)
   await dialog.getByRole('button', { name: /外数接口/ }).click()
   await expect(dialog.getByText('保存前验证取值', { exact: true })).toBeVisible()
 

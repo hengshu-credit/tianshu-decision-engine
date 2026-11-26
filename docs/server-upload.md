@@ -37,6 +37,10 @@
 
 Compose 自动兼容现代 `docker compose` 与 `docker-compose`，优先前者；要求支持 `config --format json`、`up --wait`，不支持旧 Python Compose v1。服务器需要 Python 3.8+ 标准库和 Docker，无需 Maven、Node.js 或第三方 Python 包。构建入口见 [跨平台发布构建](release-packaging.md)。
 
+## 默认文件服务
+
+先部署一台独立 SFTP，配置全部业务节点的地址、服务凭据和主机指纹，再启动应用。已有部署需要合并新 Compose 环境项，并搬迁上一版的上传目录与主机密钥。[独立 SFTP 部署与升级](../docker/README.md#启动独立-sftp)
+
 ## 模型与素材上传扫描
 
 含 PMML、ONNX 原件的导入需要每个 server 副本都能访问 ClamD。已有可信内网扫描器时，直接填写该服务的主机和端口。需要随本安装部署扫描器时，将包内的 `docker/docker-compose.clamd.yml` 放到安装目录的 `docker/`。该服务保留病毒库卷，使用引擎现有网络，未发布宿主机扫描端口。

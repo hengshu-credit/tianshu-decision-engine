@@ -63,6 +63,16 @@ spring:
     redis:
       namespace: ${SESSION_REDIS_NAMESPACE:tianshu:session}
 
+engine:
+  sftp:
+    host: ${ENGINE_SFTP_HOST:127.0.0.1}
+    port: ${ENGINE_SFTP_PORT:2222}
+    username: ${ENGINE_SFTP_USERNAME:engine-storage}
+    password: ${ENGINE_SFTP_PASSWORD:}
+    host-fingerprint: ${ENGINE_SFTP_HOST_FINGERPRINT:}
+    directory: ${ENGINE_SFTP_DIRECTORY:./data/engine-sftp}
+    bind-address: ${ENGINE_SFTP_BIND_ADDRESS:127.0.0.1}
+
 rule-engine:
   upload:
     antivirus-host: ${UPLOAD_ANTIVIRUS_HOST:${rule-engine.ledger.antivirus-host:}}
@@ -109,7 +119,6 @@ rule-engine:
     # 满额优先释放最久未用的空闲会话，全部在用时明确拒绝新的模型/运行配置。
     session-cache-max-entries: ${ONNX_SESSION_CACHE_MAX_ENTRIES:16}
   model:
-    storage-backend: ${RULE_MODEL_STORAGE_BACKEND:MYSQL}
     write-payload-limit: ${RULE_MODEL_WRITE_PAYLOAD_LIMIT_BYTES:0}
     storage-directory: ${RULE_MODEL_STORAGE_DIRECTORY:./data/model-files}
     file-cache-bytes: ${RULE_MODEL_FILE_CACHE_BYTES:134217728}
@@ -206,6 +215,7 @@ management:
 # 生产 Compose 默认根级别 WARN；升级进度和逐表结果仍应进入 server 标准日志。
 logging:
   level:
+    com.hengshucredit.rule.server.sftp.EngineSftpServer: INFO
     com.hengshucredit.rule.server.schema: INFO
     com.hengshucredit.rule.server.config.SchemaInitializationConfig: INFO
     com.hengshucredit.rule.server.service.SchemaSyncService: INFO
