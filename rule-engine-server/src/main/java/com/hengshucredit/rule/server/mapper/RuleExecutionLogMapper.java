@@ -1,5 +1,10 @@
 package com.hengshucredit.rule.server.mapper;
 
+import com.hengshucredit.rule.server.search.ElasticLogClient.Ref;
+import java.io.Serializable;
+import org.apache.ibatis.annotations.Result;
+import org.apache.ibatis.annotations.ResultMap;
+import org.apache.ibatis.annotations.Results;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -18,6 +23,7 @@ import java.util.List;
 
 @Mapper
 public interface RuleExecutionLogMapper extends BaseMapper<RuleExecutionLog> {
+    String RESTORED_TRACE = "COALESCE(trace_info,CONVERT(UNCOMPRESS(es_trace_archive) USING utf8mb4))";
     record LogicalIdentity(String traceId, Long logId, LocalDateTime logCreateTime) { }
 
     // 必须在调用方事务内执行；唯一 trace 行的锁持续到日志和指针一起提交。
@@ -49,12 +55,31 @@ public interface RuleExecutionLogMapper extends BaseMapper<RuleExecutionLog> {
     int bindLogicalIdentity(@Param("traceId") String traceId, @Param("id") Long id,
                             @Param("createTime") LocalDateTime createTime);
 
-    @Select("SELECT * FROM rule_execution_log_current ${ew.customSqlSegment}")
+    @Select("SELECT l.*," + RESTORED_TRACE + " AS stored_trace FROM rule_execution_log_current l ${ew.customSqlSegment}")
+    @Results(id = "auditLog",value = @Result(column = "stored_trace",property = "traceInfo"))
     IPage<RuleExecutionLog> selectLogicalPage(IPage<RuleExecutionLog> page,
                                              @Param(Constants.WRAPPER) Wrapper<RuleExecutionLog> wrapper);
 
+    @Select("SELECT id,create_time,trace_id,execution_project_id,root_rule_id,rule_code,project_code,rule_version,"
+            + "revision_id,artifact_digest,attempt_no,model_type,source,auth_code,auth_type,token_code,success,"
+            + "execute_time_ms,client_app_name,(trace_info IS NOT NULL OR es_trace_archive IS NOT NULL) AS trace_available "
+            + "FROM rule_execution_log_current ${ew.customSqlSegment}")
+    IPage<RuleExecutionLog> selectSummaryPage(IPage<RuleExecutionLog> page,
+                                              @Param(Constants.WRAPPER) Wrapper<RuleExecutionLog> wrapper);
+
+    @Select("SELECT id,create_time AS time,es_revision AS revision FROM rule_execution_log_current ${ew.customSqlSegment}")
+    IPage<Ref> selectSearchPage(IPage<?> page,
+                                             @Param(Constants.WRAPPER) Wrapper<RuleExecutionLog> wrapper);
+
+    @Select("SELECT id,create_time AS time,es_revision AS revision FROM rule_execution_log WHERE id=#{id}")
+    Ref selectAuditIdentity(@Param("id") Serializable id);
+
     @Select("SELECT * FROM rule_execution_log_current ${ew.customSqlSegment}")
     List<RuleExecutionLog> selectLogicalList(@Param(Constants.WRAPPER) Wrapper<RuleExecutionLog> wrapper);
+
+    @Select("SELECT l.*," + RESTORED_TRACE + " AS stored_trace FROM rule_execution_log l WHERE id=#{id}")
+    @ResultMap("auditLog")
+    RuleExecutionLog selectAuditLogById(@Param("id") Serializable id);
 
     @Select("SELECT COUNT(*) FROM rule_execution_log_current ${ew.customSqlSegment}")
     Long selectLogicalCount(@Param(Constants.WRAPPER) Wrapper<RuleExecutionLog> wrapper);

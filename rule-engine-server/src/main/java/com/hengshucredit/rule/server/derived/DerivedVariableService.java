@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.derived;
 
+import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Value;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
@@ -24,6 +26,7 @@ public class DerivedVariableService {
     @Resource
     private ApplicationHistoryRepository historyRepository;
     @Resource private IndexedHistoryCount indexedCounts;
+    @Value("${rule-engine.search.enabled:false}") private boolean searchEnabled;
     @Resource
     private ExecutionLogHistoryRepository executionLogHistoryRepository;
     @Resource
@@ -163,6 +166,23 @@ public class DerivedVariableService {
             }
             current = new HistoryQuery.Row(Long.MAX_VALUE, window.entryCutoff(), fields);
         }
+        if (searchEnabled && from != null && window.fieldKey() == null && equalityCount(config)) {
+            var step = DerivedVariableConfig.objects(config,"steps").get(0);
+            var field = DerivedVariableConfig.fieldKey(DerivedVariableConfig.objects(step,"fields").get(0));
+            var key = input.apply(DerivedVariableConfig.objects(step,"inputs").get(0));
+            Supplier<Map<LocalDateTime,IndexedHistoryCount.Count>> load = () ->
+                    executionLogHistoryRepository.searchCounts(scope,before,countWindows(config,options,before,from),field,key);
+            IndexedHistoryCount.Count count = null;
+            if (definitions == null || !"ENGINE".equals(definitions.get(field).source())) {
+                count = options == null || options.getInvocationCache() == null ? load.get().get(from)
+                        : options.getInvocationCache().historyFieldCount(new IndexedHistoryCount.Selection(scope,before,null),field,key,from,load);
+            }
+            if (count != null) {
+                long included = current == null ? 0 : (Long) HistoryQuery.evaluate(config,List.of(current),input,invoker);
+                recordHistory(variable,config,from,before,count.candidates() + (current == null ? 0 : 1));
+                return checkedValue(variable,count.matched()+included);
+            }
+        }
         if (indexedCounts != null && simpleCount(config)) {
             JSONObject geo = config.getJSONObject("geo");
             IndexedHistoryCount.Region region = geo == null ? null : new IndexedHistoryCount.Region(
@@ -172,8 +192,15 @@ public class DerivedVariableService {
                     HistoryQuery.number(input.apply(geo.getJSONObject("latitude"))).doubleValue(),
                     HistoryQuery.number(input.apply(geo.getJSONObject("radiusMeters"))).doubleValue());
             var selection = new IndexedHistoryCount.Selection(scope, before, region);
-            java.util.function.Supplier<Map<LocalDateTime, IndexedHistoryCount.Count>> load =
-                    () -> indexedCounts.count(selection, countWindows(config, options, before, from));
+            Supplier<Map<LocalDateTime, IndexedHistoryCount.Count>> load = () -> {
+                var windows = countWindows(config,options,before,from);
+                if (searchEnabled) {
+                    var counts = region == null ? executionLogHistoryRepository.searchCounts(scope,before,windows,null,null)
+                            : executionLogHistoryRepository.spatialCounts(selection,windows);
+                    if (!counts.isEmpty()) return counts;
+                }
+                return indexedCounts.count(selection,windows);
+            };
             var count = options == null || options.getInvocationCache() == null ? load.get().get(from)
                     : options.getInvocationCache().historyCount(selection, from, load);
             if (count != null) {
@@ -217,6 +244,19 @@ public class DerivedVariableService {
                 && DerivedVariableConfig.objects(config,"steps").isEmpty() && DerivedVariableConfig.objects(config,"filters").isEmpty();
     }
 
+    private static boolean equalityCount(JSONObject config) {
+        if (!"HISTORY".equals(config.getString("mode")) || !"COUNT".equals(config.getString("aggregate"))
+                || "ALL".equals(config.getString("windowUnit")) || "FIELD".equals(config.getString("timeSource"))
+                || "LATEST_PER_SUBJECT".equals(config.getString("recordMode"))
+                || config.getJSONObject("geo") != null || !DerivedVariableConfig.objects(config,"filters").isEmpty()) return false;
+        var steps = DerivedVariableConfig.objects(config,"steps");
+        if (steps.size()!=1) return false;
+        var step = steps.get(0);
+        var inputs = DerivedVariableConfig.objects(step,"inputs");
+        return inputs.size()==1 && ("LITERAL".equals(inputs.get(0).getString("kind")) || "REFERENCE".equals(inputs.get(0).getString("kind")))
+                && DerivedVariableConfig.objects(step,"fields").size()==1 && DerivedVariableConfig.objects(step,"filters").isEmpty();
+    }
+
     private static List<LocalDateTime> countWindows(JSONObject config, VariableResolveOptions options,
                                                      LocalDateTime before, LocalDateTime from) {
         var windows = new java.util.LinkedHashSet<LocalDateTime>();
@@ -227,7 +267,8 @@ public class DerivedVariableService {
             for (RuleVariable other : variables) {
                 if (!"DERIVED".equals(other.getVarSource())) continue;
                 var candidate = JSON.parseObject(other.getSourceConfig());
-                if (candidate != null && simpleCount(candidate)
+                if (candidate != null && (simpleCount(candidate) || equalityCount(candidate))
+                        && DerivedVariableConfig.objects(candidate,"steps").equals(DerivedVariableConfig.objects(config,"steps"))
                         && java.util.Objects.equals(candidate.get("geo"),config.get("geo"))
                         && java.util.Objects.equals(candidate.get("scope"),config.get("scope"))
                         && java.util.Objects.equals(candidate.get("ruleIds"), config.get("ruleIds"))) {

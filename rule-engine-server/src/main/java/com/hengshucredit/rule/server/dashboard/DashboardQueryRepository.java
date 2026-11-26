@@ -1,5 +1,8 @@
 package com.hengshucredit.rule.server.dashboard;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.hengshucredit.rule.server.search.ElasticLogClient;
+import com.hengshucredit.rule.server.search.LogSearchPages;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -22,6 +25,8 @@ import static com.hengshucredit.rule.server.dashboard.DashboardMetricField.REQUE
 public class DashboardQueryRepository {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.hengshucredit.rule.server.security.ConsoleDataPermissionHandler consoleDataScope;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LogSearchPages search;
 
     private String secured(String sql) { return consoleDataScope == null ? sql : consoleDataScope.filterSql(sql); }
 
@@ -91,8 +96,7 @@ public class DashboardQueryRepository {
     public List<Long> executionDurations(DashboardCriteria criteria) {
         List<Object> parameters = new ArrayList<>();
         StringBuilder sql = new StringBuilder(
-                "SELECT execution.execute_time_ms "
-                        + "FROM rule_execution_log_current execution "
+                " FROM rule_execution_log_current execution "
                         + "WHERE execution.create_time >= ? "
                         + "AND execution.create_time <= ? "
                         + "AND execution.execute_time_ms IS NOT NULL "
@@ -103,7 +107,13 @@ public class DashboardQueryRepository {
                 "execution.project_code");
         appendExecutionRuleFilter(sql, parameters, criteria,
                 "execution.rule_code");
-        return scopedQuery(sql.toString(),
+        if (search != null) {
+            var durations=search.dimensions(ElasticLogClient.EXECUTION,"cost_ms",
+                    secured("SELECT execution.id,execution.create_time,execution.es_revision"+sql),parameters,
+                    doc -> doc.path("cost_ms").longValue());
+            if (durations.isPresent()) return durations.get();
+        }
+        return scopedQuery("SELECT execution.execute_time_ms"+sql,
                 (rs, rowNumber) -> rs.getLong(1), parameters.toArray());
     }
 
@@ -111,8 +121,7 @@ public class DashboardQueryRepository {
                                           String moduleType) {
         List<Object> parameters = new ArrayList<>();
         StringBuilder sql = new StringBuilder(
-                "SELECT success, request_success, found, provider_request, "
-                        + "cost_time_ms FROM rule_runtime_call_log runtime_call "
+                " FROM rule_runtime_call_log runtime_call "
                         + "WHERE runtime_call.create_time >= ? "
                         + "AND runtime_call.create_time <= ? "
                         + "AND runtime_call.module_type = ?");
@@ -126,7 +135,15 @@ public class DashboardQueryRepository {
         appendProjectCode(sql, parameters, criteria,
                 "runtime_call.project_code");
         appendRuntimeRuleFilter(sql, parameters, criteria);
-        return scopedQuery(sql.toString(), (rs, rowNumber) ->
+        if (search != null) {
+            var calls=search.dimensions(ElasticLogClient.CALL,
+                    "success,request_success,found,provider_request,cost_ms",
+                    secured("SELECT runtime_call.id,runtime_call.create_time,runtime_call.es_revision"+sql),parameters,
+                    doc -> new RuntimeCall(doc.path("success").asInt()!=0,flag(doc,"request_success"),
+                            flag(doc,"found"),flag(doc,"provider_request"),doc.path("cost_ms").isNumber()?doc.get("cost_ms").longValue():null));
+            if (calls.isPresent()) return calls.get();
+        }
+        return scopedQuery("SELECT success, request_success, found, provider_request, cost_time_ms"+sql, (rs, rowNumber) ->
                         new RuntimeCall(rs.getBoolean("success"),
                                 nullableBoolean(rs, "request_success"),
                                 nullableBoolean(rs, "found"),
@@ -161,6 +178,10 @@ public class DashboardQueryRepository {
                 scopeParameters.toArray());
         return new ResourceCounts(databaseCount, listCount, apiCount,
                 listCategories);
+    }
+
+    private static Boolean flag(JsonNode doc,String field) {
+        return doc.path(field).isNumber() ? doc.get(field).intValue()!=0 : null;
     }
 
     public List<BillingAmount> billingByCurrency(DashboardCriteria criteria) {

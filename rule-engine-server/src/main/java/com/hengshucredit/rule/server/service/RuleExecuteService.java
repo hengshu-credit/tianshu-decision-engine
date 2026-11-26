@@ -297,7 +297,7 @@ public class RuleExecuteService {
         log.setHistoryFields(JSON.toJSONString(resolveOptions.getInvocationCache().historySnapshot(inputFields, originalInput, executeParams),
                 com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
         log.setInputParams(toJsonSafely(originalInput));
-        log.setOutputResult(toJsonSafely(result.getResult()));
+        log.setOutputResult(SafeLogJson.output(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
@@ -580,7 +580,7 @@ public class RuleExecuteService {
         log.setClientAppName(clientAppName);
         applyAuthAttribution(log, authContext);
         log.setInputParams(toJsonSafely(originalInput));
-        log.setOutputResult(toJsonSafely(result.getResult()));
+        log.setOutputResult(SafeLogJson.output(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());

@@ -41,7 +41,10 @@ public class HistoryFieldIndex {
                 current.getId(), time, current.getTraceId(), current.getExecutionProjectId(), current.getProjectCode(),
                 current.getActorUserId(), current.getRootRuleId(), started);
         var fields = snapshot.getJSONObject("fields");
-        var entries = new TreeMap<>(fields).entrySet();
+        // Only numbers and explicit nulls can certify a coordinate. Missing index entries use the
+        // original snapshot/API exception path, just like a legacy X row. Keep full bucket coverage.
+        var entries = new TreeMap<>(fields).entrySet().stream()
+                .filter(entry -> entry.getValue() == null || entry.getValue() instanceof Number).toList();
         jdbc.batchUpdate("INSERT INTO rule_history_numeric_field (log_id,log_create_time,field_key,numeric_value,"
                         + "value_kind,execution_project_id,started_at) VALUES (?,?,?,?,?,?,?)", entries, 256,
                 (ps, entry) -> {
@@ -51,7 +54,7 @@ public class HistoryFieldIndex {
                     ps.setString(3, entry.getKey());
                     if (value instanceof Number number) ps.setDouble(4, number.doubleValue());
                     else ps.setNull(4, Types.DOUBLE);
-                    ps.setString(5, value == null ? "Z" : value instanceof Number ? "N" : "X");
+                    ps.setString(5, value == null ? "Z" : "N");
                     ps.setObject(6, current.getExecutionProjectId(), Types.BIGINT);
                     ps.setTimestamp(7, started);
                 });

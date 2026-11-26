@@ -47,3 +47,7 @@ export function getRuleSetStats(params) {
 export function replayExecutionLog(id) {
   return request({ url: `/rule/log/${id}/replay`, method: 'post' })
 }
+
+export function getExecutionLogDetail(id, createTime) {
+  return request({ url: `/rule/log/${id}`, method: 'get', params: { createTime: createTime.replace(' ', 'T') } })
+}

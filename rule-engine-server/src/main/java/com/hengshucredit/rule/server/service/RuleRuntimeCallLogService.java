@@ -1,5 +1,10 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.server.search.LogSearchPages;
+import java.io.Serializable;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -26,6 +31,8 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
     private RuntimeCallLogAsyncWriter asyncWriter;
     @Resource
     private RuntimeCallLogContentPolicy contentPolicy;
+    @Autowired(required = false)
+    private LogSearchPages searchPages;
 
     public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
                                               String targetCode, String traceId, Integer success,
@@ -48,6 +55,7 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
                 null, success, startTime, endTime);
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
                                               String targetCode, String traceId, String callId, Long projectId,
                                               String projectCode, Integer success, LocalDateTime startTime,
@@ -85,8 +93,21 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         if (endTime != null) {
             wrapper.le(RuleRuntimeCallLog::getCreateTime, endTime);
         }
-        wrapper.orderByDesc(RuleRuntimeCallLog::getCreateTime);
+        wrapper.orderByDesc(RuleRuntimeCallLog::getCreateTime,RuleRuntimeCallLog::getId);
+        if (searchPages != null) return searchPages.calls(() -> baseMapper.selectSearchPage(new Page<>(pageNum,pageSize),wrapper));
         return page(new Page<>(pageNum, pageSize), wrapper);
+    }
+
+    private List<RuleRuntimeCallLog> auditLogs(LambdaQueryWrapper<RuleRuntimeCallLog> wrapper) {
+        if (searchPages == null) return list(wrapper);
+        return searchPages.calls(() -> baseMapper.selectSearchPage(new Page<>(1,-1,false),wrapper)).getRecords();
+    }
+
+    @Override
+    public RuleRuntimeCallLog getById(Serializable id) {
+        if (searchPages == null) return super.getById(id);
+        var logs = auditLogs(new LambdaQueryWrapper<RuleRuntimeCallLog>().eq(RuleRuntimeCallLog::getId,id));
+        return logs.isEmpty() ? null : logs.get(0);
     }
 
     /** 返回一次调用的原始报文和稳定关联键，供业务分析系统按日志 ID 直接取数。 */
@@ -141,7 +162,7 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         if (log.getProjectId() == null) query.isNull(RuleRuntimeCallLog::getProjectId);
         else query.eq(RuleRuntimeCallLog::getProjectId, log.getProjectId());
         List<Map<String, Object>> steps = traceSteps(result);
-        mergeAssignmentSteps(steps, list(query));
+        mergeAssignmentSteps(steps, auditLogs(query));
         result.put("traceSteps", steps);
         return result;
     }
@@ -157,7 +178,7 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         if (projectId != null) {
             wrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
         }
-        return list(wrapper);
+        return auditLogs(wrapper);
     }
 
     /** 按根 Trace 一次取出该规则执行内所有外数逻辑调用的原始报文。 */
@@ -179,7 +200,7 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
                 .orderByAsc(RuleRuntimeCallLog::getCreateTime)
                 .orderByAsc(RuleRuntimeCallLog::getId);
         if (projectId != null) wrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
-        return list(wrapper);
+        return auditLogs(wrapper);
     }
 
     /** 按根 Trace 取外数报文；projectId 非空时同时做项目隔离。 */
@@ -196,7 +217,7 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         if (projectId != null) {
             wrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
         }
-        List<RuleRuntimeCallLog> summaries = list(wrapper);
+        List<RuleRuntimeCallLog> summaries = auditLogs(wrapper);
         List<String> callIds = summaries.stream().filter(log -> "API_INVOKE".equals(log.getActionType())).map(RuleRuntimeCallLog::getCallId)
                 .filter(this::hasText).distinct().toList();
         Map<String, List<RuleRuntimeCallLog>> assignmentsByCallId = new LinkedHashMap<>();
@@ -208,7 +229,7 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
                     .orderByAsc(RuleRuntimeCallLog::getCreateTime)
                     .orderByAsc(RuleRuntimeCallLog::getId);
             if (projectId != null) assignmentWrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
-            for (RuleRuntimeCallLog assignment : list(assignmentWrapper)) {
+            for (RuleRuntimeCallLog assignment : auditLogs(assignmentWrapper)) {
                 assignmentsByCallId.computeIfAbsent(assignment.getCallId(), ignored -> new ArrayList<>())
                         .add(assignment);
             }
@@ -328,6 +349,12 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
             }
             return;
         }
+        if (searchPages != null) {
+            // The inserted row is the durable ES delivery entry. An accepted diagnostic event can
+            // be reclaimed by another node even if the process exits before its first bulk request.
+            if (!save(log)) throw new IllegalStateException("调用日志投递记录未写入");
+            return;
+        }
         if (asyncWriter != null) {
             asyncWriter.offer(log);
             return;
@@ -360,6 +387,9 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         if (endTime != null) {
             wrapper.le(RuleRuntimeCallLog::getCreateTime, endTime);
         }
+        wrapper.select(RuleRuntimeCallLog::getTargetRefId,RuleRuntimeCallLog::getTargetCode,RuleRuntimeCallLog::getTargetName,
+                RuleRuntimeCallLog::getCacheStatus,RuleRuntimeCallLog::getProviderRequest,RuleRuntimeCallLog::getRequestSuccess,
+                RuleRuntimeCallLog::getFound,RuleRuntimeCallLog::getCostTimeMs);
         wrapper.orderByAsc(RuleRuntimeCallLog::getTargetRefId)
                 .orderByAsc(RuleRuntimeCallLog::getCreateTime);
         return buildExternalApiStats(list(wrapper));

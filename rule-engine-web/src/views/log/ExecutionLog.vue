@@ -251,7 +251,7 @@
         <el-table-column v-if="columnKey === 'trace'" label="追踪" width="70" align="center" >
           <template v-slot="{ row }">
             <el-tag
-              v-if="row.traceInfo"
+              v-if="hasExecutionTrace(row)"
               :type="row.success === 1 ? 'success' : 'danger'"
               size="small"
               ><el-icon><el-icon-view /></el-icon> 有</el-tag
@@ -263,7 +263,7 @@
         <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查看', '回放'])" align="center" fixed="right">
           <template v-slot="{ row }">
             <el-button link size="small" type="primary" @click="handleViewDetail(row)">详情</el-button>
-            <el-button v-if="!row.traceInfo" link size="small" type="warning" :loading="replayLoadingId === row.id" @click="handleReplay(row)">回溯</el-button>
+            <el-button v-if="!hasExecutionTrace(row)" link size="small" type="warning" :loading="replayLoadingId === row.id" @click="handleReplay(row)">回溯</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -611,7 +611,7 @@ import { listDefinitions as listRules } from '@/api/definition'
 import { getProject, listProjects } from '@/api/project'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
-import { getRuleSetStats, replayExecutionLog } from '@/api/runtimeLog'
+import { getExecutionLogDetail, getRuleSetStats, replayExecutionLog } from '@/api/runtimeLog'
 import TraceTree from '@/components/common/TraceTree.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
@@ -861,6 +861,7 @@ this.loadRequestId++
 this.ruleSetStatsRequestId++
 },
 methods: {
+hasExecutionTrace(row) { return row.traceAvailable ?? Boolean(row.traceInfo) },
 operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
 ruleSetCoverageHint,
 applyProjectContext: function (project) {
@@ -944,7 +945,7 @@ this.list = []
 try {
   this.normalizePagination()
   this.saveCachedState()
-  var params = Object.assign({}, this.qp)
+  var params = Object.assign({}, this.qp, { summaryOnly: true })
   if (this.contextProjectId) {
     params.projectId = this.contextProjectId
     if (this.focusedTrace && params.projectCode === this.contextProjectCode) delete params.projectCode
@@ -1231,7 +1232,12 @@ this.detailLoading = true
 this.detail = Object.assign({}, row)
 this.detailVis = true
 try {
-  await this.ensureDetailMetadata(row)
+  if (typeof row.traceAvailable === 'boolean') {
+    const { data } = await getExecutionLogDetail(row.id, row.createTime)
+    if (requestId !== this.detailRequestId || !this.detailVis) return
+    this.detail = data
+  }
+  await this.ensureDetailMetadata(this.detail)
   if (requestId !== this.detailRequestId || !this.detailVis) return
   await this.loadVarMap()
   if (requestId !== this.detailRequestId || !this.detailVis) return

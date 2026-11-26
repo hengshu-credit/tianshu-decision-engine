@@ -1186,6 +1186,10 @@ CREATE TABLE IF NOT EXISTS `rule_function_version` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='函数版本历史表';
 
 CREATE TABLE IF NOT EXISTS `rule_execution_log` (
+  `es_trace_archive` LONGBLOB DEFAULT NULL COMMENT '检索确认后无损压缩的执行追踪正文，供重建索引和数据库回退读取',
+  `es_revision` BIGINT NOT NULL DEFAULT 1 COMMENT '当前日志内容的检索修订号，同一次执行被覆盖时递增',
+  `es_due_at` DATETIME(6) DEFAULT '2000-01-01 00:00:00' COMMENT '下次可领取检索投递的数据库时间，空表示本修订已写入全部索引',
+  `es_attempts` INT NOT NULL DEFAULT 0 COMMENT '当前修订的检索投递领取次数，用于租约校验和失败退避',
   `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `root_rule_id` BIGINT DEFAULT NULL COMMENT '根规则ID快照',
   `execution_project_id` BIGINT DEFAULT NULL COMMENT '执行项目ID快照',
@@ -1219,6 +1223,9 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
    `execute_time_ms` BIGINT        DEFAULT NULL             COMMENT '执行耗时（毫秒）',
    `create_time`     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '执行时间',
    PRIMARY KEY (`id`, `create_time`),
+   KEY `idx_es_due` (`es_due_at`, `id`),
+   KEY `idx_execution_history_project` (`execution_project_id`, `started_at`, `root_rule_id`, `id`),
+   KEY `idx_execution_history_window` (`started_at`, `id`),
    KEY `idx_rule_code` (`rule_code`, `create_time`),
    KEY `idx_project_code` (`project_code`, `create_time`),
    KEY `idx_source` (`source`, `create_time`),
@@ -1647,6 +1654,10 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API接口配置表';
 
 CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
+  `es_body_aliases` TINYINT NOT NULL DEFAULT 0 COMMENT '相同大报文共用原文的标志，位一表示请求、位二表示响应与相应原始留存副本相同',
+  `es_revision` BIGINT NOT NULL DEFAULT 1 COMMENT '当前日志内容的检索修订号，同一次执行被覆盖时递增',
+  `es_due_at` DATETIME(6) DEFAULT '2000-01-01 00:00:00' COMMENT '下次可领取检索投递的数据库时间，空表示本修订已写入全部索引',
+  `es_attempts` INT NOT NULL DEFAULT 0 COMMENT '当前修订的检索投递领取次数，用于租约校验和失败退避',
   `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `root_trace_id` CHAR(36) DEFAULT NULL COMMENT '根请求追踪 ID',
   `history_fields` LONGTEXT DEFAULT NULL COMMENT '逻辑外数调用的受管字段ID结果快照',
@@ -1697,6 +1708,7 @@ CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   `cost_time_ms`    BIGINT       DEFAULT NULL            COMMENT '耗时毫秒',
   `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',
   PRIMARY KEY (`id`),
+  KEY `idx_es_due` (`es_due_at`, `id`),
   KEY `idx_runtime_log_module_time` (`module_type`, `create_time`),
   KEY `idx_dashboard_runtime_project_module_action_time` (`module_type`, `action_type`, `provider_request`, `create_time`, `project_code`),
   KEY `idx_runtime_log_target_time` (`target_ref_id`, `create_time`),

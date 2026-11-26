@@ -25,6 +25,7 @@ public class ExecutionLogController {
     public ApiResponse<IPage<RuleExecutionLog>> list(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
+            @RequestParam(defaultValue = "false") boolean summaryOnly,
             @RequestParam(required = false) String modelType,
             @RequestParam(required = false) String source,
             @RequestParam(required = false) Long projectId,
@@ -39,7 +40,16 @@ public class ExecutionLogController {
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime,
             @ModelAttribute com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery) {
         return ApiResponse.ok(logService.pageList(pageNum, pageSize, modelType, source, projectCode, projectName,
-                ruleCode, traceId, authType, authCode, tokenCode, startTime, endTime, versionQuery, projectId));
+                ruleCode, traceId, authType, authCode, tokenCode, startTime, endTime, versionQuery, projectId, summaryOnly));
+    }
+
+    @GetMapping("/{id}")
+    @RequirePermission("log:view")
+    public ApiResponse<RuleExecutionLog> detail(@PathVariable long id,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime createTime) {
+        var log = logService.detail(id,createTime);
+        return log == null ? ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND,"执行日志不存在")
+                : ApiResponse.ok(log);
     }
 
     @GetMapping("/rule-set-stats")

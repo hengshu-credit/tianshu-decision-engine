@@ -4,6 +4,10 @@
 
 自动部署时在安装目录用 `bash install-release.sh 发布包.zip --migration-script /绝对路径/本次迁移.sh` 接入已选定的迁移脚本，在停应用后、替换前执行；Bash 脚本须先完成数据库备份，遇错非零退出。可通过 `TIANSHU_RELEASE_DIR` 访问本包 SQL，`TIANSHU_DEPLOY_DIR` 访问外层 `config/` 生效 env 与 `docker/` Compose，`TIANSHU_BACKUP_DIR` 记录备份与迁移结果。不要把所有历史 SQL 自动拼接运行。
 
+## 日志检索投递（2026-11-26）
+
+服务启动时为执行和调用日志补齐修订、领取时间、尝试次数及待办索引。外部维护结构时执行 `2026-11-26-elasticsearch-log-delivery.sql`，然后启动新版 server 以重建逻辑日志视图。存量数据由后台按批投递。
+
 ## 后台离线迁移（2026-11-25）
 
 服务启动时建立迁移任务、文件分块和执行动作表。外部维护结构时可执行 `2026-11-25-offline-transfer-task.sql`。临时文件和动作明细由服务定期回收，业务迁移审计继续保存在原迁移日志中。

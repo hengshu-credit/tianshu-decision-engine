@@ -19,9 +19,12 @@ import java.util.LinkedHashSet;
  * 只消费对外/客户端成功的根规则日志，避免把管理端测试和子规则重复计入。
  */
 @Repository
+@org.springframework.transaction.annotation.Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
 public class ExecutionLogHistoryRepository {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.hengshucredit.rule.server.security.ConsoleDataPermissionHandler consoleDataScope;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false) private ElasticHistoryReader search;
 
     private String secured(String sql) { return consoleDataScope == null ? sql : consoleDataScope.filterSql(sql); }
 
@@ -47,52 +50,45 @@ public class ExecutionLogHistoryRepository {
     List<HistoryQuery.Row> query(HistoryScope scope, LocalDateTime from, LocalDateTime before, Set<String> requiredFields,
                                  Map<String, HistoricalFieldDefinition> definitions) {
         if (consoleDataScope != null) consoleDataScope.requireHistoryScope(scope.type(), scope.projectId());
-        StringBuilder sql = new StringBuilder(
-                "SELECT l.id, l.trace_id, l.started_at, l.history_fields "
-                        + "FROM rule_execution_log_current l "
-                        + "WHERE " + (from == null ? "COALESCE(l.started_at,l.create_time) < ?" : "l.started_at >= ? AND l.started_at < ?")
-                        + " AND l.success = 1 "
-                        + "AND l.source IN ('CLIENT_SERVER','EXPERIMENT_LIVE') AND l.history_fields IS NOT NULL ");
         List<Object> parameters = new ArrayList<>();
-        if (from != null) parameters.add(Timestamp.valueOf(from));
-        parameters.add(Timestamp.valueOf(before));
-        scope.appendRuleFilter(sql, parameters, "l.root_rule_id");
-        scope.excludeCurrent(sql, parameters, "l.trace_id");
-        if (scope.projectId() != null) {
-            sql.append(" AND l.execution_project_id = ?");
-            parameters.add(scope.projectId());
-        }
-        sql.append(" ORDER BY l.started_at, l.id LIMIT ").append(MAX_QUERY_ROWS + 1);
+        String columns = search == null ? "l.id, l.trace_id, l.started_at, l.history_fields" : ElasticHistoryReader.COLUMNS;
+        String sql = windowSql(scope,from,before,columns,parameters) + " ORDER BY l.started_at,l.id LIMIT " + (MAX_QUERY_ROWS+1);
         long[] bytesRead = {0};
         Map<String, HistoryQuery.Row> rowsByTrace = new LinkedHashMap<>();
         Map<String, Set<Long>> expectedApis = new LinkedHashMap<>();
-        List<HistoryQuery.Row> rows = new ArrayList<>(jdbc.query(connection -> {
-            var statement = connection.prepareStatement(secured(sql.toString()));
-            statement.setQueryTimeout(10);
-            for (int i = 0; i < parameters.size(); i++) statement.setObject(i + 1, parameters.get(i));
-            return statement;
-        }, (result, index) -> {
-            if (index >= MAX_QUERY_ROWS) throw new IllegalStateException("执行日志历史窗口超过 100000 条，请缩小时间或作用范围；未返回截断统计值");
-            JSONObject snapshot = parseSnapshot(result.getString("history_fields"), bytesRead);
+        List<HistoryQuery.Row> rows = new ArrayList<>();
+        ElasticHistoryReader.SnapshotConsumer consume = (logId, trace, started, raw) -> {
+            JSONObject snapshot = parseSnapshot(raw,bytesRead);
             if (snapshot.getIntValue("version") != 1 || snapshot.getJSONObject("fields") == null) {
                 throw new IllegalStateException("历史字段快照版本无效，不能按当前名称推测历史值");
             }
-            String trace = result.getString("trace_id");
-            Timestamp started = result.getTimestamp("started_at");
-            var row = new HistoryQuery.Row(result.getLong("id"), started == null ? null : started.toLocalDateTime(),
+            var row = new HistoryQuery.Row(logId, started,
                     new LinkedHashMap<>(snapshot.getJSONObject("fields")));
             for (String key : requiredFields) {
                 var definition = definitions.get(key);
                 if (definition == null || !"ENGINE".equals(definition.source())) continue;
                 if ("trace_id".equals(definition.path())) row.fields().put(key, trace);
-                if ("create_time".equals(definition.path())) row.fields().put(key, started == null ? null : started.toLocalDateTime().toString());
+                if ("create_time".equals(definition.path())) row.fields().put(key, started == null ? null : started.toString());
             }
             rowsByTrace.put(trace, row);
             Set<Long> apis = new LinkedHashSet<>();
             if (snapshot.getJSONArray("apiIds") != null) for (Object id : snapshot.getJSONArray("apiIds")) apis.add(((Number) id).longValue());
             expectedApis.put(trace, apis);
-            return row;
-        }));
+            rows.add(row);
+        };
+        if (search != null) search.read(sql,parameters,consume);
+        else jdbc.query(connection -> {
+            var statement = connection.prepareStatement(sql);
+            statement.setQueryTimeout(10);
+            for (int i = 0; i < parameters.size(); i++) statement.setObject(i + 1, parameters.get(i));
+            return statement;
+        }, (result,index) -> {
+            if (rows.size() >= MAX_QUERY_ROWS) throw new IllegalStateException("执行日志历史窗口超过 100000 条，请缩小时间或作用范围；未返回截断统计值");
+            Timestamp started = result.getTimestamp("started_at");
+            consume.accept(result.getLong("id"),result.getString("trace_id"),started == null ? null : started.toLocalDateTime(),
+                    result.getString("history_fields"));
+            return null;
+        });
         // API bindings (and even source kinds) can change after an application.
         // Read that root's logical logs (including explicit API nodes), then match stored field IDs.
         if (!requiredFields.isEmpty()) {
@@ -100,6 +96,42 @@ public class ExecutionLogHistoryRepository {
             if (!rowsByTrace.isEmpty()) loadApiFields(rowsByTrace, expectedApis, bytesRead, requiredFields);
         }
         return rows;
+    }
+
+    public Map<LocalDateTime,IndexedHistoryCount.Count> searchCounts(HistoryScope scope, LocalDateTime before,
+                    List<LocalDateTime> windows,String field,Object value) {
+        if (search == null) return Map.of();
+        if (consoleDataScope != null) consoleDataScope.requireHistoryScope(scope.type(),scope.projectId());
+        var args = new ArrayList<Object>();
+        String sql = windowSql(scope,windows.stream().min(LocalDateTime::compareTo).orElseThrow(),before,ElasticHistoryReader.COLUMNS,args);
+        return search.count(sql,args,windows,field,value);
+    }
+
+    public Map<LocalDateTime,IndexedHistoryCount.Count> spatialCounts(IndexedHistoryCount.Selection selection,List<LocalDateTime> windows) {
+        if (search == null) return Map.of();
+        var scope=selection.scope();
+        if (consoleDataScope != null) consoleDataScope.requireHistoryScope(scope.type(),scope.projectId());
+        var args=new ArrayList<Object>();
+        var sql=windowSql(scope,windows.stream().min(LocalDateTime::compareTo).orElseThrow(),selection.before(),ElasticHistoryReader.COLUMNS,args);
+        return search.spatial(sql,args,windows,selection.region());
+    }
+
+    private String windowSql(HistoryScope scope, LocalDateTime from, LocalDateTime before, String columns, List<Object> parameters) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT " + columns + " "
+                        + "FROM rule_execution_log_current l "
+                        + "WHERE " + (from == null ? "COALESCE(l.started_at,l.create_time) < ?" : "l.started_at >= ? AND l.started_at < ?")
+                        + " AND l.success = 1 "
+                        + "AND l.source IN ('CLIENT_SERVER','EXPERIMENT_LIVE') AND l.history_fields IS NOT NULL ");
+        if (from != null) parameters.add(search == null ? Timestamp.valueOf(from) : from);
+        parameters.add(search == null ? Timestamp.valueOf(before) : before);
+        scope.appendRuleFilter(sql, parameters, "l.root_rule_id");
+        scope.excludeCurrent(sql, parameters, "l.trace_id");
+        if (scope.projectId() != null) {
+            sql.append(" AND l.execution_project_id = ?");
+            parameters.add(scope.projectId());
+        }
+        return secured(sql.toString());
     }
 
     /** Only rows missing a usable coordinate pair need their recorded root/API fields materialized. */

@@ -12,6 +12,11 @@ public class RuleSetStatisticsStore {
     private final JdbcTemplate jdbc;
     public RuleSetStatisticsStore(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
+    void invalidate(long id, LocalDateTime time) {
+        // Queries join events to this header. Backfill replaces the old events in one transaction.
+        jdbc.update("DELETE FROM rule_execution_statistics WHERE id=? AND create_time=?",id,time);
+    }
+
     void persist(long id, LocalDateTime time, String json, String status) {
         if (time == null) throw new IllegalStateException("统计快照缺少日志物理位置");
         int written = jdbc.update("""

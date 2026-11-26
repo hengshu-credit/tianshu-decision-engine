@@ -10,6 +10,18 @@ import static org.junit.Assert.assertTrue;
 
 public class SafeLogJsonTest {
     @Test
+    public void outputPreservesExplicitNullsAndSharedObjectsAtEachBusinessPath() throws Exception {
+        var box = Map.of("width",90,"height",100);
+        var business = new java.util.LinkedHashMap<String,Object>();
+        business.put("prepared",box);
+        business.put("result",box);
+        business.put("missingScore",null);
+        var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(SafeLogJson.output(business));
+        assertEquals(90,json.at("/prepared/width").intValue());
+        assertEquals(json.get("prepared"),json.get("result"));
+        assertTrue(json.get("missingScore").isNull());
+    }
+    @Test
     public void structuredLogsEncodeStringsButRuntimeBodiesKeepTheirOriginalJson() {
         String raw = "{\"value\":0}";
         assertEquals("\"{\\\"value\\\":0}\"", SafeLogJson.toJsonSafely(raw));

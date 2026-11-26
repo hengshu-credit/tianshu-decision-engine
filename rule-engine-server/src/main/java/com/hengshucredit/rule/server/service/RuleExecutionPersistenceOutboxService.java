@@ -63,6 +63,12 @@ public class RuleExecutionPersistenceOutboxService {
                         costTimeMs, errorMessage, authContext) : null));
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public RuleExecutionPersistenceOutbox acceptWithHistory(RuleExecutionLog execution, DurableExecutionPersistenceJournal.Entry entry) {
+        logService.saveLogical(execution);
+        return entry.billingPending() ? accept(entry) : null;
+    }
+
     /** 独立提交后才返回，调用方的外层事务回滚不能带走已接受的执行事件。 */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public RuleExecutionPersistenceOutbox accept(DurableExecutionPersistenceJournal.Entry entry) {

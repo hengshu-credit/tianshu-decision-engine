@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.server.mapper.RuleExecutionLogMapper;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,7 +12,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -60,13 +61,14 @@ public class RuleSetStatisticsBackfill {
 
     int processBatch() {
         Integer changed = transaction.execute(status -> {
-            var rows = jdbc.query("SELECT id,create_time,trace_info FROM rule_execution_log "
+            var rows = jdbc.query("SELECT id,create_time," + RuleExecutionLogMapper.RESTORED_TRACE + " AS trace_info FROM rule_execution_log "
                             + "WHERE rule_set_stats_version IS NULL OR rule_set_stats_version<2 ORDER BY rule_set_stats_version,id,create_time LIMIT 10 FOR UPDATE SKIP LOCKED",
-                    (result, row) -> new Source(result.getLong("id"), result.getTimestamp("create_time"), result.getString("trace_info")));
+                    (result, row) -> new Source(result.getLong("id"), result.getObject("create_time",LocalDateTime.class), result.getString("trace_info")));
             for (Source row : rows) {
                 RuleSetTraceSummary summary = RuleSetTraceSummary.fromTrace(row.trace());
-                statistics.persist(row.id(), row.time().toLocalDateTime(), summary.json(), summary.status());
-                jdbc.update("UPDATE rule_execution_log SET rule_set_stats_status=?,rule_set_stats_version=2 "
+                statistics.persist(row.id(), row.time(), summary.json(), summary.status());
+                jdbc.update("UPDATE rule_execution_log SET rule_set_stats_status=?,rule_set_stats_version=2,"
+                        + "es_revision=es_revision+1,es_due_at=CURRENT_TIMESTAMP(6),es_attempts=0 "
                         + "WHERE id=? AND create_time=? AND (rule_set_stats_version IS NULL OR rule_set_stats_version<2)", summary.status(), row.id(), row.time());
             }
             return rows.size();
@@ -76,5 +78,5 @@ public class RuleSetStatisticsBackfill {
 
     @PreDestroy public void close() { worker.shutdownNow(); }
 
-    private record Source(long id, Timestamp time, String trace) { }
+    private record Source(long id, LocalDateTime time, String trace) { }
 }

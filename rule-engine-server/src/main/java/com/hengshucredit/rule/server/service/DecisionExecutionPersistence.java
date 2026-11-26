@@ -68,6 +68,7 @@ public class DecisionExecutionPersistence implements AutoCloseable {
     private final AtomicLong maxQueueDepth = new AtomicLong();
     private final AtomicLong lastFallbackAt = new AtomicLong();
     private final AtomicLong lastFailureAt = new AtomicLong();
+    @Value("${rule-engine.search.enabled:false}") private boolean sharedHistory;
 
     public DecisionExecutionPersistence(RuleExecutionLogService logService,
                                         RuleBillingService billingService,
@@ -114,7 +115,12 @@ public class DecisionExecutionPersistence implements AutoCloseable {
                 definition, success, costTimeMs, errorMessage, authContext);
         Event event = new Event(log, definition, success, costTimeMs, errorMessage, authContext,
                 log != null, definition != null, billingSnapshot);
-        if (!storeForRecovery(event)) {
+        if (sharedHistory && log != null && ("CLIENT_SERVER".equals(log.getSource()) || "EXPERIMENT_LIVE".equals(log.getSource()))) {
+            // A following request on another server must see this revision, including a failed retry
+            // invalidating a previous success. Billing and the fact are accepted in one MySQL transaction.
+            event.logPending = false;
+            event.durableEvent = recoveryOutbox.acceptWithHistory(log,toJournalEntry(event));
+        } else if (!storeForRecovery(event)) {
             fallback.incrementAndGet();
             lastFallbackAt.set(System.currentTimeMillis());
             boolean confirmed = persist(event);
@@ -301,7 +307,7 @@ public class DecisionExecutionPersistence implements AutoCloseable {
         ProjectAuthContext auth = event.authContext;
         return new DurableExecutionPersistenceJournal.Entry(
                 event.eventId,
-                event.log == null ? null : com.alibaba.fastjson.JSON.toJSONString(event.log),
+                !event.logPending || event.log == null ? null : com.alibaba.fastjson.JSON.toJSONString(event.log),
                 event.definition == null ? null : com.alibaba.fastjson.JSON.toJSONString(event.definition),
                 event.success, event.costTimeMs, event.errorMessage,
                 auth == null ? null : auth.getProjectId(), auth == null ? null : auth.getProjectCode(),

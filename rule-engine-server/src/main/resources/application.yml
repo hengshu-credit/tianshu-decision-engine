@@ -74,6 +74,14 @@ engine:
     bind-address: ${ENGINE_SFTP_BIND_ADDRESS:127.0.0.1}
 
 rule-engine:
+  search:
+    enabled: ${RULE_SEARCH_ENABLED:false}
+    url: ${RULE_SEARCH_URL:http://127.0.0.1:9200}
+    index-prefix: ${RULE_SEARCH_INDEX_PREFIX:tianshu}
+    compact-logs: ${RULE_SEARCH_COMPACT_LOGS:false}
+    api-key: ${RULE_SEARCH_API_KEY:}
+    username: ${RULE_SEARCH_USERNAME:}
+    password: ${RULE_SEARCH_PASSWORD:}
   upload:
     antivirus-host: ${UPLOAD_ANTIVIRUS_HOST:${rule-engine.ledger.antivirus-host:}}
     antivirus-port: ${UPLOAD_ANTIVIRUS_PORT:${rule-engine.ledger.antivirus-port:3310}}

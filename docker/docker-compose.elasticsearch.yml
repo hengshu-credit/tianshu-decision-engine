@@ -1,0 +1,24 @@
+name: ${ELASTICSEARCH_PROJECT:-tianshu-elasticsearch}
+services:
+  elasticsearch:
+    image: ${ELASTICSEARCH_IMAGE:-docker.elastic.co/elasticsearch/elasticsearch:8.17.3}
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      ELASTIC_PASSWORD: ${ELASTICSEARCH_BOOTSTRAP_PASSWORD:?Set ELASTICSEARCH_BOOTSTRAP_PASSWORD}
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "127.0.0.1:${ELASTICSEARCH_HOST_PORT:-9200}:9200"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks: [rule-engine]
+
+volumes:
+  elasticsearch-data:
+
+networks:
+  rule-engine:
+    external: true
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu-server}-engine}
