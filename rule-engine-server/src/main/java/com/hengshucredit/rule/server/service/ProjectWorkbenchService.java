@@ -179,14 +179,36 @@ public class ProjectWorkbenchService {
                 });
         result.setRecentExecution(toRecentExecution(latest));
         result.setChecks(buildChecks(project, metrics, latest));
-        if (ruleWarmupStatus != null && (accessGuard == null || accessGuard.can("rule:view"))) {
+        if (ruleWarmupStatus != null && canView(projectId, "rule:view")) {
             result.setWarmup(consoleProjects == null ? ruleWarmupStatus.details()
                     : consoleProjects.globalStatusSummary(ruleWarmupStatus.details(), "rule:view"));
             result.getChecks().add(warmupCheck(ruleWarmupStatus.details()));
         }
-        ProjectWorkbenchDTO.CheckItem fieldCheck = checkRuleFieldReferences(rules);
-        result.getChecks().replaceAll(item -> "FIELD".equals(item.getCode()) ? fieldCheck : item);
+        result.getChecks().replaceAll(item -> {
+            if (!canInspect(projectId, item.getCode())) {
+                return check(item.getCode(), item.getTitle(), "RESTRICTED", "当前账户未获此项目检查项所需的查看权限。", null, null);
+            }
+            return "FIELD".equals(item.getCode()) ? checkRuleFieldReferences(rules) : item;
+        });
         return result;
+    }
+
+    private boolean canView(Long projectId, String permission) {
+        var scope = consoleProjects == null ? null : consoleProjects.current();
+        if (scope != null && scope.userId() != null) return scope.can(permission, projectId);
+        return accessGuard == null || accessGuard.can(permission);
+    }
+
+    private boolean canInspect(Long projectId, String checkCode) {
+        return switch (checkCode) {
+            case "FIELD" -> canView(projectId, "rule:view") && canView(projectId, "field:view");
+            case "RULE", "TEST", "PUBLISH", "WARMUP" -> canView(projectId, "rule:view");
+            case "RUN" -> canView(projectId, "rule:view") && canView(projectId, "log:view");
+            case "SOURCE" -> canView(projectId, "datasource:view") && canView(projectId, "database:view");
+            case "MODEL" -> canView(projectId, "model:view");
+            case "APPROVAL" -> canView(projectId, "approval:view");
+            default -> canView(projectId, "project:view");
+        };
     }
 
     private ProjectWorkbenchDTO.CheckItem warmupCheck(Map<String, Object> details) {
@@ -477,7 +499,7 @@ public class ProjectWorkbenchService {
             case "最近执行次数", "最近成功次数", "最近一次执行" -> "log:view";
             default -> "project:view";
         };
-        if (accessGuard != null && !accessGuard.can(permission)) return null;
+        if (!canView(result.getProject().getId(), permission)) return null;
         try {
             return loader.get();
         } catch (RuntimeException error) {

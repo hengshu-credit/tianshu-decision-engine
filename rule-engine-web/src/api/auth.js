@@ -1,4 +1,5 @@
 import request from './request'
+import { metadataResponse } from '@/utils/metadataResponse'
 import { fetchConsoleConfig } from './consoleBootstrap'
 import { PLATFORM_SUCCESS_CODE } from '@/utils/platformResponse'
 
@@ -75,7 +76,7 @@ export function consoleLogout() {
  * 查询当前登录用户；未登录时请求会失败（401）。
  */
 export function getConsoleMe() {
-  return request.get('/auth/console/me')
+  return request.get('/auth/console/me', metadataResponse)
 }
 
 /**

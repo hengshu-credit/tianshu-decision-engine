@@ -224,6 +224,26 @@ test('从最近执行按 trace 和项目 ID 查询，旧日期和规则筛选仅
   assertClean()
 })
 
+test('大整数项目工作台跳到日志时保持路由和实际查询项目一致', async ({ page }) => {
+  const id = '9007199254740993'
+  const fixtures = workflowFixtures()
+  fixtures.set('/api/rule/project/' + id, { id, projectCode: 'large_project', projectName: '大编号项目', status: 1 })
+  fixtures.set('/api/rule/definition/project-list/' + id, { records: [], total: 0 })
+  fixtures.set('/api/rule/project/' + id + '/workbench', {
+    checks: [{ code: 'MODEL', title: '接入预测模型', status: 'RESTRICTED', reason: '当前账户无查看权限' },
+      { code: 'PROJECT', title: '启用项目', status: 'READY' }],
+    recentExecution: { traceId: 'large-project-trace', success: 1 }, metrics: {},
+  })
+  const { requests } = await installDistRoutes(page, { apiData: fixtures })
+  await page.goto('http://tianshu.local/#/project/' + id)
+  await expect(page.getByText('1/1 已就绪', { exact: true })).toBeVisible()
+  await expect(page.locator('.next-action-card')).toHaveCount(0)
+  await page.locator('.recent-panel').getByRole('button', { name: '查看执行日志' }).click()
+  await expect(page).toHaveURL(new RegExp('projectId=' + id))
+  await expect.poll(() => requests.filter(item => new URL(item.url).pathname === '/api/rule/log/list')
+    .map(item => new URL(item.url).searchParams.get('projectId'))).toContain(id)
+})
+
 for (const entry of ['project', 'rule']) {
   test(`${entry} 新建规则按业务说明选型并保留输入内容和类型`, async ({ page }, testInfo) => {
     const fixtures = workflowFixtures()

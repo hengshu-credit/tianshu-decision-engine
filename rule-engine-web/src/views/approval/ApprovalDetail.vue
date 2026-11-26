@@ -381,6 +381,7 @@
 </template>
 
 <script>
+import { normalizeProjectId } from '@/utils/projectContext'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { ElMessage } from 'element-plus'
@@ -841,10 +842,10 @@ export default {
         version.id, mode
       )
       ElMessage.success('已生成历史恢复草稿')
-      const projectId = Number(this.route.query && this.route.query.projectId)
+      const projectId = normalizeProjectId(this.route.query && this.route.query.projectId)
       this.navigation.push({
         path: `/approval/${response.data.id}`,
-        query: Number.isInteger(projectId) && projectId > 0
+        query: projectId
           ? { projectId }
           : {},
       })

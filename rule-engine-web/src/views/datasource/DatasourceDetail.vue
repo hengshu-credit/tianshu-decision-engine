@@ -184,7 +184,7 @@ import {
 } from '@/api/datasource'
 import { listProjects } from '@/api/project'
 import MonacoEditor from '@/components/MonacoEditor'
-import { routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, routeProjectId } from '@/utils/projectContext'
 
 export default {
   name: 'DatasourceDetail',
@@ -287,14 +287,14 @@ export default {
   methods: {
     applyProjectContext(projectId) {
       this.form.scope = 'PROJECT'
-      this.form.projectId = Number(projectId)
+      this.form.projectId = normalizeProjectId(projectId)
     },
     async loadApiPickerOptions() {
       const requestId = ++this.apiPickerRequestId
       const projectId = this.form.scope === 'GLOBAL' ? 0 : this.form.projectId
       this.apiPickerVars = []; this.apiPickerFunctions = []
       if (projectId == null || projectId === '') return
-      const catalog = await loadApiReferenceCatalog(Number(projectId) || 0)
+      const catalog = await loadApiReferenceCatalog(normalizeProjectId(projectId) || 0)
       if (requestId !== this.apiPickerRequestId) return
       this.apiPickerVars = catalog.vars; this.apiPickerFunctions = catalog.functions
       if (catalog.errors.length) this.$message.warning(catalog.errors.join('；'))

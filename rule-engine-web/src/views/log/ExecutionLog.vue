@@ -624,7 +624,7 @@ import {
   restorePageState,
   savePageState,
 } from '@/utils/pageStateCache'
-import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import { ruleSetCoverageHint } from '@/utils/ruleSetStatistics'
 import { resolveTraceReferences } from '@/utils/traceReference'
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
@@ -803,7 +803,7 @@ for (var i = 0; i < this.projectList.length; i++) {
 }
 if (!pid) return this.ruleList
 return this.ruleList.filter(function (r) {
-  return r.projectId === pid
+  return String(r.projectId) === String(pid)
 })
 },
 filteredRuleSets: function () {
@@ -835,7 +835,7 @@ if (this.focusedTrace) {
 }
 if (contextId) {
   var currentProject = this.$store && this.$store.state.currentProject
-  if (currentProject && Number(currentProject.id) === contextId && currentProject.projectCode) {
+  if (currentProject && normalizeProjectId(currentProject.id) === contextId && currentProject.projectCode) {
     this.applyProjectContext(currentProject)
   } else {
     try {
@@ -865,7 +865,7 @@ operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
 ruleSetCoverageHint,
 applyProjectContext: function (project) {
 if (!project || !project.id) return
-this.contextProjectId = Number(project.id)
+this.contextProjectId = normalizeProjectId(project.id)
 this.contextProjectCode = project.projectCode || ''
 this.qp.projectCode = this.contextProjectCode
 this.qp.projectName = ''

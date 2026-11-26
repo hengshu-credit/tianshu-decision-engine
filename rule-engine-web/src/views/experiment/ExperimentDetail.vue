@@ -832,7 +832,7 @@ import {
 } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import { normalizeRuleOptions } from '@/utils/ruleCallConfig'
-import { routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, routeProjectId } from '@/utils/projectContext'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import { listAvailableFieldValidations } from '@/api/variable'
 
@@ -1054,8 +1054,8 @@ export default {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     async applyProjectContext(projectId) {
-      const id = Number(projectId)
-      const project = (this.projects || []).find(item => Number(item.id) === id)
+      const id = normalizeProjectId(projectId)
+      const project = (this.projects || []).find(item => normalizeProjectId(item.id) === id)
       this.form.projectId = id
       this.form.projectCode = project ? project.projectCode || '' : ''
       await this.loadRules(id)

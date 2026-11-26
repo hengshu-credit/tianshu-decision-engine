@@ -577,7 +577,7 @@ import { normalizeTestResult } from '@/utils/testResult'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
 import { revisionTestSource, executionSourceLabel, requireExecutionIdentity } from '@/utils/ruleTestExecutionSource'
-import { routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, routeProjectId } from '@/utils/projectContext'
 import {
   normalizeTestSchema,
   schemaFieldsToTestFields,
@@ -887,9 +887,9 @@ export default {
       return stringifyExactJson(request)
     },
     async applyProjectContext(projectId) {
-      this.contextProjectId = Number(projectId)
+      this.contextProjectId = normalizeProjectId(projectId)
       this.ruleScope = 'PROJECT'
-      this.selectedProjectId = Number(projectId)
+      this.selectedProjectId = normalizeProjectId(projectId)
       await this.onProjectChange()
     },
     async loadRulesByScope() {

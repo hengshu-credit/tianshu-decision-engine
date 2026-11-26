@@ -67,7 +67,7 @@
             <h4>配置与运行检查</h4>
             <p>根据当前配置和执行记录检查；发布仍需完成规则校验与审批。</p>
           </div>
-          <span>{{ checks.length ? `${readyCount}/${checks.length} 已就绪` : '待检查' }}</span>
+          <span>{{ checks.length ? `${readyCount}/${accessibleChecks.length} 已就绪` : '待检查' }}</span>
         </div>
         <div v-if="checks.length" class="check-list">
           <div v-for="item in checks" :key="item.code" class="check-row">
@@ -166,6 +166,7 @@ import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { canUseWorkbenchAction, workbenchActionPermissionHint } from '@/utils/workbenchActions'
 
 const STATUS_TEXT = {
+  RESTRICTED: '无查看权限',
   READY: '已就绪',
   OPTIONAL: '可选',
   ACTION_REQUIRED: '待配置',
@@ -233,13 +234,16 @@ export default {
     recentExecution() {
       return this.workbench && this.workbench.recentExecution
     },
+    accessibleChecks() {
+      return this.checks.filter(item => item.status !== 'RESTRICTED')
+    },
     readyCount() {
-      return this.checks.filter((item) =>
+      return this.accessibleChecks.filter((item) =>
         ['READY', 'OPTIONAL'].includes(item.status)
       ).length
     },
     remainingCount() {
-      return this.checks.filter(
+      return this.accessibleChecks.filter(
         (item) => !['READY', 'OPTIONAL'].includes(item.status)
       ).length
     },

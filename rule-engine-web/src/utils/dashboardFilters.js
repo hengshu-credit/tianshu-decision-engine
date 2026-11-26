@@ -1,3 +1,5 @@
+import { normalizeProjectId } from './projectContext'
+
 export const DASHBOARD_FILTERS_KEY = 'tianshu:dashboard:filters'
 export const DASHBOARD_MAP_VIEW_KEY = 'tianshu:dashboard:map-view'
 
@@ -72,10 +74,8 @@ export function readDashboardFilters(storage, now = new Date()) {
     if (!value || !validateDashboardRange(
       value.startTime, value.endTime
     ).valid) return fallback
-    const projectId = value.projectId === null || value.projectId === ''
-      ? null
-      : Number(value.projectId)
-    if (projectId !== null && (!Number.isInteger(projectId) || projectId <= 0)) {
+    const projectId = normalizeProjectId(value.projectId)
+    if (value.projectId !== null && value.projectId !== '' && projectId === null) {
       return fallback
     }
     return {

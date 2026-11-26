@@ -17,8 +17,12 @@ const CONTEXT_PATHS = new Set([
 ])
 
 export function normalizeProjectId(value) {
-  const id = Number(value)
-  return Number.isInteger(id) && id > 0 ? id : null
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0 ? value : null
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return null
+  const digits = value.replace(/^0+/, '')
+  if (!digits || digits.length > 19 || (digits.length === 19 && digits > '9223372036854775807')) return null
+  const number = Number(digits)
+  return Number.isSafeInteger(number) ? number : digits
 }
 
 export function projectPageStateKey(pageKey, projectId) {

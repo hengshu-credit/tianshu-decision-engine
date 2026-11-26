@@ -590,7 +590,7 @@ export default {
       if (!path) return
       this.$router.push({
         path,
-        query: { projectId: Number(this.pid), ...(item.actionCode === 'VIEW_LOGS' && item.traceId ? { traceId: item.traceId } : {}) },
+        query: { projectId: this.pid, ...(item.actionCode === 'VIEW_LOGS' && item.traceId ? { traceId: item.traceId } : {}) },
       })
     },
     cacheKey() {

@@ -182,6 +182,27 @@ public class ProjectWorkbenchServiceTest {
                 .buildChecks(project(1), metrics, null)).get("RUN").getStatus());
     }
 
+    @Test
+    public void projectOverrideDenialHasNoRetryAndAnAuthorizedQueryFailureCanRetry() {
+        var scope = new com.hengshucredit.rule.server.security.ConsoleProjectAccess.Scope(5L,
+                java.util.Set.of(9L), java.util.Set.of("project:view", "model:view", "approval:view"),
+                false, true, Map.of(9L, Map.of("model:view", "DENY")));
+        var service = new ProjectWorkbenchService();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "consoleProjects",
+                new com.hengshucredit.rule.server.security.ConsoleProjectAccess() {
+                    @Override public Scope current() { return scope; }
+                });
+        var mapperType = com.hengshucredit.rule.server.mapper.RuleProjectMapper.class;
+        Object projects = java.lang.reflect.Proxy.newProxyInstance(mapperType.getClassLoader(),
+                new Class<?>[]{mapperType}, (proxy, method, args) -> project(1));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "projectMapper", projects);
+        var items = checks(service.getWorkbench(9L).getChecks());
+        assertEquals("RESTRICTED", items.get("MODEL").getStatus());
+        org.junit.Assert.assertNull(items.get("MODEL").getActionCode());
+        assertEquals("UNAVAILABLE", items.get("APPROVAL").getStatus());
+        assertEquals("REFRESH_WORKBENCH", items.get("APPROVAL").getActionCode());
+    }
+
     private RuleProject project(int status) {
         RuleProject project = new RuleProject();
         project.setId(9L);

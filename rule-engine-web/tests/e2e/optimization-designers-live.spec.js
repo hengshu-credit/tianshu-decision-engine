@@ -121,6 +121,9 @@ for (const advanced of [false, true]) {
       }
       await ui.field(page, page.getByPlaceholder('选择结果字段或手输路径'), fixture.outputCode)
       await ui.literal(page, page.getByPlaceholder('选择结果或手输阈值'), 7)
+      await page.locator('.dim-config-card').last().getByRole('button', { name: '添加分段' }).click()
+      await ui.literal(page, page.locator('.dim-config-card').last().getByPlaceholder('选择值或字段').last(), 3)
+      await expect(page.getByPlaceholder('选择结果或手输阈值').last()).toHaveValue('')
     } else {
       await ui.literal(page, page.getByPlaceholder('选择行维度字段或路径'), 1)
       await ui.literal(page, page.getByPlaceholder('选择列维度字段或路径'), 2)
@@ -134,6 +137,13 @@ for (const advanced of [false, true]) {
     await page.reload()
     await expect(page.getByPlaceholder(/选择结果字段或(?:手输)?路径/)).toHaveValue(new RegExp(fixture.outputCode))
     expect((await ui.execute(page)).result[fixture.outputCode]).toBe(7)
+    if (advanced) {
+      const segments = page.locator('.dim-config-card').last().getByPlaceholder('选择值或字段')
+      await ui.literal(page, segments.first(), 9)
+      await ui.literal(page, segments.last(), 2)
+      await ui.save(page, true)
+      expect((await ui.execute(page)).result[fixture.outputCode]).toBeNull()
+    }
     await page.screenshot({ path: testInfo.outputPath('cross-saved-reloaded.png'), fullPage: true })
     expect(errors).toEqual([])
   })

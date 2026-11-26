@@ -2314,7 +2314,7 @@ import {
 } from '@/utils/testParamTemplate'
 import { normalizeTestSchema } from '@/utils/testSchema'
 import { normalizeTestResult } from '@/utils/testResult'
-import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   cloneOperand,
@@ -2918,13 +2918,13 @@ export default {
       const available = item => {
         if (!item || item.status !== 1) return false
         if (item.scope === 'GLOBAL') return true
-        return owner.scope === 'PROJECT' && item.scope === 'PROJECT' && Number(item.projectId) === Number(owner.projectId)
+        return owner.scope === 'PROJECT' && item.scope === 'PROJECT' && String(item.projectId) === String(owner.projectId)
       }
       const variables = this.objectFieldReferenceBlockedReason ? [] : this.objectFieldReferenceVariables
         .filter(item => available(item) && this.objectFieldReferenceTypeCompatible(fieldType, item.varType))
         .map(item => ({ ...item, _referenceType: item.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE' }))
       const objects = this.canReferenceObjectType(this.form) ? this.objectFieldReferenceObjects
-        .filter(item => available(item) && Number(item.id) !== Number(owner.id))
+        .filter(item => available(item) && String(item.id) !== String(owner.id))
         .map(item => ({ ...item, _referenceType: 'OBJECT' })) : []
       return [...variables, ...objects]
     },
@@ -4103,7 +4103,7 @@ export default {
         projectIds.add(
           String(object && object.scope).toUpperCase() === 'GLOBAL'
             ? 0
-            : Number(object && object.projectId) || 0
+            : normalizeProjectId(object && object.projectId) || 0
         )
       })
       try {

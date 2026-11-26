@@ -611,7 +611,7 @@ export default {
     if (this.isCreateMode) {
       this.form = this.emptyForm()
       if (this.$route.query.projectId)
-        this.form.projectId = Number(this.$route.query.projectId)
+        this.form.projectId = normalizeProjectId(this.$route.query.projectId)
       this.jdbcConfirmedPartsSignature = this.jdbcPartsSignature()
       this.markConfigurationSaved()
     } else {

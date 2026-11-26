@@ -1267,7 +1267,7 @@ import MonacoEditor from '@/components/MonacoEditor'
 import {
   apiDefaultInput,
 } from '@/utils/testParamTemplate'
-import { routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, routeProjectId } from '@/utils/projectContext'
 import { trialStatusLabel, trialStatusType } from '@/utils/apiTrialStatus'
 
 export default {
@@ -1840,7 +1840,7 @@ export default {
 
       this.apiPickerVars = []; this.apiPickerFunctions = []
       if (projectId == null || projectId === '') return
-      const catalog = await loadApiReferenceCatalog(Number(projectId) || 0)
+      const catalog = await loadApiReferenceCatalog(normalizeProjectId(projectId) || 0)
       if (requestId !== this.apiPickerRequestId) return
       this.apiPickerVars = catalog.vars; this.apiPickerFunctions = catalog.functions
       if (catalog.errors.length) this.$message.warning(catalog.errors.join('；'))
