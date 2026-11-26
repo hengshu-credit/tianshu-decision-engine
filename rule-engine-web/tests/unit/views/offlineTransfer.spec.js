@@ -25,6 +25,20 @@ import { listProjects } from '@/api/project'
 import OfflineTransfer from '@/views/transfer/OfflineTransfer.vue'
 
 describe('OfflineTransfer', () => {
+  test('模型扫描预检未通过时保留资源预览，阻止确认导入', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.importFile = new File(['model'], 'models.zip')
+    wrapper.vm.previewFile = wrapper.vm.importFile
+    wrapper.vm.preview = { packageDigest: 'model-digest', modelScanIssue: '请配置 UPLOAD_ANTIVIRUS_HOST' }
+    wrapper.vm.previewOptionsSignature = wrapper.vm.optionsSignature
+    expect(wrapper.vm.hasCurrentPreview).toBe(false)
+    await wrapper.vm.applyPackage()
+    expect(transferApi.importResourceTransfer).not.toHaveBeenCalled()
+    wrapper.vm.preview = { packageDigest: 'model-digest' }
+    expect(wrapper.vm.hasCurrentPreview).toBe(true)
+    wrapper.unmount()
+  })
+
   test('版本映射未通过或变更后必须重新预检才能导入', async () => {
     const wrapper = shallowMount(OfflineTransfer)
     wrapper.vm.importFile = new File(['data'], 'versions.zip')

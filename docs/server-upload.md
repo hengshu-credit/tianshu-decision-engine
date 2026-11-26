@@ -37,6 +37,20 @@
 
 Compose 自动兼容现代 `docker compose` 与 `docker-compose`，优先前者；要求支持 `config --format json`、`up --wait`，不支持旧 Python Compose v1。服务器需要 Python 3.8+ 标准库和 Docker，无需 Maven、Node.js 或第三方 Python 包。构建入口见 [跨平台发布构建](release-packaging.md)。
 
+## 模型与素材上传扫描
+
+含 PMML、ONNX 原件的导入需要每个 server 副本都能访问 ClamD。已有可信内网扫描器时，直接填写该服务的主机和端口。需要随本安装部署扫描器时，将包内的 `docker/docker-compose.clamd.yml` 放到安装目录的 `docker/`。该服务保留病毒库卷，使用引擎现有网络，未发布宿主机扫描端口。
+
+1. 运行 `docker ps --filter label=com.docker.compose.service=server --format '{{.Names}} {{.Networks}}'` 核对当前 server 的网络名。在生效的服务端 env 中将 `ENGINE_NETWORK` 填为同一个网络，`UPLOAD_ANTIVIRUS_HOST` 填为 `upload-clamd`，`UPLOAD_ANTIVIRUS_PORT` 填为 `3310`，`UPLOAD_ANTIVIRUS_TIMEOUT_MS` 填为 `30000`。已有扫描服务使用其实际地址。多套独立安装在同一 Docker 主机上时，请给各自的扫描器设置独立的 `CLAMD_PROJECT`。
+2. 平铺安装使用下面的命令启动扫描器。已整理为共享布局的安装，把 `--env-file .env.server` 改为 `--env-file config/.env.server`。独立 Compose v2+ 可使用对应的 `docker-compose` 入口。
+
+```bash
+docker compose --env-file .env.server -f docker/docker-compose.clamd.yml up -d --wait --wait-timeout 900 upload-clamd
+```
+
+3. 待扫描器健康后，在维护窗口使用本安装的 `install-release.sh` 和发布 ZIP 重建应用，使全部 server 副本读取新环境。沿用原 Compose 项目、覆盖文件和副本数。普通容器 restart 不会更新环境变量。可在每个 server 容器内执行 `printenv UPLOAD_ANTIVIRUS_HOST` 核对实际值。若仍为空，请检查原 server Compose 的 environment 段是否传入上述三个变量，以及最后一个覆盖文件是否改写它们。
+4. 返回「离线迁移」重新预检。扫描服务的可用性检查使用小样本，正式写入时仍逐个检测模型原件。当前三项目合集的最大原件约 249 MiB，配置文件为单文件与传输流预留 256 MiB。扫描器健康依赖可用的病毒库，请确保首次初始化及后续更新具备获取病毒库的条件。
+
 ## 停止部署
 
 将与发布包一同提供的 `compose-down.sh` 放在安装目录，在该目录运行 `bash compose-down.sh --dry-run` 可查看目标项目和服务。运行 `bash compose-down.sh` 停止并移除 server、web 及已部署的 SDK 容器。需要同时关闭本安装管理的 MySQL、Redis、Kafka 等服务时，使用 `bash compose-down.sh --all`，也可加 `--dry-run` 预览。两种模式均保留数据卷和宿主机文件。停机脚本优先使用 `docker compose`，也支持独立的 `docker-compose` v2+。对于只能整组执行 `down` 的旧版 v2，脚本按选定服务执行 `stop` 和 `rm --force`，保留网络。

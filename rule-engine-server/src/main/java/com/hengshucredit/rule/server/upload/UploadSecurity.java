@@ -61,7 +61,7 @@ public class UploadSecurity {
 
     private Result scanWithClamd(byte[] content) {
         if (properties.getAntivirusHost() == null || properties.getAntivirusHost().isBlank()) {
-            return new Result("PENDING", "安全检测服务未配置，文件尚未开放访问");
+            return new Result("PENDING", "安全检测服务未配置，请在 server 的生效配置中设置 UPLOAD_ANTIVIRUS_HOST，并重建 server 容器使配置生效");
         }
         int timeout = Math.max(1000, Math.min(properties.getAntivirusTimeoutMs(), 30000));
         Socket socket = new Socket();

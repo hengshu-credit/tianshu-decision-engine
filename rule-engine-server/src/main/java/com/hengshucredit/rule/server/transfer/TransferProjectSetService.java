@@ -179,6 +179,7 @@ public class TransferProjectSetService {
         }
         if (projectCount != 1) throw new IllegalArgumentException("每个子包必须包含一个项目");
         List<String> issues = new ArrayList<>();
+        if (preview.get("modelScanIssue") instanceof String issue) issues.add(issue);
         for (Object value : (List<?>) preview.get("conflicts")) {
             if (value instanceof TransferConflict conflict) issues.add(conflict.message());
         }

@@ -167,11 +167,18 @@ public final class ModelFileStore {
         return reference;
     }
 
+    /** 用小样本确认当前节点的 ClamD 能处理 INSTREAM，导入时仍独立扫描每个原件。 */
+    public String importScanIssue() {
+        var probe = security.scan("tianshu-upload-readiness".getBytes(StandardCharsets.US_ASCII));
+        if ("CLEAN".equals(probe.status())) return null;
+        return "模型扫描服务未就绪：" + probe.message() + "。请核对 ClamD、病毒库与服务端连接后重新预检。";
+    }
+
     private void screen(String filename, byte[] bytes) {
         if (bytes.length == 0 || bytes.length > fileLimit) throw new IllegalArgumentException("模型文件大小无效");
         var result = security.scan(bytes);
         if (!"CLEAN".equals(result.status())) {
-            throw new IllegalArgumentException("模型安全检测 " + result.status() + "：" + result.message() + "。文件未入库，可重新上传");
+            throw new IllegalArgumentException("模型安全检测 " + result.status() + "：" + result.message() + "。模型未入库");
         }
         if (filename.toLowerCase(Locale.ROOT).endsWith(".pmml")) requireStandalonePmml(bytes);
         else com.hengshucredit.rule.server.upload.StandaloneOnnx.require(bytes);

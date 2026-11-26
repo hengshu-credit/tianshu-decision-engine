@@ -144,6 +144,7 @@
           </div>
         </el-form>
         <p class="import-hint">项目级导入请选择目标项目，或勾选“导入时新建项目”；全局导入会把项目级资源转换为全局范围。修改文件或选项后需重新预览冲突。</p>
+        <el-alert v-if="preview?.modelScanIssue" :title="preview.modelScanIssue" type="error" :closable="false" />
         <p v-if="options.publishRules && preview?.ruleCaseCount" class="import-hint">
           所选规则携带 {{ preview.ruleCaseCount }} 个固定用例。确认后先导入草稿和用例，再逐条回归、审批发布。回归可能调用已配置的外部服务。
         </p>
@@ -418,7 +419,7 @@ export default {
     optionsSignature() { return JSON.stringify(this.normalizedOptions()) },
     hasCurrentPreview() {
       return Boolean(this.preview && !this.previewing && this.importFile === this.previewFile
-        && this.optionsSignature === this.previewOptionsSignature && !this.preview.missingFunctionLibraries?.length
+        && this.optionsSignature === this.previewOptionsSignature && !this.preview.missingFunctionLibraries?.length && !this.preview.modelScanIssue
         && (this.preview.versionAssociations || []).every(row => row.valid))
     },
     previewFunctionJars() {
@@ -755,7 +756,7 @@ export default {
         if (restore) await this.runActivation(activity, 75)
         const conflicts = this.setResult.projects.reduce((total, project) => total + project.issues.length, 0)
         const message = apply ? (restore ? `项目合集已导入，已恢复 ${this.activationIndex} 项发布状态` : '项目合集已导入')
-          : this.setResult.applied ? '预检完成，已找回原导入记录' : conflicts ? `预检完成，有 ${conflicts} 项冲突待处理` : '预检通过，可以导入项目合集'
+          : this.setResult.applied ? '预检完成，已找回原导入记录' : conflicts ? `预检完成，有 ${conflicts} 项问题待处理` : '预检通过，可以导入项目合集'
         endActivity(activity, !apply && !this.setResult.applied && conflicts ? 'warning' : 'success', message)
       } catch (error) {
         if (file === this.importFile && error !== 'cancel' && error !== 'close' && !activity?.controller.signal.aborted) {
@@ -808,7 +809,8 @@ export default {
         // 服务端回填的资源选择和处理策略属于本次预检结果；后续手工修改仍使签名失效。
         this.previewOptionsSignature = this.optionsSignature
         const count = this.preview.conflictCount || 0
-        endActivity(activity, count ? 'warning' : 'success', count ? `预检完成，发现 ${count} 项冲突` : '预检完成，请核对导入选项')
+        endActivity(activity, this.preview.modelScanIssue || count ? 'warning' : 'success',
+          this.preview.modelScanIssue || (count ? `预检完成，发现 ${count} 项冲突` : '预检完成，请核对导入选项'))
       } catch (error) {
         if (requestId === this.previewRequestId) {
           this.previewError = error.message || '预检失败，请重新预览冲突'

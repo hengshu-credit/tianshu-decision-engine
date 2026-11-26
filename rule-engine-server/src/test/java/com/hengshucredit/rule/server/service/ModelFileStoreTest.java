@@ -35,6 +35,22 @@ public class ModelFileStoreTest {
         return new ModelFileStore(root.toString(), 1024 * 1024, 0, scanner);
     }
 
+    @Test public void readinessChecksTheScannerAndCannotApproveTheFollowingModel() throws Exception {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var scanner = new UploadSecurity(new UploadScanProperties()) {
+            @Override public Result scan(byte[] content) {
+                return calls.incrementAndGet() == 1 ? new Result("CLEAN", "OK") : new Result("QUARANTINED", "检测到威胁");
+            }
+        };
+        try {
+            var files = new ModelFileStore(temp.newFolder().toString(), 1024, 0, scanner);
+            assertNull(files.importScanIssue());
+            assertTrue(assertThrows(IllegalArgumentException.class,
+                    () -> files.accept(1L, "test.pmml", new byte[]{1,2})).getMessage().contains("QUARANTINED"));
+            assertEquals(2, calls.get());
+        } finally { scanner.close(); }
+    }
+
     @Test public void localFileCacheEvictsByBytesAndDiscardsCorruptHits() {
         try (var files = new VerifiedFileCache()) {
             byte[] bytes = {1, 2, 3};
