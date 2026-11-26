@@ -197,6 +197,16 @@
         <el-form-item v-if="!accountForm.id || canResetAccountPassword(accountForm)" :label="accountForm.id ? '新密码（留空不修改）' : '初始密码'">
           <el-input v-model="accountForm.password" type="password" show-password />
         </el-form-item>
+        <el-form-item v-if="!accountForm.id || canResetAccountPassword(accountForm)" label="SFTP 上传账户">
+          <el-select v-model="sftpAction">
+            <el-option :label="accountForm.id ? '保留当前设置' : '不开通'" value="keep" />
+            <el-option label="开通或更换公钥" value="enable" />
+            <el-option v-if="accountForm.id" label="关闭 SFTP 登录" value="disable" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="sftpAction === 'enable'" label="上传方 SSH 公钥">
+          <el-input v-model="sftpPublicKey" type="textarea" placeholder="粘贴上传方提供的单行 OpenSSH 公钥" />
+        </el-form-item>
         <el-form-item v-if="canAssignPermissions" label="角色">
           <el-select v-model="accountForm.roleIds" multiple clearable>
             <el-option
@@ -454,7 +464,7 @@ function emptyRoleForm() {
 
 export default {
   mixins: [pageTabState('activeTab', vm => [vm.canViewAccounts && 'accounts', vm.canViewRoles && 'roles', vm.canViewLogs && 'logs'].filter(Boolean)), configurationDialogsMixin([
-    { visible: 'accountDialogVisible', draft: vm => vm.accountForm, busy: vm => vm.accountSaving },
+    { visible: 'accountDialogVisible', draft: vm => ({ form: vm.accountForm, sftpAction: vm.sftpAction, publicKey: vm.sftpPublicKey }), busy: vm => vm.accountSaving },
     { visible: 'roleDialogVisible', draft: vm => vm.roleForm, busy: vm => vm.accountSaving },
     { visible: 'passwordDialogVisible', draft: vm => vm.newPassword, busy: vm => vm.accountSaving },
     { visible: 'permissionDialogVisible', draft: vm => ({ roles: vm.permissionRoleIds, projects: vm.permissionProjectIds, mode: vm.permissionProjectAccessMode, global: vm.permissionGlobalEditable, defaults: vm.overrideDraft, overrides: vm.projectOverrideDraft }), busy: vm => vm.accountSaving },
@@ -488,6 +498,8 @@ export default {
       permissionCatalog: [],
       projectOptions: [],
       accountDialogVisible: false,
+      sftpAction: 'keep',
+      sftpPublicKey: '',
       accountSaving: false,
       accountEditEpoch: 0,
       permissionDialogVisible: false,
@@ -608,7 +620,7 @@ export default {
       if (this.accountSaving) return
       this.accountSaving = true
       const epoch = this.accountEditEpoch
-      try { await request(); if (epoch === this.accountEditEpoch) await complete() }
+      try { const result = await request(); if (epoch === this.accountEditEpoch) await complete(result) }
       catch (error) { if (epoch === this.accountEditEpoch && !error.requestErrorNotified) ElMessage.error(error.message || '保存失败，请重试') }
       finally { if (epoch === this.accountEditEpoch) this.accountSaving = false }
     },
@@ -643,6 +655,8 @@ export default {
       return role ? role.roleName : code
     },
     openAccountDialog(account) {
+      this.sftpAction = 'keep'
+      this.sftpPublicKey = ''
       this.accountForm = account
         ? {
             id: account.id,
@@ -661,14 +675,21 @@ export default {
     },
     async saveAccount() {
       const payload = { ...this.accountForm }
+      if (this.sftpAction === 'enable') {
+        if (!this.sftpPublicKey.trim()) return ElMessage.warning('请填写上传方 SSH 公钥')
+        payload.sftpPublicKey = this.sftpPublicKey.trim()
+      } else if (this.sftpAction === 'disable') payload.disableSftp = true
       if (!this.canAssignPermissions) {
         for (const key of ['roleIds', 'permissionOverrides', 'projectIds', 'projectAccessMode', 'globalEditable', 'projectPermissionOverrides']) delete payload[key]
       }
       if (payload.id && !this.canResetAccountPassword(payload)) delete payload.password
-      return this.runAccountSave(() => saveConsoleAccount(payload), async () => {
+      return this.runAccountSave(() => saveConsoleAccount(payload), async result => {
         this.accountDialogVisible = false
         this.accountForm.password = ''
-        ElMessage.success('账户已保存')
+        if (this.sftpAction === 'enable' && result?.data?.id) {
+          const login = 'u' + result.data.id
+          await this.$alert(`个人上传使用 ${login}，项目进件使用 ${login}-p项目ID。登录时使用对应私钥。`, 'SFTP 账户已开通')
+        } else ElMessage.success('账户已保存')
         await this.loadData()
       })
     },

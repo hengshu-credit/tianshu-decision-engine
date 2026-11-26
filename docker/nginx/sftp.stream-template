@@ -1,0 +1,9 @@
+upstream engine_sftp {
+    zone engine_sftp 64k;
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    server server:2222 resolve;
+}
+server {
+    listen 2222;
+    proxy_pass engine_sftp;
+}

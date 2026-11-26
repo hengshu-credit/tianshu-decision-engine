@@ -31,6 +31,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/rule/model")
 public class RuleModelController {
+    @jakarta.annotation.Resource private com.hengshucredit.rule.server.sftp.EngineSftpFiles sftpFiles;
 
     @Resource
     private RuleModelService modelService;
@@ -89,7 +90,8 @@ public class RuleModelController {
     @PostMapping("/upload")
     @RequirePermission("model:edit")
     public ApiResponse<GovernanceRequestView> upload(
-            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestParam(required = false) String sftpPath,
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String scope,
             @RequestParam String modelCode,
@@ -104,7 +106,7 @@ public class RuleModelController {
             @RequestParam(defaultValue = "120000") Integer executionTimeoutMs) {
         try {
             RuleModel model = modelService.buildUploadSnapshot(
-                    file, projectId, scope, modelCode, modelName,
+                    sftpFiles.input(file, sftpPath), projectId, scope, modelCode, modelName,
                     modelType, description, testParams,
                     onnxTaskType, onnxConfig,
                     preloadOnStartup, executionTimeoutMs);
@@ -216,7 +218,8 @@ public class RuleModelController {
     @PostMapping("/replace/{id}")
     @RequirePermission("model:edit")
     public ApiResponse<GovernanceRequestView> replace(@PathVariable Long id,
-                                @RequestParam("file") MultipartFile file,
+                                @RequestParam(value = "file", required = false) MultipartFile file,
+                                @RequestParam(required = false) String sftpPath,
                                 @RequestParam String impactToken,
                                 @RequestParam(required = false) String changeLog,
                                 @RequestParam(required = false) String testParams,
@@ -224,7 +227,7 @@ public class RuleModelController {
                                 @RequestParam(required = false) String onnxConfig) {
         try {
             RuleModel model = modelService.buildReplacementSnapshot(
-                    id, file, testParams, onnxTaskType,
+                    id, sftpFiles.input(file, sftpPath), testParams, onnxTaskType,
                     onnxConfig, impactToken);
             return ApiResponse.ok(createModelDraft(model, "UPDATE",
                     changeLog == null || changeLog.isBlank()

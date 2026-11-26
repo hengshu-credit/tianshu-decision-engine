@@ -134,3 +134,5 @@ docker compose --project-name tianshu-server --env-file config/.env.server \
 - `2026-11-22-test-scope.sql` 增加 Mock 规则的所属项目、规则和变量的默认测试输入。既有 Mock 规则继续全局可用。
 
 - `2026-11-23-example-case-binding.sql` 在测试示例迁移后执行，支持变量、对象和子字段绑定固定用例，并扩大变量固定示例的容量。
+
+- `2026-11-26-engine-sftp.sql` 建立内置 SFTP 授权和素材文件引用表。在共享模型文件仓迁移后执行，历史素材仍可按原方式读取。

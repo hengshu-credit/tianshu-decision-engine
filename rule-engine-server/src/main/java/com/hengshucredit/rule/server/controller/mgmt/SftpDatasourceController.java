@@ -29,6 +29,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/rule/sftp")
 public class SftpDatasourceController {
+    @Resource private com.hengshucredit.rule.server.sftp.EngineSftpFiles engineSftpFiles;
     @Resource private RuleSftpDatasourceService datasourceService;
     @Resource private SftpConnectPools sftpConnectPools;
     @Resource private SftpFileCache sftpFileCache;
@@ -88,13 +89,17 @@ public class SftpDatasourceController {
         if (log == null || !"SFTP".equals(log.getModuleType())) throw new com.hengshucredit.rule.model.PlatformException(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "文件查询日志不存在");
         Map<String, Object> payload = parseMap(log.getRequestBody());
         Object remotePath = payload.get("remotePath");
-        if (log.getTargetRefId() == null || remotePath == null) throw new com.hengshucredit.rule.model.PlatformException(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, "文件日志缺少数据源或路径");
+        boolean internal = "SFTP_VARIABLE_READ".equals(log.getActionType()) && Boolean.TRUE.equals(payload.get("engineSftp"));
+        if ((!internal && log.getTargetRefId() == null) || remotePath == null) throw new com.hengshucredit.rule.model.PlatformException(com.hengshucredit.rule.model.PlatformCode.PARAMETER_INVALID, "文件日志缺少数据源或路径");
         try {
-            byte[] content = sftpConnectPools.readFile(log.getTargetRefId(), String.valueOf(remotePath));
+            byte[] content = internal ? engineSftpFiles.readProject(log.getProjectId(), String.valueOf(remotePath))
+                    : sftpConnectPools.readFile(log.getTargetRefId(), String.valueOf(remotePath));
             String contentType = contentType(String.valueOf(remotePath));
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.parseMediaType(contentType));
             headers.setContentLength(content.length);
+            headers.set("Content-Security-Policy", "sandbox; default-src 'none'");
+            headers.set("X-Content-Type-Options", "nosniff");
             headers.setContentDisposition(ContentDisposition.inline()
                     .filename(fileName(String.valueOf(remotePath)), StandardCharsets.UTF_8).build());
             return ResponseEntity.ok().headers(headers).body(content);

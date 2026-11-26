@@ -384,7 +384,12 @@
           <div class="runtime-hint">仅用于分类与筛选。PMML 按文件识别；无法确定算法时标为通用模型，不影响推理。</div>
         </el-form-item>
         <el-form-item label="模型文件" prop="file">
-          <el-upload
+          <el-radio-group v-model="fileSource" aria-label="模型文件来源">
+            <el-radio-button value="LOCAL">本地上传</el-radio-button>
+            <el-radio-button value="SFTP">内置 SFTP</el-radio-button>
+          </el-radio-group>
+          <el-input v-if="fileSource === 'SFTP'" v-model.trim="sftpPath" placeholder="个人上传目录中的路径，如 models/score.pmml" />
+          <el-upload v-else
             ref="upload"
             action="#"
             :auto-upload="false"
@@ -887,7 +892,7 @@ const createEditForm = () => ({
 
 export default {
   mixins: [pageTabState('activeTab', ['list', 'logs']), governanceWorkspaceMixin, configurationDialogsMixin([
-    { visible: 'uploadVisible', draft: vm => ({ form: vm.uploadForm, fileName: vm.selectedFileName }), busy: vm => vm.uploading },
+    { visible: 'uploadVisible', draft: vm => ({ form: vm.uploadForm, fileName: vm.selectedFileName, fileSource: vm.fileSource, sftpPath: vm.sftpPath }), busy: vm => vm.uploading },
     { visible: 'editVisible', draft: vm => vm.editForm, busy: vm => vm.editLoading },
     { visible: 'toGlobalVisible', draft: vm => vm.toGlobalForm, busy: vm => vm.toGlobalLoading },
   ])],
@@ -1003,6 +1008,8 @@ export default {
         modelType: [],
       },
       fileList: [],
+      fileSource: 'LOCAL',
+      sftpPath: '',
       selectedFile: null,
       selectedFileName: '',
       // 转为全局模型
@@ -1069,7 +1076,7 @@ export default {
   computed: {
     isOnnxFile() {
       const name =
-        (this.selectedFile && this.selectedFile.name) || this.selectedFileName
+        this.fileSource === 'SFTP' ? this.sftpPath : (this.selectedFile?.name || this.selectedFileName)
       return !!(name && name.toLowerCase().endsWith('.onnx'))
     },
     uploadSupportsGpu() {
@@ -1363,6 +1370,8 @@ export default {
     },
 
     handleUpload() {
+      this.fileSource = 'LOCAL'
+      this.sftpPath = ''
       this.uploadForm = createUploadForm()
       if (this.contextProjectId) {
         this.uploadForm.scope = 'PROJECT'
@@ -1408,7 +1417,7 @@ export default {
       try {
         const valid = await new Promise(resolve => this.$refs.uploadForm.validate(resolve))
         if (!valid) return
-        if (!this.selectedFile) {
+        if (this.fileSource === 'SFTP' ? !this.sftpPath : !this.selectedFile) {
           this.$message.warning('请选择模型文件')
           return
         }
@@ -1422,7 +1431,8 @@ export default {
         }
         this.uploadProgress = 0
           const formData = new FormData()
-          formData.append('file', this.selectedFile)
+          if (this.fileSource === 'SFTP') formData.append('sftpPath', this.sftpPath)
+          else formData.append('file', this.selectedFile)
           // 修复: projectId 为 null 时不添加到 FormData，避免被转成字符串 "null" 导致后端 Long 类型转换失败
           if (this.uploadForm.scope !== 'GLOBAL' && this.uploadForm.projectId) {
             formData.append('projectId', this.uploadForm.projectId)

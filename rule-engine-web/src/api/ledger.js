@@ -23,9 +23,10 @@ export const getLedgerEvent = id => request.get(`${base}/events/${id}`, metadata
 export const saveLedgerEvent = (id, data) => id ? request.put(`${base}/events/${id}`, data, metadataResponse) : request.post(`${base}/events`, data, metadataResponse)
 export const deleteLedgerEvent = (id, version) => request.delete(`${base}/events/${id}`, { params: { version } })
 export const listLedgerAssets = query => request.get(`${base}/assets`, { ...metadataResponse, params: query })
-export function uploadLedgerAsset(file) {
+export function uploadLedgerAsset(file, sftpPath) {
   const data = new FormData()
-  data.append('file', file)
+  if (sftpPath) data.append('sftpPath', sftpPath)
+  else data.append('file', file)
   return request.post(`${base}/assets`, data, { ...metadataResponse, timeout: 40000 })
 }
 export const updateLedgerAsset = (id, data) => request.put(`${base}/assets/${id}`, data, metadataResponse)

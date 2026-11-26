@@ -26,6 +26,7 @@ import java.util.List;
 @RequirePermission("ledger:view")
 @RequiredArgsConstructor
 public class LedgerController {
+    @jakarta.annotation.Resource private com.hengshucredit.rule.server.sftp.EngineSftpFiles sftpFiles;
     private final LedgerArticleService articles;
     private final LedgerAssetService assets;
     private final LedgerQueryService queries;
@@ -92,7 +93,9 @@ public class LedgerController {
     public ApiResponse<?> assets(@RequestParam(required=false) String scope,@RequestParam(required=false) Long projectId,@RequestParam(required=false) String status,@RequestParam(required=false) String keyword,
             @RequestParam(defaultValue="1") int pageNum,@RequestParam(defaultValue="20") int pageSize) { return ApiResponse.ok(assets.list(scope,projectId,status,keyword,pageNum,pageSize)); }
     @PostMapping("/assets") @RequirePermission("ledger:edit")
-    public ApiResponse<?> upload(@RequestParam MultipartFile file) throws IOException { return ApiResponse.ok(assets.upload(file)); }
+    public ApiResponse<?> upload(@RequestParam(required=false) MultipartFile file, @RequestParam(required=false) String sftpPath) throws IOException {
+        return ApiResponse.ok(assets.upload(sftpFiles.input(file, sftpPath)));
+    }
     @PutMapping("/assets/{id}") @RequirePermission("ledger:edit")
     public ApiResponse<?> asset(@PathVariable long id,@RequestBody LedgerRequests.Asset request) { return ApiResponse.ok(assets.update(id,request)); }
     @PostMapping("/assets/{id}/scan") @RequirePermission("ledger:edit")

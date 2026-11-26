@@ -430,15 +430,21 @@ public class VariableSourceReferenceValidator {
     private void validateSftp(RuleVariable variable, JSONObject config,
                               List<GovernanceIssue> issues) {
         Long datasourceId = longValue(config.get("sftpDatasourceId"));
-        if (datasourceId == null) {
+        boolean internal = Boolean.TRUE.equals(config.get("engineSftp"));
+        if (internal && (datasourceId != null || !text(config.get("fileAddress")).isBlank())) {
+            issues.add(issue(variable, "VARIABLE_SOURCE_REFERENCE_INVALID", "内置 SFTP 使用项目收件目录，请由上传方提供文件路径", "$.sourceConfig.remotePath"));
+        }
+        if (!internal && datasourceId == null) {
             issues.add(issue(variable, "VARIABLE_SOURCE_REFERENCE_REQUIRED", "请选择 SFTP 数据源",
                     "$.sourceConfig.sftpDatasourceId"));
             return;
         }
-        RuleSftpDatasource datasource = sftpDatasourceMapper.selectById(datasourceId);
-        validateResource(variable, datasource == null ? null : datasource.getScope(),
-                datasource == null ? null : datasource.getProjectId(), datasource == null ? null : datasource.getStatus(),
-                datasource == null, "SFTP数据源", "$.sourceConfig.sftpDatasourceId", issues);
+        if (!internal) {
+            RuleSftpDatasource datasource = sftpDatasourceMapper.selectById(datasourceId);
+            validateResource(variable, datasource == null ? null : datasource.getScope(),
+                    datasource == null ? null : datasource.getProjectId(), datasource == null ? null : datasource.getStatus(),
+                    datasource == null, "SFTP数据源", "$.sourceConfig.sftpDatasourceId", issues);
+        }
         if (config.get("remotePath") instanceof JSONObject reference) {
             String path = "$.sourceConfig.remotePath";
             if (!"REFERENCE".equals(reference.getString("kind")) || longValue(reference.get("refId")) == null

@@ -1,7 +1,7 @@
 <template>
   <div class="uiue-list-page management-list-page sftp-log-page">
     <dismissible-guidance guide-id="sftp-log.intro" label="SFTP 查询日志提示" heading="SFTP 查询日志">
-      记录变量或规则触发的 SFTP 文件读取、远端地址和 trace_id。预览会重新从连接池读取文件，页面不会保存文件副本。
+      记录变量或规则触发的 SFTP 文件读取、远端地址和 trace_id。预览会重新从对应数据源读取文件，页面不会保存文件副本。
     </dismissible-guidance>
     <el-tabs model-value="logs" class="sftp-tabs" :before-leave="navigateTab"><el-tab-pane label="数据源配置" name="datasource" /><el-tab-pane label="查询日志" name="logs" /></el-tabs>
     <div class="uiue-search-container uiue-filter-toolbar"><el-form :inline="true" size="small" @keyup.enter="handleQuery"><el-form-item label="项目编码"><project-filter-select v-model:value="query.projectCode" field="projectCode" placeholder="项目编码" style="width: 150px" /></el-form-item><el-form-item label="Trace ID"><el-input v-model="query.traceId" clearable placeholder="规则或模块 trace_id" style="width: 230px" /></el-form-item><el-form-item label="结果"><el-select v-model="query.success" clearable placeholder="全部" style="width: 100px"><el-option label="成功" :value="1" /><el-option label="失败" :value="0" /></el-select></el-form-item><el-form-item><el-button type="primary" @click="handleQuery">查询</el-button><el-button @click="reset">重置</el-button></el-form-item></el-form><div class="uiue-btn-bar"><div class="btn-right"><table-column-settings v-model="logColumnOrder" :columns="logColumns" storage-key="tianshu:table-columns:sftp-logs" /><el-button size="small" @click="load">刷新</el-button></div></div></div>

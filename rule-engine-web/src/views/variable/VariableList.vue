@@ -1231,8 +1231,9 @@
         </template>
         <template v-if="!isObjectField && form.varSource === 'SFTP'">
           <el-form-item label="SFTP 数据源">
-            <resource-picker v-model:value="form.sftpDatasourceId" :resources="sourceCatalog.sftpOptions" category="sftp" placeholder="选择 SFTP 数据源" />
+            <resource-picker v-model:value="form.sftpDatasourceId" :resources="engineSftpOptions" category="sftp" placeholder="选择 SFTP 数据源" />
           </el-form-item>
+          <p v-if="form.sftpDatasourceId === 'ENGINE'" class="field-help">使用当前执行项目中的路径，例如 u42/contracts/report.pdf。第三方上传完成后可将此路径作为进件字段返回。</p>
           <el-form-item label="远端文件路径">
             <el-radio-group v-model="form.sftpPathMode" aria-label="远端路径来源">
               <el-radio-button value="TEMPLATE">路径模板</el-radio-button>
@@ -1246,15 +1247,15 @@
               <div class="field-help">支持 $.field 或 ${field} 引用请求参数；上游外数返回完整文件路径时请选择“引用字段”。</div>
             </template>
           </el-form-item>
-          <el-form-item label="业务文件地址">
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="业务文件地址">
             <el-input v-model="form.sftpFileAddress" placeholder="$.contractFileUrl" />
             <div class="field-help">业务系统只需传入 HTTP(S) 文件地址；规则执行前会下载并上传到下面的 SFTP 目标路径，不需要把 SFTP 凭据交给业务系统。</div>
           </el-form-item>
-          <el-form-item label="上传目标路径">
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="上传目标路径">
             <el-input v-model="form.sftpUploadRemotePath" placeholder="/contracts/${customerId}/contract.pdf" />
             <div class="field-help">填写业务文件地址时必填；上传完成后引擎从该路径读取。目标目录需提前在 SFTP 创建。</div>
           </el-form-item>
-          <el-form-item label="上传超时(ms)"><el-input-number v-model="form.sftpUploadTimeoutMs" :min="100" :max="300000" controls-position="right" style="width: 180px" /></el-form-item>
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="上传超时(ms)"><el-input-number v-model="form.sftpUploadTimeoutMs" :min="100" :max="300000" controls-position="right" style="width: 180px" /></el-form-item>
           <el-form-item label="输出格式">
             <el-select v-model="form.sftpOutputFormat" style="width: 180px"><el-option label="文本（TEXT）" value="TEXT" /><el-option label="Base64（BASE64）" value="BASE64" /><el-option label="JSON 对象（JSON）" value="JSON" /></el-select>
             <span class="field-help">API 接口需要同一文件时，建议引用此变量并选择 BASE64；同一规则会复用已获取的文件字节。</span>
@@ -1263,9 +1264,9 @@
           <el-form-item label="读取失败时"><el-select v-model="form.sftpExceptionStrategy" style="width: 180px"><el-option label="抛出异常" value="ERROR" /><el-option label="返回默认值" value="RETURN_DEFAULT" /><el-option label="跳过补值" value="SKIP" /></el-select></el-form-item>
           <el-form-item v-if="form.sftpExceptionStrategy === 'RETURN_DEFAULT'" label="兜底值"><el-input v-model="form.sftpFallbackValue" /></el-form-item>
           <el-form-item label="跨规则缓存"><el-input-number v-model="form.sftpCacheSeconds" :min="0" :max="86400" controls-position="right" style="width: 180px" /><span class="field-help">秒；0 表示不缓存。缓存只保存成功读取的文件内容。</span></el-form-item>
-          <el-form-item label="失败重试次数"><el-input-number v-model="form.sftpRetryCount" :min="0" :max="5" controls-position="right" style="width: 180px" /><span class="field-help">只对连接、Socket 和临时 SFTP 错误重试。</span></el-form-item>
-          <el-form-item label="重试退避(ms)"><el-input-number v-model="form.sftpRetryBackoffMs" :min="0" :max="60000" controls-position="right" style="width: 180px" /><span class="field-help">每次失败后的初始等待时间。</span></el-form-item>
-          <el-form-item label="退避倍数"><el-input-number v-model="form.sftpRetryBackoffMultiplier" :min="1" :max="5" :step="0.1" controls-position="right" style="width: 180px" /></el-form-item>
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="失败重试次数"><el-input-number v-model="form.sftpRetryCount" :min="0" :max="5" controls-position="right" style="width: 180px" /><span class="field-help">只对连接、Socket 和临时 SFTP 错误重试。</span></el-form-item>
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="重试退避(ms)"><el-input-number v-model="form.sftpRetryBackoffMs" :min="0" :max="60000" controls-position="right" style="width: 180px" /><span class="field-help">每次失败后的初始等待时间。</span></el-form-item>
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="退避倍数"><el-input-number v-model="form.sftpRetryBackoffMultiplier" :min="1" :max="5" :step="0.1" controls-position="right" style="width: 180px" /></el-form-item>
         </template>
         <template v-if="!isObjectField && form.varSource === 'LIST'">
           <el-form-item label="名单库（多选）">
@@ -2742,6 +2743,9 @@ export default {
     },
   },
   computed: {
+    engineSftpOptions() {
+      return [{ id: 'ENGINE', name: '引擎内置 SFTP' }, ...this.sourceCatalog.sftpOptions]
+    },
     preflightConfigSignature() {
       if (!this.form || !this.form.id || this.isObjectField) return ''
       return JSON.stringify({
@@ -2885,7 +2889,7 @@ export default {
         API: this.sourceCatalog.apiOptions.length,
         DB: this.sourceCatalog.databaseOptions.length,
         LIST: this.sourceCatalog.listOptions.length,
-        SFTP: this.sourceCatalog.sftpOptions.length,
+        SFTP: this.engineSftpOptions.length,
       }
     },
     compatibleListOptions() {
@@ -3313,7 +3317,7 @@ export default {
       if (
         this.form.varSource === 'SFTP' &&
         this.form.sftpDatasourceId &&
-        !this.sourceCatalog.sftpOptions.some(
+        !this.engineSftpOptions.some(
           (item) => String(item.id) === String(this.form.sftpDatasourceId)
         )
       ) {
@@ -3475,7 +3479,7 @@ export default {
         this.form.dbFallbackValue =
           config.fallbackValue != null ? String(config.fallbackValue) : ''
       } else if (this.form.varSource === 'SFTP') {
-        this.form.sftpDatasourceId = config.sftpDatasourceId || ''
+        this.form.sftpDatasourceId = config.engineSftp ? 'ENGINE' : config.sftpDatasourceId || ''
         this.form.sftpPathMode = config.remotePath?.kind === 'REFERENCE' ? 'FIELD' : 'TEMPLATE'
         this.form.sftpPathOperand = this.form.sftpPathMode === 'FIELD' ? config.remotePath : null
         this.form.sftpRemotePath = typeof config.remotePath === 'string' ? config.remotePath : ''
@@ -3577,19 +3581,19 @@ export default {
           this.$message.warning('请配置远端文件路径')
           return null
         }
-        if (String(payload.sftpFileAddress || '').trim() && !String(payload.sftpUploadRemotePath || '').trim()) {
+        if (payload.sftpDatasourceId !== 'ENGINE' && String(payload.sftpFileAddress || '').trim() && !String(payload.sftpUploadRemotePath || '').trim()) {
           this.$message.warning('填写业务文件地址后，请配置上传目标路径')
           return null
         }
         payload.sourceConfig = JSON.stringify({
-          sftpDatasourceId: payload.sftpDatasourceId,
+          ...(payload.sftpDatasourceId === 'ENGINE' ? { engineSftp: true } : { sftpDatasourceId: payload.sftpDatasourceId }),
           remotePath: selectedPath,
           outputFormat: payload.sftpOutputFormat || 'TEXT',
           charset: payload.sftpCharset || 'UTF-8',
           exceptionStrategy: payload.sftpExceptionStrategy || 'ERROR',
           fallbackValue: payload.sftpFallbackValue || null,
-          fileAddress: payload.sftpFileAddress || null,
-          uploadRemotePath: payload.sftpUploadRemotePath || null,
+          fileAddress: payload.sftpDatasourceId === 'ENGINE' ? null : payload.sftpFileAddress || null,
+          uploadRemotePath: payload.sftpDatasourceId === 'ENGINE' ? null : payload.sftpUploadRemotePath || null,
           uploadTimeoutMs: payload.sftpUploadTimeoutMs ?? 30000,
           cacheSeconds: payload.sftpCacheSeconds ?? 0,
           retryCount: payload.sftpRetryCount ?? 2,
@@ -5225,7 +5229,7 @@ export default {
         return '执行规则时按配置的查询条件读取数据库结果，再将结果写入当前变量。'
       }
       if (row && row.varSource === 'SFTP') {
-        return '执行规则时从 SFTP 连接池读取远端文件，并按指定格式写入当前变量。'
+        return '执行规则时从选定的 SFTP 数据源读取文件，并按指定格式写入当前变量。'
       }
       if (row && row.varSource === 'LIST') {
         return '执行规则时获取待匹配内容的字段值或表达式结果，再按所选组合模式到名单库中匹配。'
@@ -5282,7 +5286,7 @@ export default {
       if (row && row.varSource === 'SFTP') {
         const sftp = [...(this.sourceCatalog.sftpOptions || []), ...(this.sftpDatasourceOptions || [])].find(item => String(item.id) === String(config.sftpDatasourceId))
         return [
-          { label: 'SFTP 数据源', value: sftp ? (sftp.name || sftp.datasourceName || sftp.code || sftp.datasourceCode) : (config.sftpDatasourceId ? '数据源ID ' + config.sftpDatasourceId : '未配置') },
+          { label: 'SFTP 数据源', value: config.engineSftp ? '引擎内置 SFTP' : sftp ? (sftp.name || sftp.datasourceName || sftp.code || sftp.datasourceCode) : (config.sftpDatasourceId ? '数据源ID ' + config.sftpDatasourceId : '未配置') },
           { label: '远端路径', value: config.remotePath || '未配置' },
           { label: '输出格式', value: config.outputFormat || 'TEXT' },
           { label: '失败处理', value: this.exceptionStrategyLabel(config.exceptionStrategy) },

@@ -476,7 +476,7 @@ class DeployTest(unittest.TestCase):
         self.write(destination / '.env.server', 'existing credentials')
         self.write(destination / 'docker/docker-compose.mysql.yml', 'existing MySQL')
         self.write(destination / 'docker/nginx/proxy.conf', 'custom proxy')
-        names = {'docker/nginx/default.conf', 'docker/nginx/proxy.conf',
+        names = {'docker/nginx/default.conf', 'docker/nginx/proxy.conf', 'docker/nginx/sftp.stream-template',
                  'docker/docker-compose.server.yml', 'docker/docker-compose.client.yml'}
         for name in names:
             self.write(self.release / name, 'release file')

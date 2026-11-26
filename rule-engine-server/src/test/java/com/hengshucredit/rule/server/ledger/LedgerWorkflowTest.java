@@ -78,7 +78,20 @@ public class LedgerWorkflowTest {
         assertTrue("生产环境的 @Repository 必须通过代理参与完整工作流测试", org.springframework.aop.support.AopUtils.isCglibProxy(repository));
         scanResult = new AtomicReference<>(new UploadSecurity.Result("PENDING", "等待扫描"));
         UploadSecurity antivirus = new UploadSecurity(new UploadScanProperties()) { @Override public Result scan(byte[] bytes) { return scanResult.get(); } };
-        assets = transaction(new LedgerAssetService(repository, access, antivirus));
+        var files = new com.hengshucredit.rule.server.service.SharedFileStore() {
+            final Map<String,byte[]> content = new java.util.HashMap<>();
+            public void put(String ref, String hash, byte[] bytes, boolean archive) {
+                assertEquals(LedgerAssetService.digest(bytes), hash);
+                content.put(ref, bytes.clone());
+            }
+            public byte[] read(String ref, String hash, long limit) {
+                byte[] bytes = content.get(ref);
+                assertEquals(LedgerAssetService.digest(bytes), hash);
+                assertTrue(bytes.length <= limit);
+                return bytes.clone();
+            }
+        };
+        assets = transaction(new LedgerAssetService(repository, access, antivirus, files));
         var builder = new org.springframework.http.converter.json.Jackson2ObjectMapperBuilder();
         new com.hengshucredit.rule.server.config.JacksonConfig().localDateTimeCustomizer().customize(builder);
         json = builder.featuresToDisable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS).build();

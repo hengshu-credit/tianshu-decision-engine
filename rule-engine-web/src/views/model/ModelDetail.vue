@@ -24,6 +24,7 @@
           @changed="load"
         />
         <el-button v-permission="'model:edit'" size="small" @click="openImpact('REPLACE')">替换模型文件</el-button>
+        <el-button v-permission="'model:edit'" size="small" @click="openImpact('REPLACE', true)">从 SFTP 替换</el-button>
         <el-button
           v-permission="'model:edit'"
           size="small"
@@ -1013,6 +1014,7 @@ export default {
       modelPublishing: false,
       impactVisible: false,
       impactAction: 'REPLACE',
+      replaceFromSftp: false,
       replaceImpactToken: '',
       /** refType:id -> 字段对象映射（从变量管理/模型管理加载） */
       varMap: {},
@@ -1279,20 +1281,26 @@ export default {
     ...historicalVersionMethods,
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
-    openImpact(action) {
+    openImpact(action, fromSftp = false) {
+      this.replaceFromSftp = fromSftp
       this.impactAction = action
       this.impactVisible = true
     },
-    handleImpactConfirmed({ impactToken }) {
+    async handleImpactConfirmed({ impactToken }) {
       this.replaceImpactToken = impactToken
       this.impactVisible = false
-      this.$refs.replaceFile.click()
+      if (this.replaceFromSftp) {
+        const result = await this.$prompt('填写个人上传目录中的文件路径', '从内置 SFTP 替换模型', { inputPattern: /\S/, inputErrorMessage: '请填写路径' }).catch(() => null)
+        if (result) await this.handleReplaceFile(null, result.value.trim())
+        else this.replaceImpactToken = ''
+      } else this.$refs.replaceFile.click()
     },
-    async handleReplaceFile(event) {
-      const file = event.target.files && event.target.files[0]
-      if (!file || !this.replaceImpactToken) return
+    async handleReplaceFile(event, sftpPath) {
+      const file = event?.target?.files?.[0]
+      if ((!file && !sftpPath) || !this.replaceImpactToken) return
       const formData = new FormData()
-      formData.append('file', file)
+      if (sftpPath) formData.append('sftpPath', sftpPath)
+      else formData.append('file', file)
       formData.append('changeLog', '影响分析确认后的模型替换')
       if (this.model.modelFormat === 'ONNX') {
         const config = this.parseModelConfig(this.model.modelConfig)
@@ -1306,7 +1314,7 @@ export default {
           this.replaceImpactToken
         )
         this.replaceImpactToken = ''
-        event.target.value = ''
+        if (event) event.target.value = ''
         await completeResourceChange(this, response, () => this.load())
       } catch (error) {
         this.$message.error(error.message || '模型替换失败')

@@ -539,8 +539,9 @@ public class RuleDependencyClosureService {
                 }
             }
         } else if ("SFTP".equals(source)) {
-            addExternalBinding(variable, actualType, "SFTP", config.getLong("sftpDatasourceId"),
-                    path, dependencies, issues);
+            if (!Boolean.TRUE.equals(config.get("engineSftp"))) {
+                addExternalBinding(variable, actualType, "SFTP", config.getLong("sftpDatasourceId"), path, dependencies, issues);
+            }
             collectStructuredReferences(JSON.toJSONString(config.get("remotePath")), variable.getProjectId(),
                     dependencies, issues, new LinkedHashSet<>(), new LinkedHashSet<>());
         } else if ("LIST".equals(source)) {

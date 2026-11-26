@@ -47,6 +47,8 @@ public class ConsoleAccountManagementService {
     @Resource
     private ConsoleUserMapper userMapper;
     @Resource
+    private com.hengshucredit.rule.server.sftp.EngineSftpAccounts sftpAccounts;
+    @Resource
     private ConsoleRoleMapper roleMapper;
     @Resource
     private ConsolePermissionMapper permissionMapper;
@@ -198,6 +200,11 @@ public class ConsoleAccountManagementService {
         }
         if (existingUser) {
             bumpPermissionVersion(user, operator);
+        }
+        boolean disableSftp = Boolean.TRUE.equals(request.getDisableSftp());
+        if (disableSftp || request.getSftpPublicKey() != null && !request.getSftpPublicKey().isBlank()) {
+            if (existingUser) requirePasswordResetPermission(user.getId());
+            sftpAccounts.configure(user.getId(), request.getSftpPublicKey(), disableSftp);
         }
         replaceProjects(user.getId(), request.getProjectIds(), operator);
         replaceProjectPermissions(user.getId(), request.getProjectPermissionOverrides());

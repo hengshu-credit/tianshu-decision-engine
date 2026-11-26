@@ -379,7 +379,7 @@ public class ArtifactRuntimeSnapshotService {
             replaceSingle(config, config.containsKey("dbDatasourceId") ? "dbDatasourceId" : "datasourceId",
                     "DB_DATASOURCE", bindings, fallback);
         } else if ("SFTP".equals(source)) {
-            replaceSingle(config, "sftpDatasourceId", "SFTP", bindings, fallback);
+            if (!Boolean.TRUE.equals(config.get("engineSftp"))) replaceSingle(config, "sftpDatasourceId", "SFTP", bindings, fallback);
         } else if ("LIST".equals(source)) {
             JSONArray ids = config.getJSONArray("listIds");
             if (ids != null) {

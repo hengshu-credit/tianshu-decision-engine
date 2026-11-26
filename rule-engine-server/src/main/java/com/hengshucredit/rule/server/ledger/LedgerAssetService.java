@@ -35,7 +35,8 @@ public class LedgerAssetService {
     private final LedgerRepository repository;
     private final LedgerAccess access;
     private final UploadSecurity antivirus;
-    public LedgerAssetService(LedgerRepository repository, LedgerAccess access, UploadSecurity antivirus) { this.repository = repository; this.access = access; this.antivirus = antivirus; }
+    private final com.hengshucredit.rule.server.service.SharedFileStore files;
+    public LedgerAssetService(LedgerRepository repository, LedgerAccess access, UploadSecurity antivirus, com.hengshucredit.rule.server.service.SharedFileStore files) { this.files = files; this.repository = repository; this.access = access; this.antivirus = antivirus; }
 
     public Page<Map<String, Object>> list(String scope, Long projectId, String status, String keyword, int page, int size) {
         access.userId();
@@ -84,8 +85,13 @@ public class LedgerAssetService {
                     result = new UploadSecurity.Result("QUARANTINED", "图片格式或尺寸校验失败，素材已隔离");
                 }
             }
+            if (png != null) {
+                String hash = digest(png);
+                files.put("ledger/png/" + hash, hash, png, false);
+                repository.update("INSERT INTO rule_ledger_asset_file(asset_id,png_digest) VALUES(?,?)", row.get("id"), hash);
+            }
             repository.update("UPDATE rule_ledger_asset SET scan_status=?,scan_message=?,content=?,raw_content=?,content_type=?,size_bytes=?,width=?,height=?,lock_version=lock_version+1,update_time=CURRENT_TIMESTAMP WHERE id=?",
-                    result.status(), result.message(), png, png == null ? bytes : null, png == null ? row.get("content_type") : "image/png", png == null ? number(row.get("source_size")) : png.length,
+                    result.status(), result.message(), null, png == null ? bytes : null, png == null ? row.get("content_type") : "image/png", png == null ? number(row.get("source_size")) : png.length,
                     width, height, row.get("id"));
             return metadata(repository.one(TABLE, number(row.get("id")), false));
         } finally { PROCESSING.release(); }
@@ -122,7 +128,9 @@ public class LedgerAssetService {
     public byte[] content(long id) {
         var row = repository.one(TABLE, id, false);
         if (!"CLEAN".equals(row.get("scan_status"))) throw new PlatformException(PlatformCode.RESOURCE_CONFLICT, "素材尚未通过安全检测，不能预览或下载");
-        return (byte[]) row.get("content");
+        if (row.get("content") instanceof byte[] legacy) return legacy;
+        String hash = repository.queryForObject("SELECT png_digest FROM rule_ledger_asset_file WHERE asset_id=?", String.class, id);
+        return files.read("ledger/png/" + hash, hash, 16L * 1024 * 1024);
     }
     public Map<String, Object> get(long id) { return metadata(repository.one(TABLE, id, false)); }
 
