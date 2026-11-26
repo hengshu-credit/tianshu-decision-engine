@@ -246,6 +246,32 @@ test('隔离环境通过 UI 新建项目、提交审批、生效并测试数据�
   expect(errors).toEqual([])
 })
 
+async function createTestAccount(page, role, suffix, password) {
+  const name = role.label + suffix
+  await page.getByRole('tab', { name: '角色', exact: true }).click()
+  await page.getByRole('button', { name: '新增角色', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '新增角色', exact: true })
+  await dialog.getByRole('textbox', { name: '角色名称', exact: true }).fill(name)
+  await dialog.getByRole('textbox', { name: '角色编码', exact: true }).fill(`opt_${role.key}_${suffix}`)
+  for (const permission of role.permissions) {
+    await dialog.getByText(permission, { exact: true }).click()
+    await expect(dialog.getByRole('checkbox', { name: permission, exact: true })).toBeChecked()
+  }
+  await dialog.getByRole('button', { name: '保存角色', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await page.getByRole('tab', { name: '账户', exact: true }).click()
+  await page.getByRole('button', { name: '新增账户', exact: true }).click()
+  const account = page.getByRole('dialog', { name: '新增账户', exact: true })
+  await account.getByRole('textbox', { name: '用户名', exact: true }).fill(`opt_${role.key}_${suffix}`)
+  await account.getByRole('textbox', { name: '显示名称', exact: true }).fill(name)
+  await account.getByRole('textbox', { name: '初始密码', exact: true }).fill(password)
+  await account.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '角色', exact: true }) }).click()
+  await page.getByRole('option', { name, exact: true }).click()
+  await page.keyboard.press('Escape')
+  await account.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(account).toBeHidden()
+}
+
 test('隔离环境通过 UI 建立只读、配置与审批角色并验证权限边界', async ({ page, browser }) => {
   test.skip(!baseUrl || !process.env.E2E_ISOLATED_OPTIMIZATION, '仅在明确指定的本机隔离优化环境执行')
   test.setTimeout(180000)
@@ -258,29 +284,7 @@ test('隔离环境通过 UI 建立只读、配置与审批角色并验证权限�
     { key: 'r', label: '审批验收', permissions: ['查看项目管理', '查看审批', '审批处理'] },
   ]
   for (const role of roles) {
-    const name = role.label + suffix
-    await page.getByRole('tab', { name: '角色', exact: true }).click()
-    await page.getByRole('button', { name: '新增角色', exact: true }).click()
-    const dialog = page.getByRole('dialog', { name: '新增角色', exact: true })
-    await dialog.getByRole('textbox', { name: '角色名称', exact: true }).fill(name)
-    await dialog.getByRole('textbox', { name: '角色编码', exact: true }).fill(`opt_${role.key}_${suffix}`)
-    for (const permission of role.permissions) {
-      await dialog.getByText(permission, { exact: true }).click()
-      await expect(dialog.getByRole('checkbox', { name: permission, exact: true })).toBeChecked()
-    }
-    await dialog.getByRole('button', { name: '保存角色', exact: true }).click()
-    await expect(dialog).toBeHidden()
-    await page.getByRole('tab', { name: '账户', exact: true }).click()
-    await page.getByRole('button', { name: '新增账户', exact: true }).click()
-    const account = page.getByRole('dialog', { name: '新增账户', exact: true })
-    await account.getByRole('textbox', { name: '用户名', exact: true }).fill(`opt_${role.key}_${suffix}`)
-    await account.getByRole('textbox', { name: '显示名称', exact: true }).fill(name)
-    await account.getByRole('textbox', { name: '初始密码', exact: true }).fill(password)
-    await account.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '角色', exact: true }) }).click()
-    await page.getByRole('option', { name, exact: true }).click()
-    await page.keyboard.press('Escape')
-    await account.getByRole('button', { name: '保存', exact: true }).click()
-    await expect(account).toBeHidden()
+    await createTestAccount(page, role, suffix, password)
     const context = await browser.newContext()
     try {
       const userPage = await context.newPage()
@@ -291,6 +295,52 @@ test('隔离环境通过 UI 建立只读、配置与审批角色并验证权限�
       // UI 建立账号后补充服务端权限验证，不通过 API 创建或跳过任何配置步骤。
       const forbidden = await context.request.get(`${baseUrl}/api/rule/database/list`)
       expect(forbidden.status()).toBe(403)
+    } finally { await context.close() }
+  }
+})
+test('配置人提交、审批人复核、只读运营从台账定位同一次变更', async ({ page, browser }) => {
+  test.skip(!baseUrl || !process.env.E2E_ISOLATED_OPTIMIZATION, '需要独立的验收环境')
+  test.setTimeout(180000)
+  const suffix = String(Date.now()), password = require('node:crypto').randomBytes(18).toString('hex')
+  const common = ['查看项目管理', '查看审批', '查看台账记录']
+  const cross = '跨账户查看记录（仍受模块及项目授权限制）'
+  const roles = [
+    { key: 'editor', label: '交接配置', permissions: [...common, '编辑项目管理', '提交项目管理审批', '提交审批'] },
+    { key: 'reviewer', label: '交接复核', permissions: [...common, '审批处理', cross] },
+    { key: 'reader', label: '交接只读', permissions: [...common, cross] },
+  ]
+  await login(page, process.env.E2E_USERNAME, process.env.E2E_PASSWORD, '/account')
+  const name = '策略变更交接' + suffix
+  let requestId
+  for (const role of roles) {
+    await createTestAccount(page, role, suffix, password)
+    const context = await browser.newContext()
+    try {
+      const view = await context.newPage()
+      await login(view, `opt_${role.key}_${suffix}`, password, role.key === 'editor' ? '/project' : '/ledger')
+      if (role.key === 'editor') {
+        await view.getByRole('button', { name: '新建项目', exact: true }).click()
+        const form = view.getByRole('dialog', { name: '新建项目' })
+        await form.getByRole('textbox', { name: /项目编码$/ }).fill('Handoff_' + suffix)
+        await form.getByRole('textbox', { name: /项目名称$/ }).fill(name)
+        await form.getByRole('button', { name: '确定', exact: true }).click()
+        await view.getByRole('row').filter({ hasText: name }).getByRole('button', { name: '发布', exact: true }).click()
+        const sent = view.waitForResponse(r => /\/requests\/\d+\/submit$/.test(r.url()))
+        await view.getByRole('dialog', { name: '提交发布审批' }).getByRole('button', { name: '确定' }).click()
+        const response = await sent
+        expect((await response.json()).code).toBe('000000')
+        requestId = response.url().match(/\/requests\/(\d+)\/submit$/)[1]
+      } else {
+        await view.getByRole('tab', { name: '变更交接' }).click()
+        await view.getByRole('row').filter({ hasText: name }).getByRole('button', { name: '查看' }).click()
+        await expect(view).toHaveURL(new RegExp('/approval/' + requestId + '(?:\\?|$)'))
+        if (role.key === 'reviewer') await approveCurrent(view)
+        else {
+          await expect(view.locator('.header-meta')).toContainText('已通过')
+          await expect(view.getByRole('button', { name: '通过并生效', exact: true })).toHaveCount(0)
+          await expect(view.locator('.layout-main')).toContainText(name)
+        }
+      }
     } finally { await context.close() }
   }
 })

@@ -180,7 +180,9 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
       await expect(pane).toHaveAttribute('aria-hidden', 'false')
       await expect(pane).not.toHaveAttribute('inert', '')
       if (menu.index === '/ledger') {
-        await expect(pane).toContainText(name.trim() === '素材库' ? '验收截图.png' : name.trim() === '事件与类型' ? ledgerEvent.title : ledgerTitle)
+        const evidence = { 时间线: ledgerTitle, 文章管理: ledgerTitle, 素材库: '验收截图.png', 事件与类型: ledgerEvent.title, 变更交接: 'DEMO-20260930-001' }
+        expect(evidence).toHaveProperty(name.trim())
+        await expect(pane).toContainText(evidence[name.trim()])
       }
       await record('tab', `${menu.label}/${name.trim()}`)
       if (menu.index === '/billing' || menu.index === '/system/settings') {

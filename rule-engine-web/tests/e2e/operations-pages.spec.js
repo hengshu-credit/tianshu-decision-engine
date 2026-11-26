@@ -1312,3 +1312,43 @@ for (const source of ['手动填写', 'MOCK 自动生成', '从 MOCK 填入']) {
     assertClean()
   })
 }
+test('根流水串起缓存、重试、模型、名单、实验和按币种计费，并按 ID 打开配置', async ({ page }) => {
+  const fixtures = new Map([...createDetailApiData(), ...createOperationsApiData()])
+  const traceId = 'trace_rule_001'
+  const logRows = [
+    { moduleType: 'DATASOURCE', actionType: 'API_INVOKE', targetName: '供应商评分', targetRefId: '9007199254740993', cacheStatus: 'HIT', attemptNo: 2, success: 1 },
+    { moduleType: 'MODEL', targetName: '评估模型', targetRefId: 31, attemptNo: 1, success: 1 },
+    { moduleType: 'LIST', targetName: '申请人名单', targetRefId: 17, attemptNo: 1, success: 1 },
+    { moduleType: 'DATABASE', targetName: '超时查询', datasourceId: 22, attemptNo: 1, success: 0 },
+  ]
+  const match = (rows, queryKey = 'traceId', extra = {}) => ({ url }) => {
+    expect(url.searchParams.get(queryKey)).toBe(traceId)
+    return { records: rows, total: rows.length, ...extra }
+  }
+  fixtures.set('/api/rule/runtime-log/list', match(logRows))
+  fixtures.set('/api/rule/experiment/logs', match([{ experimentId: 14, experimentCode: '风控实验', groupName: '空跑分组', childTraceId: 'child-001' }]))
+  fixtures.set('/api/rule/billing/record/by-trace', match([
+    { billingName: '试运行费用', billingBasis: 'DRAFT_TRIAL', amount: '0.00', currency: 'CNY', billingTarget: 'API', targetRefId: 7 },
+    { billingName: '线上费用', amount: '12.30', currency: 'USD', billingTarget: 'ENGINE', ruleId: 101 },
+  ], 'rootTraceId', { subtotals: [{ amount: '0.00', currency: 'CNY' }, { amount: '12.30', currency: 'USD' }] }))
+  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+  await page.goto('http://tianshu.local/index.html#/log')
+  await page.getByRole('row').filter({ hasText: traceId }).getByRole('button', { name: '详情' }).click()
+  await page.getByRole('tab', { name: '调用与费用' }).click()
+  const panel = page.getByRole('region', { name: '按执行流水查看调用与费用' })
+  const row = text => panel.getByRole('row').filter({ hasText: text })
+  await expect(row('供应商评分')).toContainText('命中缓存')
+  await expect(row('供应商评分').getByRole('link')).toHaveAttribute('href', /datasource\/api\/9007199254740993/)
+  await expect(row('评估模型').getByRole('link')).toHaveAttribute('href', /model\/31/)
+  await expect(row('申请人名单').getByRole('link')).toHaveAttribute('href', /list\/17/)
+  await expect(row('超时查询')).toContainText('失败')
+  await panel.getByText('实验分流', { exact: true }).click()
+  await expect(row('空跑分组').getByRole('link')).toHaveAttribute('href', /experiment\/detail\/14/)
+  await panel.getByText('计费明细', { exact: true }).click()
+  await expect(row('试运行费用')).toContainText('草稿试运行')
+  await expect(panel.getByText('已入账合计 12.30 USD')).toBeVisible()
+  await expect(panel.getByText('已入账合计 0.00 CNY')).toBeVisible()
+  await row('线上费用').getByRole('link').click()
+  await expect(page).toHaveURL(/#\/rule\/101/)
+  assertClean()
+})

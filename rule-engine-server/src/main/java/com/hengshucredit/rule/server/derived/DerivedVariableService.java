@@ -179,7 +179,7 @@ public class DerivedVariableService {
             }
             if (count != null) {
                 long included = current == null ? 0 : (Long) HistoryQuery.evaluate(config,List.of(current),input,invoker);
-                recordHistory(variable,config,from,before,count.candidates() + (current == null ? 0 : 1));
+                recordHistory(variable,config,from,before,count.candidates() + (current == null ? 0 : 1), options);
                 return checkedValue(variable,count.matched()+included);
             }
         }
@@ -205,7 +205,7 @@ public class DerivedVariableService {
                     : options.getInvocationCache().historyCount(selection, from, load);
             if (count != null) {
                 long currentMatches = current == null ? 0L : (Long) HistoryQuery.evaluate(config, List.of(current), input, invoker);
-                recordHistory(variable, config, from, before, count.candidates() + (current == null ? 0 : 1));
+                recordHistory(variable, config, from, before, count.candidates() + (current == null ? 0 : 1), options);
                 return checkedValue(variable, count.matched() + currentMatches);
             }
         }
@@ -223,17 +223,22 @@ public class DerivedVariableService {
             }
         }
         Object result = HistoryQuery.evaluate(config, history, input, invoker);
-        recordHistory(variable, config, from, before, history.size());
+        recordHistory(variable, config, from, before, history.size(), options);
         return checkedValue(variable, result);
     }
 
-    private void recordHistory(RuleVariable variable, JSONObject config, LocalDateTime from, LocalDateTime before, long candidates) {
+    private void recordHistory(RuleVariable variable, JSONObject config, LocalDateTime from, LocalDateTime before, long candidates, VariableResolveOptions options) {
         Map<String, Object> event = new LinkedHashMap<>(Map.of("type", "DERIVED_HISTORY", "variableId", variable.getId() == null ? 0L : variable.getId(),
                 "scope", config.getString("scope"), "candidateCount", candidates, "windowUnit", config.getString("windowUnit")));
         if (from != null) event.put("from", from.toString());
         if (before != null) event.put("before", before.toString());
         if (DerivedVariableConfig.windowField(config) != null) event.put("timeField", DerivedVariableConfig.fieldKey(DerivedVariableConfig.windowField(config)));
         event.put("includeCurrent", config.getBooleanValue("includeCurrent"));
+        if (options != null && options.isExplainTestValue()) {
+            for (String key : List.of("scope", "candidateCount", "from", "before", "windowUnit", "includeCurrent")) {
+                if (event.containsKey(key)) options.recordSourceState("VARIABLE", variable.getId(), key, event.get(key));
+            }
+        }
         RuntimeContextBridge.addTraceEvent(event);
     }
 

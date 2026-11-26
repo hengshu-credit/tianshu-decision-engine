@@ -88,6 +88,12 @@ public class BillingController {
                 authType, authCode, tokenCode, beginTime, endTime, versionQuery));
     }
 
+    @GetMapping("/record/by-trace")
+    public ApiResponse<RuleBillingService.TraceCharges> recordsByTrace(@RequestParam String rootTraceId,
+            @RequestParam(required = false) Long projectId, @RequestParam(defaultValue = "1") int pageNum) {
+        return ApiResponse.ok(billingService.recordsByTrace(rootTraceId, projectId, pageNum));
+    }
+
     @GetMapping("/summary/list")
     public ApiResponse<IPage<RuleBillingSummary>> listSummaries(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,

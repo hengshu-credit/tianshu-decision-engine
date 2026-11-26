@@ -1734,18 +1734,29 @@
         <span>{{ testTarget.varLabel || testTarget.varCode }}</span>
         <code>{{ testTarget.scriptName || testTarget.varCode }}</code>
       </div>
-      <resource-test-cases kind="VARIABLE" :owner="testTarget" v-if="variableTestVisible && testTarget" :endpoint="'/rule/variable/'+testTarget.id+'/test-cases'" :params="variableTestParamsText" :outcome="variableTestResult" @context="variableTestRoot = $event" @apply="value => { variableTestParamsText = value; variableTestResult = null }" />
+      <resource-test-cases kind="VARIABLE" :owner="testTarget" v-if="variableTestVisible && testTarget" :endpoint="'/rule/variable/'+testTarget.id+'/test-cases'" :params="variableTestParamsText" :outcome="variableTestResult" @context="setVariableTestRoot" @apply="applyVariableTestInput" />
       <dismissible-guidance :guide-id="'variable.test.' + (testTarget?.varSource || 'input')" label="变量测试入参说明">
         {{ testDialogHint }}
       </dismissible-guidance>
       <monaco-editor
+        data-testid="variable-online-input"
         v-model:value="variableTestParamsText"
         language="json"
         height="220px"
       />
       <div v-if="variableTestResult" class="test-result-block">
         <div class="test-result-title">测试结果</div>
-        <pre class="test-result-pre">{{ formatJson(variableTestResult) }}</pre>
+        <source-summary-card :title="sourceLabel(testTarget.varSource)" :rows="sourceSummaryRows(testTarget)" />
+        <p role="status">{{ explainVariableValue(variableTestResult) }}</p>
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="本次请求"><pre>{{ formatJson(variableTestResult.inputParams) || '{}' }}</pre></el-descriptions-item>
+          <el-descriptions-item v-if="testInputMappings.length" label="输入映射">
+            <div v-for="(item, index) in testInputMappings" :key="index">{{ item.field }} → {{ item.usage }}</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="最终值"><pre>{{ variableTestResult.hasOutput ? JSON.stringify(variableTestResult.output, null, 2) : '未取得' }}</pre></el-descriptions-item>
+          <el-descriptions-item v-for="item in sourceEvidenceRows(variableTestResult.sourceEvidence)" :key="item.label" :label="item.label">{{ item.value }}</el-descriptions-item>
+        </el-descriptions>
+        <details><summary>完整测试结果</summary><pre class="test-result-pre">{{ formatJson(variableTestResult) }}</pre></details>
         <external-call-trace v-for="call in variableTestResult?.externalCalls || []" :key="call.callId" :steps="call.traceSteps || call.externalCall?.traceSteps || []" />
       </div>
       <template v-slot:footer>
@@ -2508,6 +2519,7 @@ export default {
       variableTestVisible: false,
       variableTesting: false,
       testTarget: null,
+      variableTestRequestId: 0,
       variableTestParamsText: '{}',
       variableTestResult: null,
       variableTestRoot: null,
@@ -3033,6 +3045,7 @@ export default {
     objectDialogTitle() {
       return this.objectForm.id ? '编辑数据对象' : '新建数据对象'
     },
+    testInputMappings() { return this.testTarget ? this.sourceInputFields(this.testTarget) : [] },
     testDialogHint() {
       if (this.testTarget && this.testTarget.varSource === 'API') {
         return '已优先加载外数 API 中保存的测试样例；没有样例时会根据接口请求参数生成完整入参 JSON。'
@@ -5013,7 +5026,7 @@ export default {
         .catch(() => {})
     },
     isTestableSource(row) {
-      return row && ['API', 'DB', 'SFTP', 'LIST', 'DERIVED'].indexOf(row.varSource) >= 0
+      return row && ['INPUT', 'API', 'DB', 'SFTP', 'LIST', 'DERIVED'].includes(row.varSource)
     },
     async handleViewSourceDetail(row) {
       this.sourceDetailTarget = null
@@ -5097,6 +5110,8 @@ export default {
       if (!hasSchema) await this.prepareSampleTree(row)
       if (requestId !== this.sourceOptionsRequestId) return
       this.variableTestRoot = null
+      this.variableTestRequestId++
+      this.variableTesting = false
       this.testTarget = row
       this.variableTestParamsText = hasSchema ? (schema.sampleParamsJson || this.formatJson(schema.sampleParams)) : this.buildTestParamTemplate(row)
       this.variableTestResult = null
@@ -5238,6 +5253,9 @@ export default {
     },
     sourceSummaryRows(row) {
       const config = this.parseJson(row && row.sourceConfig, {})
+      if (row?.varSource === 'INPUT') return [{ label: '请求字段', value: row.scriptName || row.varCode }]
+      if (row?.varSource === 'DERIVED') return [{ label: '计算方式', value: config.mode === 'HISTORY' ? '历史进件统计' : '上游字段计算' },
+        { label: '聚合或表达式', value: config.aggregate || operandDisplay(config.expression) || '—' }]
       if (row && row.varSource === 'API') {
         const api = this.apiOption(config.apiConfigId)
         return [
@@ -5263,19 +5281,20 @@ export default {
         ]
       }
       if (row && row.varSource === 'DB') {
+        const datasourceId = config.dbDatasourceId || config.datasourceId
         const db = (this.dbDatasourceOptions || []).find(
-          (item) => String(item.id) === String(config.datasourceId)
+          (item) => String(item.id) === String(datasourceId)
         )
         return [
           {
             label: '数据库源',
             value: db
               ? db.datasourceName || db.datasourceCode
-              : config.datasourceId
-              ? '数据库ID ' + config.datasourceId
+              : datasourceId
+              ? '数据库ID ' + datasourceId
               : '未配置',
           },
-          { label: '返回位置', value: config.resultPath || '第一列/首行结果' },
+          { label: '返回位置', value: config.resultPath || '单行单列取值，单行多列取对象，多行取列表' },
           { label: '最多返回', value: (config.maxRows ?? 1000) + ' 行' },
           {
             label: '失败处理',
@@ -5361,6 +5380,33 @@ export default {
     listTypeLabel(value) {
       return { BLACK: '黑名单', GREY: '灰名单', WHITE: '白名单', OTHER: '其他' }[value] || value || ''
     },
+    setVariableTestRoot(root) {
+      this.variableTestRoot = root
+      this.variableTestRequestId++
+      this.variableTesting = false
+      this.variableTestResult = null
+    },
+    applyVariableTestInput(value) {
+      this.setVariableTestRoot(this.variableTestRoot)
+      this.variableTestParamsText = value
+    },
+    explainVariableValue(result) {
+      const state = result.sourceEvidence || {}
+      if (result.errorMessage) return result.errorMessage
+      if (state.FILE_STATE === 'NOT_FOUND') return '远端未找到配置的文件，请核对到达时间与路径'
+      if (state.FALLBACK_USED === 'TRUE') return '来源调用异常，最终值按失败策略处理'
+      if (state.DATA_STATE === 'NO_DATA') return '查询完成，返回零行'
+      if (state.MATCH_STATE === 'MISS') return '名单匹配完成，本次未命中'
+      if (state.SOURCE_VALUE === 'ABSENT') return '请求中缺少此字段'
+      if (state.SOURCE_VALUE === 'EMPTY') return result.output != null
+        ? '来源取值为空，已使用字段默认值' : '取值位置为空，或返回内容中缺少映射字段'
+      if (state.OUTCOME === 'ERROR' || state.OUTCOME === 'TIMEOUT') return '来源执行失败，请核对调用状态和失败处理策略'
+      return result.output == null ? '本次未取得值，请核对来源状态和取值配置' : '已取得最终值'
+    },
+    sourceEvidenceRows(state = {}) {
+      const labels = { OUTCOME: '调用状态', CACHE_STATE: '缓存状态', ROW_COUNT: '查询行数', MATCH_STATE: '名单匹配', FILE_SIZE: '文件字节数', SCOPE: '历史范围', FROM: '窗口开始', BEFORE: '窗口截止', INCLUDECURRENT: '包含本单', CANDIDATECOUNT: '候选样本数' }
+      return Object.entries(labels).filter(([key]) => state && state[key] != null).map(([key, label]) => ({ label, value: String(state[key]) }))
+    },
     async doTestVariable() {
       if (!this.testTarget) return
       let params
@@ -5372,20 +5418,23 @@ export default {
         this.$message.error('测试入参不是合法 JSON')
         return
       }
+      const target = this.testTarget
+      const requestId = ++this.variableTestRequestId
       this.variableTesting = true
       this.variableTestResult = null
       try {
         const res = this.variableTestRoot
           ? await testVariable(this.testTarget.id, params, this.variableTestRoot)
           : await testVariable(this.testTarget.id, params)
-        this.variableTestResult = normalizeTestResult(res)
+        if (requestId === this.variableTestRequestId && this.testTarget === target) this.variableTestResult = normalizeTestResult(res)
       } catch (e) {
+        if (requestId !== this.variableTestRequestId || this.testTarget !== target) return
         this.variableTestResult = {
-          success: false,
+          inputParams: params, success: false,
           errorMessage: e.message || '测试失败',
         }
       } finally {
-        this.variableTesting = false
+        if (requestId === this.variableTestRequestId) this.variableTesting = false
       }
     },
     parseJson(text, fallback) {

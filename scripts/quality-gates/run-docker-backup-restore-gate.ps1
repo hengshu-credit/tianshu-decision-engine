@@ -4,6 +4,7 @@ param(
     [string]$RestoreDatabase = 'rule_engine_restore_gate',
     [string]$OutputDirectory = 'target/quality-gates',
     [switch]$DatabaseOnly,
+    [switch]$KeepVerifiedDatabase,
     [string]$SftpBackupArchive,
     [string]$RestoredSftpHost,
     [ValidateRange(1,65535)][int]$RestoredSftpPort = 2222,
@@ -118,7 +119,7 @@ catch {
     throw
 }
 finally {
-    if ($restoreCreated) {
+    if ($restoreCreated -and !($KeepVerifiedDatabase -and $summary -and $summary.result -eq 'PASS')) {
         try { Invoke-MySql @('-e', "DROP DATABASE IF EXISTS $RestoreDatabase;") } catch { Write-Warning $_ }
     }
     if ($dumpStarted) {

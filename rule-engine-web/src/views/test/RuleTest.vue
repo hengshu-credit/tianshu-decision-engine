@@ -279,6 +279,7 @@
             />
             <span class="test-timeout-unit">毫秒</span>
           </label>
+          <el-button v-if="acceptanceExamples" size="small" :disabled="!testContextReady || executing || batchExecuting || testCaseLoading" @click="exampleIndex = 0; examplesVisible = true">业务验收样例</el-button>
           <el-button
             type="primary"
             :loading="executing"
@@ -328,6 +329,8 @@
 
             <div class="test-validation-result" data-testid="test-validation-result">
               <el-tag :type="validationStale ? 'info' : validationTagType(testValidation.status)">{{ validationStale ? '待重新校验' : validationLabel(testValidation.status) }}</el-tag>
+              <p v-if="testValidation.status === 'FAILED' && !validationStale && (exampleHint || loadedTestCase?.description)">{{ exampleHint ? '排查位置' : '用例说明' }} · {{ exampleHint || loadedTestCase.description }}</p>
+              <el-button v-if="testValidation.status === 'FAILED' && !validationStale && testedDesigner" link type="primary" @click="$router.push(testedDesigner)">查看本次测试的设计版本</el-button>
               <span>{{ validationStale ? '输入或预期已修改，请重新执行后查看校验结果' : testValidation.message }}</span>
               <template v-if="!validationStale">
                 <div v-for="(check, index) in testValidation.checks || []" :key="index">{{ check.label }}：{{ check.message }}<span v-if="check.status === 'FAILED'">；预期 {{ check.expectedJson }}，实际 {{ check.actualMissing ? '字段不存在' : check.actualJson }}</span></div>
@@ -526,6 +529,17 @@
         </el-dialog>
       </el-tab-pane>
     </el-tabs>
+    <el-dialog v-if="acceptanceExamples" v-model="examplesVisible" title="业务验收样例" width="min(640px, 94vw)" append-to-body>
+      <p>这些样例适用于下列规则配置。请先核对当前修订的输入、输出与业务条件。</p>
+      <p>{{ acceptanceExamples[0] }}</p>
+      <el-select v-model="exampleIndex" aria-label="选择验收场景">
+        <el-option v-for="(item, index) in acceptanceExamples[2]" :key="item[0]" :label="item[0]" :value="index" />
+      </el-select>
+      <h4>输入</h4><pre>{{ JSON.stringify(acceptanceExamples[2][exampleIndex][1], null, 2) }}</pre>
+      <h4>预期结果</h4><pre>{{ JSON.stringify(acceptanceExamples[2][exampleIndex][2], null, 2) }}</pre>
+      <p>结果不符时，{{ acceptanceExamples[1] }}。</p>
+      <template #footer><el-button @click="examplesVisible = false">取消</el-button><el-button type="primary" @click="loadAcceptanceExample">替换当前输入与预期</el-button></template>
+    </el-dialog>
     <regression-report-drawer v-if="reportsVisible && selectedRuleId" :definition-id="selectedRuleId" :revision-id="inputExecutionIdentity?.revisionId || null" @close="reportsVisible = false" />
   </div>
 </template>
@@ -573,6 +587,8 @@ import ExpectedOutputEditor from '@/components/test/ExpectedOutputEditor.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import { cloneExactJson, createExactNumber, exactNumberText, isExactNumber, parseExactJson, parseExecutionSnapshotJson, stringifyExactJson } from '@/utils/exactJson'
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
+import designerExamples from '@/constants/designerAcceptanceExamples'
+import { normalizeRuleModelType, ruleDesignerLocation } from '@/utils/ruleDesignerNavigation'
 import { normalizeTestResult } from '@/utils/testResult'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
@@ -607,6 +623,9 @@ export default {
     return {
       activeTestTab: 'test',
       generatingMock: false,
+      examplesVisible: false,
+      exampleIndex: 0,
+      exampleHint: '',
       reportsVisible: false,
       projects: [],
       projectsLoading: false,
@@ -702,6 +721,19 @@ export default {
     this.ruleListRequestId++
   },
   computed: {
+    testedDesigner() {
+      const id = this.lastRawResponse?.data?.executionIdentity
+      if (!id || String(id.definitionId) !== String(this.selectedRuleId)) return null
+      const route = ruleDesignerLocation({ id: id.definitionId, modelType: id.modelType || this.selectedRule?.modelType })
+      const version = id.sourceType === 'VERSION'
+      const target = version ? id.sourceId : id.revisionId
+      if (!route || !target) return null
+      return { ...route, query: { sourceType: version ? 'VERSION' : 'REVISION', sourceId: String(target),
+        ...(this.selectedProjectId ? { projectId: String(this.selectedProjectId) } : {}) } }
+    },
+    acceptanceExamples() {
+      return designerExamples[normalizeRuleModelType(this.inputExecutionIdentity?.modelType || this.selectedRule?.modelType)]
+    },
     testCaseSaving() { return this.savingCaseMode !== null },
     testContextReady() {
       return !!this.selectedRuleId && !this.testSourcesLoading && !this.testSourcesError
@@ -849,6 +881,9 @@ export default {
     executionStatusHint,
     validationLabel, validationTagType,
     resetExpectationContext() {
+      this.exampleHint = ''
+      this.examplesVisible = false
+      this.exampleIndex = 0
       this.testCaseEditSession++
       this.savingCaseMode = null
       this.testCaseLoading = false
@@ -1156,6 +1191,20 @@ export default {
         }
       }
     },
+    loadAcceptanceExample() {
+      if (!this.testContextReady || !this.acceptanceExamples) return
+      const [, input, expected] = this.acceptanceExamples[2][this.exampleIndex]
+      this.resetExecutionState()
+      this.loadedTestCase = null
+      this.loadedRequestJson = ''
+      this.loadedInputParamsJson = ''
+      this.replaceParamsFromValues(input)
+      this.updateInputJson(stringifyExactJson(input, 2))
+      this.expectationJson = '{"version":1,"mode":"SNAPSHOT"}'
+      this.expectedSnapshotJson = stringifyExactJson({ success: true, result: expected }, 2)
+      this.exampleHint = this.acceptanceExamples[1]
+      this.examplesVisible = false
+    },
     async saveCurrentTestCase(mode = 'NEW') {
       if (!this.selectedRuleId || this.testCaseSaving || this.testCaseLoading) return
       const ruleId = this.selectedRuleId
@@ -1180,7 +1229,7 @@ export default {
       const existing = mode === 'UPDATE' ? this.loadedTestCase : null
       const saveRequest = {
         scenarioName: existing?.scenarioName || '',
-        description: existing?.description || '规则测试页保存的固定测试用例',
+        description: existing?.description || this.exampleHint || '规则测试页保存的固定测试用例',
         requestJson, responseJson, expectationJson: config,
         responseSource: executedResponse && responseJson === this.lastRawResponseJson ? 'EXECUTED' : 'MANUAL',
         businessCodePath: existing?.businessCodePath || '', includeInDoc: existing?.includeInDoc || 0,
@@ -1214,6 +1263,7 @@ export default {
       const ruleId = this.selectedRuleId
       const session = ++this.testCaseEditSession
       this.savingCaseMode = null
+      this.exampleHint = ''
       const values = scenarioParams(testCase && testCase.requestJson)
       this.testCaseLoading = true
       this.expectationJson = testCase.expectationJson ?? null

@@ -94,6 +94,29 @@ function makeStub(tag) {
 describe('RuleTest — 初始化与数据加载', () => {
   let wrapper
 
+  test.each([
+    ['TABLE', { age: 17 }, { decision: '拒绝' }], ['TREE', { age: 17, income: 6000 }, { decision: '拒绝' }],
+    ['FLOW', { blocked: true, score: 700 }, { decision: '拒绝' }], ['RULE_SET', { overdue: 1, score: 550 }, { decision: '拒绝' }],
+    ['CROSS', { grade: 'A', months: 6 }, { limit: 8000 }], ['CROSS_ADV', { score: 600, income: 5000 }, { limit: 10000 }],
+    ['SCORE', { income: 5000 }, { score: 600 }], ['SCORE_ADV', { income: 5000, overdue: 0 }, { score: 400 }],
+    ['SCRIPT', { amount: 1000 }, true],
+  ])('%s 验收样例按当前模型载入输入和独立预期，保留已保存用例', async (modelType, input, expected) => {
+    await wrapper.setData({ selectedRuleId: 101, selectedRule: { id: 101, modelType }, inputExecutionIdentity: { modelType },
+      loadedTestCase: { id: 8 }, inputLoadState: 'READY', examplesVisible: true })
+    wrapper.vm.loadAcceptanceExample()
+    expect(JSON.parse(stringifyExactJson(wrapper.vm.buildParamMap()))).toEqual(input)
+    expect(JSON.parse(wrapper.vm.expectedSnapshotJson)).toEqual({ success: true, result: expected })
+    expect(JSON.parse(wrapper.vm.expectationJson).mode).toBe('SNAPSHOT')
+    expect(wrapper.vm.loadedTestCase).toBeNull()
+    expect(wrapper.vm.exampleHint).toMatch(/检查|核对/)
+    expect(wrapper.vm.examplesVisible).toBe(false)
+    await wrapper.setData({ lastRawResponse: { data: { executionIdentity: {
+      definitionId: '101', sourceType: 'VERSION', sourceId: '9007199254740993', modelType,
+    } } } })
+    expect(wrapper.vm.testedDesigner.params).toEqual({ id: '101' })
+    expect(wrapper.vm.testedDesigner.query.sourceId).toBe('9007199254740993')
+  })
+
   beforeEach(async () => {
     projectApi.listProjects.mockResolvedValueOnce({ data: { records: mockProjects() } })
     definitionApi.listDefinitions.mockResolvedValueOnce({ data: { records: mockRules() } })

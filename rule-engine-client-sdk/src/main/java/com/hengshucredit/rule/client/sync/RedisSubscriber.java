@@ -267,12 +267,18 @@ public class RedisSubscriber {
 
         if ("PUBLISH".equals(action)) {
             cache.invalidateVersions(push.getDefinitionId());
-            CachedRule cached = resolvePublishedRule(push);
-            if (cached == null) {
-                log.debug("Ignored rule push outside authorized scope or unavailable: {}", push.getRuleCode());
-                return false;
+            try {
+                CachedRule cached = resolvePublishedRule(push);
+                if (cached == null) {
+                    cache.remove(push.getRuleCode());
+                    return false;
+                }
+                cache.put(cached);
+            } catch (RuntimeException failure) {
+                // 已收到生效变更。下次调用须重新向服务端取规则，不能继续使用旧决策。
+                cache.remove(push.getRuleCode());
+                throw failure;
             }
-            cache.put(cached);
             log.info("Rule updated via Redis push: {} v{}", push.getRuleCode(), push.getVersion());
             handled = true;
 

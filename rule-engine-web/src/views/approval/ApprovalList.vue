@@ -203,6 +203,7 @@ export default {
   mixins: [pageTabState('activeScope', ['PENDING', 'MINE', 'COMPLETED', 'ALL'])],
   name: 'ApprovalList',
   components: { DismissibleGuidance, RemoteFilterSelect, TableColumnSettings },
+  props: { initialScope: { type: String, default: 'PENDING' } },
   data() {
     return {
       tableColumnOrders: { approvalColumns: null },
@@ -223,7 +224,7 @@ export default {
       resourceOptions: RESOURCE_OPTIONS,
       statusOptions: STATUS_OPTIONS,
       actionOptions: ACTION_OPTIONS,
-      activeScope: 'PENDING',
+      activeScope: this.initialScope,
       filters: {
         keyword: '',
         resourceType: '',

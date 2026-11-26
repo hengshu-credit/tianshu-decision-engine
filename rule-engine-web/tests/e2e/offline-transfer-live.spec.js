@@ -241,3 +241,61 @@ test('真实离线迁移：全局、已有项目覆盖策略、新建项目均�
   expect(pageErrors).toEqual([])
   console.log(JSON.stringify({ sourceId, createdProjectId: created.targetProjectId, createdProjectCode: newCode }))
 })
+test('跨部署迁移固定用例并处理第二次导入的同名冲突', async ({ page, browser }, info) => {
+  const sourceUrl = process.env.E2E_BASE_URL, targetUrl = process.env.E2E_TRANSFER_TARGET_URL
+  test.skip(!process.env.E2E_ISOLATED_OPTIMIZATION || !targetUrl || !sourceUrl, '需要两套独立本地部署')
+  expect(new URL(sourceUrl).origin).not.toBe(new URL(targetUrl).origin)
+  test.setTimeout(180000)
+  const open = async (p, base, username, password) => {
+    await p.goto(base + '/#/transfer')
+    await p.locator('input[autocomplete="username"]').fill(username)
+    await p.locator('input[autocomplete="current-password"]').fill(password)
+    await p.locator('button[type="submit"]').click()
+    await expect(p.getByRole('heading', { name: '导出配置' })).toBeVisible()
+  }
+  await open(page, sourceUrl, process.env.E2E_USERNAME, process.env.E2E_PASSWORD)
+  const rule = process.env.E2E_TRANSFER_RULE
+  await page.getByRole('combobox', { name: '第 1 项导出资源' }).fill(rule)
+  await page.getByRole('option').filter({ hasText: rule }).click()
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: '生成并下载配置包' }).click()
+  const zip = info.outputPath('source-rule.zip')
+  await (await download).saveAs(zip)
+  const session = await browser.newContext()
+  try {
+    const dest = await session.newPage()
+    await open(dest, targetUrl, process.env.E2E_TARGET_USERNAME, process.env.E2E_TARGET_PASSWORD)
+    const projectCode = process.env.E2E_TRANSFER_PROJECT
+    const targetProject = dest.getByRole('combobox', { name: '目标项目', exact: true })
+    await targetProject.fill(projectCode)
+    await dest.getByRole('option').filter({ hasText: projectCode }).click()
+    await dest.locator('input[type="file"]').setInputFiles(zip)
+    const preview = async () => {
+      const response = nextTransferResult(dest, 'PREVIEW')
+      await dest.getByRole('button', { name: '预览冲突', exact: true }).click()
+      return response
+    }
+    const apply = async () => {
+      await dest.getByRole('button', { name: '确认导入', exact: true }).click()
+      const response = nextTransferResult(dest, 'IMPORT')
+      await dest.getByRole('dialog', { name: '确认导入' }).getByRole('button', { name: '确定', exact: true }).click()
+      const result = await response
+      await dest.getByRole('dialog', { name: '导入结果' }).getByRole('button', { name: '关闭此对话框' }).click()
+      return result
+    }
+    const reviewed = await preview()
+    const resource = reviewed.resources.find(r => r.resourceType === 'RULE' && r.resourceCode === rule)
+    expect(resource).toBeTruthy()
+    const first = await apply()
+    const firstId = first.resourceIdMapping[resource.key]
+    expect(firstId).toBeTruthy()
+    expect(String(firstId)).not.toBe(String(resource.sourceResourceId))
+    await dest.locator('input[type="file"]').setInputFiles(zip)
+    await dest.getByRole('textbox', { name: '新建后缀' }).fill('_verified')
+    const repeated = await preview()
+    expect(repeated.conflicts.some(item => item.resourceKey === resource.key)).toBe(true)
+    const second = await apply()
+    expect(second.resourceIdMapping[resource.key]).toBeTruthy()
+    expect(second.resourceIdMapping[resource.key]).not.toBe(firstId)
+  } finally { await session.close() }
+})

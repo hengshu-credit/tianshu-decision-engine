@@ -739,6 +739,7 @@ public class VariableSourceResolver {
         copy.setDryRun(source.isDryRun());
         copy.setOfflineReplay(source.isOfflineReplay());
         copy.setForceRefreshSource(source.isForceRefreshSource());
+        copy.setExplainTestValue(source.isExplainTestValue());
         copy.setRequiredNamesUpstreamOnly(source.isRequiredNamesUpstreamOnly());
         copy.setVariableReferencePaths(source.getVariableReferencePaths());
         copy.setDerivedReferencePaths(source.getDerivedReferencePaths());
@@ -982,6 +983,10 @@ public class VariableSourceResolver {
                 value = resolveSftpVariable(variable, config, resolvedParams, effectiveOptions);
             } else {
                 value = resolveListVariable(variable, config, resolvedParams, effectiveOptions);
+            }
+            if (effectiveOptions.isExplainTestValue()) {
+                effectiveOptions.recordSourceState("VARIABLE", variable.getId(), "SOURCE_VALUE",
+                        value == null ? "EMPTY" : "PRESENT");
             }
             if (value == null) {
                 value = parseDefaultValue(variable);
@@ -1769,9 +1774,9 @@ public class VariableSourceResolver {
             throw new IllegalArgumentException("变量不存在");
         }
         String varSource = variable.getVarSource();
-        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)
+        if (!"INPUT".equals(varSource) && !"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)
                 && !"SFTP".equals(varSource) && !"DERIVED".equals(varSource)) {
-            throw new IllegalArgumentException("仅支持测试 API、数据库、名单、SFTP、衍生变量");
+            throw new IllegalArgumentException("该来源不支持变量在线测试");
         }
         String scriptName = resolveScriptName(variable);
         if (!hasText(scriptName)) {
@@ -1779,9 +1784,17 @@ public class VariableSourceResolver {
         }
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setForceRefreshSource(true);
+        options.setExplainTestValue(true);
         options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList(scriptName)));
         Map<String, Object> params = inputParams == null ? new LinkedHashMap<>() : new LinkedHashMap<>(inputParams);
-        Map<String, Object> resolved = resolve(variable.getProjectId(), params, options);
+        Map<String, Object> resolved;
+        if ("INPUT".equals(varSource)) {
+            resolved = new LinkedHashMap<>(params);
+            options.recordSourceState("VARIABLE", variableId, "SOURCE_VALUE", !params.containsKey(scriptName)
+                    ? "ABSENT" : params.get(scriptName) == null ? "EMPTY" : "PRESENT");
+        } else {
+            resolved = resolve(variable.getProjectId(), params, options);
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("variableId", variable.getId());
         result.put("varCode", variable.getVarCode());
@@ -1789,6 +1802,7 @@ public class VariableSourceResolver {
         result.put("varSource", varSource);
         result.put("inputParams", params);
         result.put("resolvedValue", resolved.get(scriptName));
+        result.put("sourceEvidence", options.getSourceStates().getOrDefault("VARIABLE:" + variableId, Map.of()));
         result.put("resolvedParams", resolved);
         if (options.getInvocationCache() != null) result.put("externalCalls", options.getInvocationCache().completedApiCalls());
         return result;
@@ -2010,6 +2024,7 @@ public class VariableSourceResolver {
             List<Map<String, Object>> rows = dbConnectPools.query(datasourceId, sql, queryParams,
                     maxRows, queryOptions.queryTimeoutSeconds(), queryOptions.maxContentBytes());
             if (options.isCaptureDatabasePreview()) options.setDatabasePreviewRows(rows);
+            if (options.isExplainTestValue()) options.recordSourceState("VARIABLE", variable.getId(), "ROW_COUNT", rows == null ? 0 : rows.size());
             options.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "SUCCESS");
             options.recordSourceState("VARIABLE", variable.getId(), "DATA_STATE",
                     rows == null || rows.isEmpty() ? "NO_DATA" : "HAS_DATA");
@@ -2196,6 +2211,15 @@ public class VariableSourceResolver {
             Map<String, Object> failureResponse = new LinkedHashMap<>();
             failureResponse.put("status", "FAILED");
             failureResponse.put("phase", uploadEnabled ? "UPLOAD_AND_READ" : "READ");
+            if (options.isExplainTestValue()) {
+                for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+                    if (cause instanceof java.nio.file.NoSuchFileException
+                            || cause instanceof com.jcraft.jsch.SftpException missing && missing.id == com.jcraft.jsch.ChannelSftp.SSH_FX_NO_SUCH_FILE) {
+                        options.recordSourceState("VARIABLE", variable.getId(), "FILE_STATE", "NOT_FOUND");
+                        break;
+                    }
+                }
+            }
             failureResponse.put("errorType", e.getClass().getSimpleName());
             logVariableSource("SFTP", "SFTP_VARIABLE_READ", variable, datasourceId, request,
                     failureResponse, e.getMessage(), System.currentTimeMillis() - start, runtimeTrace);

@@ -569,6 +569,10 @@
               <pre class="log-pre error">{{ detail.errorMessage }}</pre>
             </div>
           </el-tab-pane>
+          <el-tab-pane name="relations" label="调用与费用" lazy>
+            <execution-relations v-if="detailTab === 'relations' && detail.traceId" :key="detail.traceId"
+              :detail="detail" @view-trace="detailTab = 'trace'" />
+          </el-tab-pane>
           <el-tab-pane name="trace" :disabled="!detail.traceInfo">
             <template v-slot:label>
               <span>
@@ -601,6 +605,7 @@
 import { pageTabState } from '@/mixins/pageTabState'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ExecutionVersionFilter from '@/components/common/ExecutionVersionFilter.vue'
+import ExecutionRelations from '@/components/ExecutionRelations.vue'
 import ExecutionDiagnosisPanel from '@/components/common/ExecutionDiagnosisPanel.vue'
 import { View as ElIconView, Connection as ElIconConnection } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
@@ -632,7 +637,7 @@ import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operati
 
 export default {
   mixins: [pageTabState('activeView', vm => vm.canViewRuntime ? ['logs','ruleSetStats','runtime'] : ['logs','ruleSetStats'])],
-  components: { DismissibleGuidance, ExecutionDiagnosisPanel, ExecutionVersionFilter,
+  components: { DismissibleGuidance, ExecutionRelations, ExecutionDiagnosisPanel, ExecutionVersionFilter,
     TableColumnSettings,
     ExecutionMetricsPanel,
     TraceTree,

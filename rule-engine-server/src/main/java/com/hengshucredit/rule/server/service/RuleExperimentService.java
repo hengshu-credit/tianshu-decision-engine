@@ -309,8 +309,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     public IPage<RuleExperimentExecutionLog> pageExecutionLogs(int pageNum, int pageSize, Long experimentId,
                                                                String experimentCode, String requestKey,
                                                                String traceId, String stage, String groupCode,
-                                                               Integer success) {
+                                                               Integer success, Long projectId) {
         LambdaQueryWrapper<RuleExperimentExecutionLog> wrapper = new LambdaQueryWrapper<>();
+        if (projectId != null) {
+            wrapper.apply("experiment_id IN (SELECT id FROM rule_experiment WHERE project_id = {0})", projectId);
+        }
         if (experimentId != null) {
             wrapper.eq(RuleExperimentExecutionLog::getExperimentId, experimentId);
         }
@@ -322,6 +325,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         if (hasText(traceId)) {
             wrapper.and(w -> w.eq(RuleExperimentExecutionLog::getExperimentTraceId, traceId)
+                    .or().eq(RuleExperimentExecutionLog::getRootTraceId, traceId)
                     .or().eq(RuleExperimentExecutionLog::getChildTraceId, traceId));
         }
         if (hasText(stage)) {

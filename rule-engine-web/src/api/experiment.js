@@ -12,7 +12,7 @@ export function getExperiment(id) {
 }
 
 export function listExperimentLogs(params) {
-  return request({ url: '/rule/experiment/logs', method: 'get', params })
+  return request({ ...metadataResponse, url: '/rule/experiment/logs', method: 'get', params })
 }
 
 export function saveExperiment(data) {

@@ -123,6 +123,7 @@ public class RedisSubscriberTest {
             if (fetches.incrementAndGet() == 1) throw new IllegalStateException("HTTP unavailable");
             return rule(code);
         });
+        cache.put(rule("ROOT"));
         String message = publish("op-retry");
         handle(subscriber, message);
         assertNull(cache.get("ROOT"));

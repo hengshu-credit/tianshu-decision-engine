@@ -42,6 +42,9 @@ export function deleteBillingConfigDraft(data) {
   })
 }
 
+export function listTraceCharges(params) {
+  return request({ ...metadataResponse, url: '/rule/billing/record/by-trace', method: 'get', params })
+}
 export function listBillingRecords(params) {
   return request({ url: '/rule/billing/record/list', method: 'get', params })
 }

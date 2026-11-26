@@ -1,0 +1,1060 @@
+{
+  "date": "2026-11-27",
+  "baselineCommit": "7526232c8281b0b70a356f119ce173f77d342af1",
+  "deployment": "two isolated local server, MySQL, Redis, SFTP and SDK runtime instances",
+  "baselineServerJarSha256": "d04f7b3b026ab45b480dc02e7fed14af52c51279f867e1f4c0e83901649fee23",
+  "verifiedServerJarSha256": "5e43689c450bde25ce5aa8647e4b12a2d2e16634ea55cea9bafa7154a6dac1da",
+  "verifiedSdkJarSha256": "c09c8e090f864529c0e7502652dc1abb6f7e3318fcd4a7694a7626b4b58a484b",
+  "sourcePackageSha256": "aad11721698a084f95d395d1299f127a0d4fee6c7928fdae647ede0d9e647949",
+  "transfer": {
+    "sourceRuleId": "3",
+    "targetRuleIds": [
+      "4",
+      "5"
+    ],
+    "targetCodes": [
+      "Rule_1795717697495",
+      "Rule_1795717697495_verified"
+    ],
+    "fixedCasesPerRule": [
+      1,
+      1
+    ]
+  },
+  "backendTests": {
+    "tests": 3199,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 76
+  },
+  "instances": [
+    {
+      "side": "a",
+      "projectId": "2",
+      "definitionId": "3",
+      "before": 42,
+      "verifiedServerResult": 45,
+      "serverRevision": 2,
+      "artifactDigest": "304a04d2cf472180e04fa0f7dcd701242d10f275e801440c25e5b1247ae4d0ef",
+      "verifiedSdkResult": 45,
+      "restoredTables": 124,
+      "tableMismatches": 0,
+      "sftpFiles": 1,
+      "sftpReferences": {
+        "pending": 1
+      },
+      "restoreDurationSeconds": 61.01,
+      "restoredTableFacts": {
+        "artifact_deployment": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "artifact_resource_binding": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "console_account_token": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "console_operation_log": {
+          "rowCount": 419,
+          "checksum": "1798994867"
+        },
+        "console_operation_log_lock": {
+          "rowCount": 4,
+          "checksum": "2653187384"
+        },
+        "console_permission": {
+          "rowCount": 57,
+          "checksum": "3046646601"
+        },
+        "console_role": {
+          "rowCount": 4,
+          "checksum": "3639073656"
+        },
+        "console_role_permission": {
+          "rowCount": 72,
+          "checksum": "1127964628"
+        },
+        "console_security_audit_log": {
+          "rowCount": 16,
+          "checksum": "2663904039"
+        },
+        "console_security_lock": {
+          "rowCount": 1,
+          "checksum": "1178077423"
+        },
+        "console_user": {
+          "rowCount": 4,
+          "checksum": "2924276745"
+        },
+        "console_user_login_activity": {
+          "rowCount": 4,
+          "checksum": "1472302430"
+        },
+        "console_user_permission_override": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "console_user_preference": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "console_user_project": {
+          "rowCount": 3,
+          "checksum": "1614526599"
+        },
+        "console_user_project_permission": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "console_user_role": {
+          "rowCount": 4,
+          "checksum": "1488618621"
+        },
+        "console_user_session_state": {
+          "rowCount": 4,
+          "checksum": "3770283800"
+        },
+        "decision_artifact": {
+          "rowCount": 2,
+          "checksum": "113523968"
+        },
+        "decision_artifact_component": {
+          "rowCount": 18,
+          "checksum": "2355397564"
+        },
+        "engine_sftp_account": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "engine_sftp_auth_state": {
+          "rowCount": 2,
+          "checksum": "2240223687"
+        },
+        "engine_sftp_policy": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "governance_approval_event": {
+          "rowCount": 25,
+          "checksum": "164610533"
+        },
+        "governance_approval_request": {
+          "rowCount": 8,
+          "checksum": "1658172476"
+        },
+        "governance_dependency_snapshot": {
+          "rowCount": 5,
+          "checksum": "16794294"
+        },
+        "governed_resource": {
+          "rowCount": 5,
+          "checksum": "1914040529"
+        },
+        "governed_resource_version": {
+          "rowCount": 9,
+          "checksum": "2822982022"
+        },
+        "offline_transfer_action": {
+          "rowCount": 6,
+          "checksum": "1980978054"
+        },
+        "offline_transfer_log": {
+          "rowCount": 1,
+          "checksum": "2384683487"
+        },
+        "offline_transfer_log_resource": {
+          "rowCount": 2,
+          "checksum": "2342966351"
+        },
+        "offline_transfer_part": {
+          "rowCount": 1,
+          "checksum": "4186129481"
+        },
+        "offline_transfer_task": {
+          "rowCount": 1,
+          "checksum": "1941848182"
+        },
+        "resource_impact_analysis": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_api_doc_scenario": {
+          "rowCount": 1,
+          "checksum": "1894644693"
+        },
+        "rule_api_test_case": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_application_history": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_auth_access_log": {
+          "rowCount": 16,
+          "checksum": "845044440"
+        },
+        "rule_billing_config": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_billing_record": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_billing_summary": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_billing_summary_lock": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_billing_summary_task": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_dashboard_default": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_data_object": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_data_object_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_data_object_field_option": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_db_datasource": {
+          "rowCount": 1,
+          "checksum": "997181850"
+        },
+        "rule_definition": {
+          "rowCount": 3,
+          "checksum": "272235673"
+        },
+        "rule_definition_content": {
+          "rowCount": 3,
+          "checksum": "646062116"
+        },
+        "rule_definition_input_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_definition_output_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_definition_ref": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_definition_version": {
+          "rowCount": 2,
+          "checksum": "3288469205"
+        },
+        "rule_designer_save_operation": {
+          "rowCount": 2,
+          "checksum": "3191296963"
+        },
+        "rule_execution_checkpoint": {
+          "rowCount": 1,
+          "checksum": "3014387246"
+        },
+        "rule_execution_log": {
+          "rowCount": 7,
+          "checksum": "1194824281"
+        },
+        "rule_execution_log_identity": {
+          "rowCount": 7,
+          "checksum": "2752030847"
+        },
+        "rule_execution_persistence_outbox": {
+          "rowCount": 7,
+          "checksum": "800549070"
+        },
+        "rule_execution_state": {
+          "rowCount": 1,
+          "checksum": "1361520848"
+        },
+        "rule_execution_statistics": {
+          "rowCount": 7,
+          "checksum": "1660270371"
+        },
+        "rule_experiment": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_experiment_execution_log": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_experiment_execution_state": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_experiment_group": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_experiment_version": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_external_api_config": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_external_api_trial": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_external_datasource": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_field_validation": {
+          "rowCount": 11,
+          "checksum": "2203853225"
+        },
+        "rule_file_chunk": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_file_object": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_file_object_part": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_file_reference": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_function": {
+          "rowCount": 168,
+          "checksum": "757740352"
+        },
+        "rule_function_version": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_history_bucket": {
+          "rowCount": 3,
+          "checksum": "2366709761"
+        },
+        "rule_history_bucket_revision": {
+          "rowCount": 1,
+          "checksum": "617868220"
+        },
+        "rule_history_index_state": {
+          "rowCount": 1,
+          "checksum": "4096865678"
+        },
+        "rule_history_numeric_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_history_root": {
+          "rowCount": 1,
+          "checksum": "687426591"
+        },
+        "rule_ledger_article": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_asset": {
+          "rowCount": 1,
+          "checksum": "1569605577"
+        },
+        "rule_ledger_asset_file": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_draft_reference": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_event": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_event_state": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_event_type": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_revision": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_revision_reference": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_type": {
+          "rowCount": 7,
+          "checksum": "1971984617"
+        },
+        "rule_lifecycle_event": {
+          "rowCount": 9,
+          "checksum": "4277423176"
+        },
+        "rule_list_action_receipt": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_list_change_batch": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_list_change_item": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_list_library": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_list_record": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_list_record_log": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_mock_field_binding": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_mock_rule": {
+          "rowCount": 279,
+          "checksum": "1064467459"
+        },
+        "rule_model": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_model_input_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_model_output_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_model_ref": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_model_test_case": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_model_version": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_project": {
+          "rowCount": 3,
+          "checksum": "3566156148"
+        },
+        "rule_project_auth": {
+          "rowCount": 1,
+          "checksum": "2116515002"
+        },
+        "rule_project_auth_token": {
+          "rowCount": 3,
+          "checksum": "4120860051"
+        },
+        "rule_publish_outbox": {
+          "rowCount": 2,
+          "checksum": "48107420"
+        },
+        "rule_published": {
+          "rowCount": 1,
+          "checksum": "2654763711"
+        },
+        "rule_regression_evidence": {
+          "rowCount": 3,
+          "checksum": "3871321406"
+        },
+        "rule_regression_evidence_latest": {
+          "rowCount": 2,
+          "checksum": "1664864345"
+        },
+        "rule_revision": {
+          "rowCount": 2,
+          "checksum": "3505858635"
+        },
+        "rule_runtime_call_log": {
+          "rowCount": 4,
+          "checksum": "4071543664"
+        },
+        "rule_set_statistics_event": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_sftp_datasource": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_system_asset": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_system_setting": {
+          "rowCount": 4,
+          "checksum": "1875129725"
+        },
+        "rule_trace_registry": {
+          "rowCount": 7,
+          "checksum": "2431335729"
+        },
+        "rule_variable": {
+          "rowCount": 16,
+          "checksum": "117726253"
+        },
+        "rule_variable_option": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_variable_test_case": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_version_binding": {
+          "rowCount": 2,
+          "checksum": "1545570975"
+        }
+      }
+    },
+    {
+      "side": "b",
+      "projectId": "2",
+      "definitionId": "3",
+      "before": 42,
+      "verifiedServerResult": 46,
+      "serverRevision": 5,
+      "artifactDigest": "7df679d10e42daeead4b09c92cd3961a6780ded9349265d3c9fa4836456e838a",
+      "verifiedSdkResult": 46,
+      "restoredTables": 124,
+      "tableMismatches": 0,
+      "sftpFiles": 0,
+      "sftpReferences": {},
+      "restoreDurationSeconds": 57.51,
+      "restoredTableFacts": {
+        "artifact_deployment": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "artifact_resource_binding": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "console_account_token": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "console_operation_log": {
+          "rowCount": 339,
+          "checksum": "2899543454"
+        },
+        "console_operation_log_lock": {
+          "rowCount": 1,
+          "checksum": "1676417147"
+        },
+        "console_permission": {
+          "rowCount": 57,
+          "checksum": "3046646601"
+        },
+        "console_role": {
+          "rowCount": 1,
+          "checksum": "507076729"
+        },
+        "console_role_permission": {
+          "rowCount": 57,
+          "checksum": "1201613260"
+        },
+        "console_security_audit_log": {
+          "rowCount": 5,
+          "checksum": "4132608242"
+        },
+        "console_security_lock": {
+          "rowCount": 1,
+          "checksum": "1178077423"
+        },
+        "console_user": {
+          "rowCount": 1,
+          "checksum": "805975123"
+        },
+        "console_user_login_activity": {
+          "rowCount": 1,
+          "checksum": "4202033677"
+        },
+        "console_user_permission_override": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "console_user_preference": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "console_user_project": {
+          "rowCount": 2,
+          "checksum": "4291018326"
+        },
+        "console_user_project_permission": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "console_user_role": {
+          "rowCount": 1,
+          "checksum": "2803830370"
+        },
+        "console_user_session_state": {
+          "rowCount": 1,
+          "checksum": "2696842184"
+        },
+        "decision_artifact": {
+          "rowCount": 2,
+          "checksum": "2589140357"
+        },
+        "decision_artifact_component": {
+          "rowCount": 18,
+          "checksum": "1019716959"
+        },
+        "engine_sftp_account": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "engine_sftp_auth_state": {
+          "rowCount": 2,
+          "checksum": "207171062"
+        },
+        "engine_sftp_policy": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "governance_approval_event": {
+          "rowCount": 22,
+          "checksum": "908999148"
+        },
+        "governance_approval_request": {
+          "rowCount": 7,
+          "checksum": "1376421873"
+        },
+        "governance_dependency_snapshot": {
+          "rowCount": 5,
+          "checksum": "1538097770"
+        },
+        "governed_resource": {
+          "rowCount": 6,
+          "checksum": "1441427925"
+        },
+        "governed_resource_version": {
+          "rowCount": 10,
+          "checksum": "1303432068"
+        },
+        "offline_transfer_action": {
+          "rowCount": 26,
+          "checksum": "3153555845"
+        },
+        "offline_transfer_log": {
+          "rowCount": 2,
+          "checksum": "4133932640"
+        },
+        "offline_transfer_log_resource": {
+          "rowCount": 4,
+          "checksum": "4087213269"
+        },
+        "offline_transfer_part": {
+          "rowCount": 1,
+          "checksum": "3789821597"
+        },
+        "offline_transfer_task": {
+          "rowCount": 5,
+          "checksum": "3419204410"
+        },
+        "resource_impact_analysis": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_api_doc_scenario": {
+          "rowCount": 3,
+          "checksum": "1139636817"
+        },
+        "rule_api_test_case": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_application_history": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_auth_access_log": {
+          "rowCount": 12,
+          "checksum": "1741951523"
+        },
+        "rule_billing_config": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_billing_record": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_billing_summary": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_billing_summary_lock": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_billing_summary_task": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_dashboard_default": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_data_object": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_data_object_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_data_object_field_option": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_db_datasource": {
+          "rowCount": 1,
+          "checksum": "4273656324"
+        },
+        "rule_definition": {
+          "rowCount": 5,
+          "checksum": "1190827064"
+        },
+        "rule_definition_content": {
+          "rowCount": 5,
+          "checksum": "3286270670"
+        },
+        "rule_definition_input_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_definition_output_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_definition_ref": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_definition_version": {
+          "rowCount": 2,
+          "checksum": "3803636795"
+        },
+        "rule_designer_save_operation": {
+          "rowCount": 2,
+          "checksum": "2935591606"
+        },
+        "rule_execution_checkpoint": {
+          "rowCount": 1,
+          "checksum": "622091760"
+        },
+        "rule_execution_log": {
+          "rowCount": 7,
+          "checksum": "801314772"
+        },
+        "rule_execution_log_identity": {
+          "rowCount": 7,
+          "checksum": "2837038627"
+        },
+        "rule_execution_persistence_outbox": {
+          "rowCount": 7,
+          "checksum": "152225102"
+        },
+        "rule_execution_state": {
+          "rowCount": 1,
+          "checksum": "2336261463"
+        },
+        "rule_execution_statistics": {
+          "rowCount": 7,
+          "checksum": "76467704"
+        },
+        "rule_experiment": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_experiment_execution_log": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_experiment_execution_state": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_experiment_group": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_experiment_version": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_external_api_config": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_external_api_trial": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_external_datasource": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_field_validation": {
+          "rowCount": 11,
+          "checksum": "2203853225"
+        },
+        "rule_file_chunk": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_file_object": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_file_object_part": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_file_reference": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_function": {
+          "rowCount": 168,
+          "checksum": "1109838157"
+        },
+        "rule_function_version": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_history_bucket": {
+          "rowCount": 3,
+          "checksum": "2366709761"
+        },
+        "rule_history_bucket_revision": {
+          "rowCount": 1,
+          "checksum": "617868220"
+        },
+        "rule_history_index_state": {
+          "rowCount": 1,
+          "checksum": "4096865678"
+        },
+        "rule_history_numeric_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_history_root": {
+          "rowCount": 1,
+          "checksum": "3997509033"
+        },
+        "rule_ledger_article": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_asset": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_asset_file": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_draft_reference": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_event": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_event_state": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_event_type": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_revision": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_revision_reference": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_ledger_type": {
+          "rowCount": 7,
+          "checksum": "1971984617"
+        },
+        "rule_lifecycle_event": {
+          "rowCount": 11,
+          "checksum": "2036455249"
+        },
+        "rule_list_action_receipt": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_list_change_batch": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_list_change_item": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_list_library": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_list_record": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_list_record_log": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_mock_field_binding": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_mock_rule": {
+          "rowCount": 279,
+          "checksum": "1064467459"
+        },
+        "rule_model": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_model_input_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_model_output_field": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_model_ref": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_model_test_case": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_model_version": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_project": {
+          "rowCount": 2,
+          "checksum": "248817125"
+        },
+        "rule_project_auth": {
+          "rowCount": 1,
+          "checksum": "2389987994"
+        },
+        "rule_project_auth_token": {
+          "rowCount": 2,
+          "checksum": "386103571"
+        },
+        "rule_publish_outbox": {
+          "rowCount": 2,
+          "checksum": "1105910528"
+        },
+        "rule_published": {
+          "rowCount": 1,
+          "checksum": "1423382178"
+        },
+        "rule_regression_evidence": {
+          "rowCount": 3,
+          "checksum": "3783421074"
+        },
+        "rule_regression_evidence_latest": {
+          "rowCount": 2,
+          "checksum": "1664864345"
+        },
+        "rule_revision": {
+          "rowCount": 4,
+          "checksum": "1411394329"
+        },
+        "rule_runtime_call_log": {
+          "rowCount": 4,
+          "checksum": "136960446"
+        },
+        "rule_set_statistics_event": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_sftp_datasource": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_system_asset": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_system_setting": {
+          "rowCount": 4,
+          "checksum": "1875129725"
+        },
+        "rule_trace_registry": {
+          "rowCount": 7,
+          "checksum": "919329371"
+        },
+        "rule_variable": {
+          "rowCount": 16,
+          "checksum": "117726253"
+        },
+        "rule_variable_option": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_variable_test_case": {
+          "rowCount": 0,
+          "checksum": "0"
+        },
+        "rule_version_binding": {
+          "rowCount": 2,
+          "checksum": "2846388762"
+        }
+      }
+    }
+  ]
+}

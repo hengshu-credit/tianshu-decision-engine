@@ -166,6 +166,30 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         return pageRecords(pageNum, pageSize, billingTarget, billingCode, projectCode, projectName, authType, authCode, tokenCode, beginTime, endTime, null);
     }
 
+    public record TraceCharge(String billingName, String billingCode, String billingBasis, String billingTarget,
+                              Long ruleId, Long targetRefId, Integer attemptNo, String quantity, String unitPrice,
+                              String amount, String currency, LocalDateTime occurTime) {
+        static TraceCharge from(RuleBillingRecord row) {
+            return new TraceCharge(row.getBillingName(), row.getBillingCode(), row.getBillingBasis(), row.getBillingTarget(),
+                    row.getRuleId(), row.getTargetRefId(), row.getAttemptNo(), decimal(row.getQuantity()),
+                    decimal(row.getUnitPrice()), decimal(row.getAmount()), row.getCurrency(), row.getOccurTime());
+        }
+        private static String decimal(BigDecimal value) { return value == null ? null : value.toPlainString(); }
+    }
+
+    public record TraceCharges(List<TraceCharge> records, long total, List<RuleBillingRecordMapper.TraceTotal> subtotals) {}
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public TraceCharges recordsByTrace(String rootTraceId, Long projectId, int pageNum) {
+        if (!hasText(rootTraceId) || pageNum < 1) throw new IllegalArgumentException("请选择执行流水和有效页码");
+        var page = recordMapper.selectPage(new Page<>(pageNum, 20), new LambdaQueryWrapper<RuleBillingRecord>()
+                .eq(RuleBillingRecord::getRootTraceId, rootTraceId)
+                .eq(projectId != null, RuleBillingRecord::getProjectId, projectId)
+                .orderByDesc(RuleBillingRecord::getOccurTime, RuleBillingRecord::getId));
+        return new TraceCharges(page.getRecords().stream().map(TraceCharge::from).toList(), page.getTotal(),
+                recordMapper.totalsByTrace(rootTraceId, projectId));
+    }
+
     @Resource private ExecutionVersionFilter executionVersionFilter;
 
     public IPage<RuleBillingRecord> pageRecords(int pageNum, int pageSize, String billingTarget, String billingCode,

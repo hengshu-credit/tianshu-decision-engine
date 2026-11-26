@@ -927,7 +927,8 @@ describe('VariableList — 变量操作', () => {
       sourceConfig: JSON.stringify({ requestOverrides: { customerId: { kind: 'REFERENCE', refType: 'DATA_OBJECT', refId: 20, code: 'customer.id' } }, resultPath: 'body.score' })
     }
     expect(wrapper.vm.isTestableSource(row)).toBe(true)
-    expect(wrapper.vm.isTestableSource({ varSource: 'INPUT' })).toBe(false)
+    expect(wrapper.vm.isTestableSource({ varSource: 'INPUT' })).toBe(true)
+    expect(wrapper.vm.isTestableSource({ varSource: 'COMPUTED' })).toBe(false)
     definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: {
       inputs: [{ refId: 20, refType: 'DATA_OBJECT', scriptName: 'customer.id', valueType: 'STRING' }],
       sampleParams: { customer: { id: 'C000' } }

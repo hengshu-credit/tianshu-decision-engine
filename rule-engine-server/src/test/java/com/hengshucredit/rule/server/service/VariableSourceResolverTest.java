@@ -405,7 +405,27 @@ public class VariableSourceResolverTest {
         Map<String, Object> result = resolver.testVariable(1L, params);
 
         assertEquals(88, result.get("resolvedValue"));
+        assertEquals("PRESENT", ((Map<?, ?>) result.get("sourceEvidence")).get("SOURCE_VALUE"));
         assertEquals(1, apiService.callCount);
+    }
+
+    @Test
+    public void onlineTestDistinguishesMissingInputAndDatabaseReturningNoRows() throws Exception {
+        RuleVariable input = variable("age", "INPUT", "{}");
+        var resolver = resolver(Collections.singletonList(input), new FakeApiService(responseBody("score", 1)),
+                new FakeDbPools(Collections.emptyList()));
+        var absent = resolver.testVariable(1L, Map.of());
+        assertEquals("ABSENT", ((Map<?, ?>) absent.get("sourceEvidence")).get("SOURCE_VALUE"));
+        var zero = resolver.testVariable(1L, Map.of("age", 0));
+        assertEquals(0, zero.get("resolvedValue"));
+        assertEquals("PRESENT", ((Map<?, ?>) zero.get("sourceEvidence")).get("SOURCE_VALUE"));
+
+        RuleVariable db = variable("score", "DB", "{\"datasourceId\":3,\"sql\":\"select 1\",\"resultPath\":\"0.score\"}");
+        resolver = resolver(Collections.singletonList(db), new FakeApiService(responseBody("score", 1)),
+                new FakeDbPools(Collections.emptyList()));
+        var evidence = (Map<?, ?>) resolver.testVariable(1L, Map.of()).get("sourceEvidence");
+        assertEquals(0, evidence.get("ROW_COUNT"));
+        assertEquals("NO_DATA", evidence.get("DATA_STATE"));
     }
 
     @Test
