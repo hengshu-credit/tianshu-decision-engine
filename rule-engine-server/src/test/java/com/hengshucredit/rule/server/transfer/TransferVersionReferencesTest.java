@@ -10,6 +10,9 @@ public class TransferVersionReferencesTest {
         var found = TransferVersionReferences.scan(Map.of("content", Map.of("modelJson", operand)));
         assertEquals(1, found.size()); assertEquals("/content/modelJson/@json", found.get(0).path());
         assertTrue(TransferVersionReferences.scan(Map.of("defaultValue", operand)).isEmpty());
+        var field = Map.of("id", "report", "location", "JSON", "path", "report", "defaultValue", com.alibaba.fastjson.JSON.parse(operand));
+        var api = Map.of("executionConfig", Map.of("requestFields", java.util.List.of(field)));
+        assertEquals(1, TransferVersionReferences.scan(api).size());
         assertTrue(TransferVersionReferences.scan(Map.of("kind", "LITERAL", "value", operand)).isEmpty());
         assertTrue(TransferVersionReferences.scan(Map.of("content", Map.of("modelJson", operand.replace("FIXED", "LATEST")))).isEmpty());
     }

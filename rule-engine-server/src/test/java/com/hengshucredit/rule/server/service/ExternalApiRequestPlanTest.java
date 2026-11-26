@@ -173,6 +173,33 @@ public class ExternalApiRequestPlanTest {
         assertNotEquals(original.identity(), bind.apply(frozen).identity());
     }
 
+    @Test
+    public void sharedReportUsesEffectiveFieldsWhileOldCheckpointsKeepTheirOrderIdentity() {
+        var api = api();
+        api.setResponseCacheSeconds(300);
+        var spec = JSON.parseObject(api.getExecutionConfig());
+        spec.getJSONArray("requestFields").getJSONObject(0).put("defaultValue",
+                Map.of("kind", "REFERENCE", "refType", "VARIABLE", "refId", 2, "value", "order"));
+        api.setExecutionConfig(spec.toJSONString());
+        var source = new RuleExternalDatasource();
+        source.setId(12L);
+        var properties = new ProjectAuthProperties();
+        properties.setMasterKeys(Map.of("v1", "non-secret-fixture-for-response-cache"));
+        properties.setActiveKeyId("v1");
+        var signer = new LocalModelBindingSignature(properties);
+        var paths = Map.of("VARIABLE:1", "report", "VARIABLE:2", "order");
+        Function<Map<String, Object>, ExternalApiRequestPlan> plan = params ->
+                ExternalApiRequestPlan.prepare(api, params, Map.of(), paths).withTransport(source, paths, signer);
+        var first = plan.apply(Map.of("report", "R", "order", "first"));
+        var next = plan.apply(Map.of("report", "R", "order", "next"));
+        assertEquals(first.values(), next.values());
+        assertNotEquals(first.identity(), next.identity());
+        assertEquals(first.responseCacheIdentity(), next.responseCacheIdentity());
+        assertNotEquals(first.responseCacheIdentity(), plan.apply(Map.of("order", "next")).responseCacheIdentity());
+        source.setBaseUrl("http://another-provider");
+        assertNotEquals(first.responseCacheIdentity(), plan.apply(Map.of("report", "R", "order", "first")).responseCacheIdentity());
+    }
+
     private RuleExternalApiConfig api() {
         RuleExternalApiConfig api = new RuleExternalApiConfig();
         api.setId(7L);

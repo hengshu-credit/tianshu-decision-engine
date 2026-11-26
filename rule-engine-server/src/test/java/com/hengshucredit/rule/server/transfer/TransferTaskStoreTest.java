@@ -72,7 +72,7 @@ public class TransferTaskStoreTest {
         var roots = List.of(new TransferRootRequest("RULE", 1L));
         var exported = new OfflineResourceTransferService.ExportedPackage(null, new byte[]{3, 5});
         var transfer = new OfflineResourceTransferService() {
-            @Override ExportedPackage exportPackage(List<TransferRootRequest> selected, boolean recursive, TransferProgress progress) {
+            @Override TransferBundle exportTo(List<TransferRootRequest> selected, boolean recursive, TransferProgress progress, java.io.OutputStream sink) throws java.io.IOException {
                 assertEquals(roots, selected);
                 assertTrue(recursive);
                 exports.incrementAndGet();
@@ -80,13 +80,15 @@ public class TransferTaskStoreTest {
                 try {
                     if (!release.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("未收到测试放行信号");
                 } catch (InterruptedException stopped) { throw new IllegalStateException(stopped); }
-                return exported;
+                sink.write(exported.bytes());
+                return exported.bundle();
             }
         };
         var audit = new OfflineTransferLogService() {
-            @Override public Long recordExport(List<TransferRootRequest> selected, OfflineResourceTransferService.ExportedPackage file, String actor) {
+            @Override public Long recordExport(List<TransferRootRequest> selected, TransferBundle file, String digest, String actor) {
                 assertEquals(roots, selected);
-                assertSame(exported, file);
+                assertSame(exported.bundle(), file);
+                assertEquals(com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(exported.bytes()), digest);
                 return 12L;
             }
             @Override public OfflineTransferLog getById(java.io.Serializable logId) {

@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.governance;
 
+import com.hengshucredit.rule.server.service.ExternalApiExecutionConfig;
+
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 
@@ -180,7 +182,12 @@ public class SimpleEntityGovernedResourceAdapter<T>
             Map<String, Object> map = (Map<String, Object>) rawMap;
             if ("LITERAL".equals(map.get("kind"))) return;
             for (Map.Entry<String, Object> entry : map.entrySet()) {
-                if (BUSINESS_VALUE_KEYS.contains(entry.getKey())) continue;
+                if (BUSINESS_VALUE_KEYS.contains(entry.getKey())) {
+                    if (ExternalApiExecutionConfig.isRequestFieldDefault(entry.getKey(), path, map))
+                        ExternalApiExecutionConfig.visitDefaultOperands(entry.getValue(), path + "." + entry.getKey(),
+                                (parent, child) -> parent + "." + child, (at, operand) -> collect(operand, at, dependencies));
+                    continue;
+                }
                 Long id = longValue(entry.getValue());
                 String targetType = dependencyType(
                         entry.getKey(), map);

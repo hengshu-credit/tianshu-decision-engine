@@ -123,7 +123,7 @@ public class RuleRuntimeController {
                 if (claim == null) {
                     var existing = experimentStateService.byTrace(acceptedTrace);
                     if (existing != null && "SUCCEEDED".equals(existing.status()) && existing.resultJson() != null)
-                        return ApiResponse.ok(JSON.parseObject(existing.resultJson(),RuleExperimentExecuteResult.class));
+                        return ApiResponse.ok(RuleExperimentExecutionStateService.readResult(existing.resultJson()));
                     return ExecutionQueue.pending(acceptedTrace);
                 }
                 decision = claim;
@@ -181,7 +181,7 @@ public class RuleRuntimeController {
                 status.setExpireTime(experiment.expireTime());
                 status.setErrorMessage(experiment.error());
                 if (experiment.resultJson() != null) {
-                    var last = JSON.parseObject(experiment.resultJson(), RuleExperimentExecuteResult.class);
+                    var last = RuleExperimentExecutionStateService.readResult(experiment.resultJson());
                     var group = last.getProductionGroup();
                     if (group != null && group.getTraceId() != null) {
                         var child = stateService.findByRootTraceId(group.getTraceId());
@@ -277,7 +277,7 @@ public class RuleRuntimeController {
         if (state == null) {
             var experiment = experimentByTrace(traceId, auth);
             if (experiment != null) return "SUCCEEDED".equals(experiment.status()) && experiment.resultJson() != null
-                    ? ApiResponse.ok(JSON.parseObject(experiment.resultJson(), RuleExperimentExecuteResult.class))
+                    ? ApiResponse.ok(RuleExperimentExecutionStateService.readResult(experiment.resultJson()))
                     : ApiResponse.fail(PlatformCode.RESULT_PENDING, "实验结果尚未就绪");
         }
         if (state == null || (!auth.isGlobalAccess() && !sameProject(state, auth.getProjectId()))) {

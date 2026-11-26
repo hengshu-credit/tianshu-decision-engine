@@ -2243,6 +2243,48 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void providerConfirmedPostRefreshesRejectedTokenWithOriginalReceipt() throws Exception {
+        AtomicInteger tokenCalls = new AtomicInteger();
+        var keys = new java.util.ArrayList<String>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/token", exchange -> {
+            byte[] response = JSON.toJSONBytes(Map.of("token", "token-" + tokenCalls.incrementAndGet()));
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/report", exchange -> {
+            keys.add(exchange.getRequestHeaders().getFirst("Idempotency-Key"));
+            boolean authorized = "Bearer token-2".equals(exchange.getRequestHeaders().getFirst("Authorization"));
+            byte[] response = JSON.toJSONBytes(Map.of("accepted", authorized));
+            exchange.sendResponseHeaders(authorized ? 200 : 401, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            var datasource = httpDatasource(server);
+            datasource.setAuthType("TOKEN_API");
+            datasource.setAuthConfig("{\"tokenUrl\":\"/token\",\"tokenPath\":\"body.token\",\"tokenPrefix\":\"Bearer \"}");
+            var api = basicApiConfig(812L, 1L, "/report");
+            api.setRequestMethod("POST");
+            api.setAuthMode("INHERIT");
+            api.setRetryNonIdempotent(0);
+            var spec = JSON.parseObject(api.getExecutionConfig());
+            spec.put("providerIdempotency", true);
+            api.setExecutionConfig(spec.toJSONString());
+            var service = configuredService(api, datasource);
+            var plan = ExternalApiRequestPlan.prepare(api, Map.of(), Map.of(), Map.of());
+            var result = service.invokeWithProviderKey(plan, "order-receipt");
+            assertEquals(Boolean.TRUE, result.get("success"));
+            assertEquals(java.util.List.of("order-receipt", "order-receipt"), keys);
+            assertEquals(2, tokenCalls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void postDoesNotRefreshTokenOrRepeatProviderCallWithoutIdempotencyConfirmation() throws Exception {
         AtomicInteger tokenCalls = new AtomicInteger();
         AtomicInteger providerCalls = new AtomicInteger();

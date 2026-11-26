@@ -109,7 +109,7 @@ public class RuleExperimentExecutionStateService {
         if (state == null) throw new IllegalStateException("实验订单登记失败");
         if (!digest.equals(state.requestDigest())) return Decision.conflict();
         if ("SUCCEEDED".equals(state.status()) && state.resultJson() != null)
-            return Decision.completed(state, com.alibaba.fastjson.JSON.parseObject(state.resultJson(), RuleExperimentExecuteResult.class));
+            return Decision.completed(state, RuleExperimentExecutionStateService.readResult(state.resultJson()));
         if (!configDigest.equals(state.configDigest()) && state.dispatchJson()!=null && !canAdoptRoutingRepair(state, request)) return Decision.conflict();
         if ("QUEUED".equals(state.status()) || "RUNNING".equals(state.status()) && Boolean.TRUE.equals(jdbcTemplate.queryForObject(
                 "SELECT lease_until<NOW(6) FROM rule_experiment_execution_state WHERE id=?", Boolean.class, state.id())))
@@ -153,7 +153,7 @@ public class RuleExperimentExecutionStateService {
         if (traceId != null && !traceId.equals(state.experimentTraceId())) return Decision.conflict();
         if (!requestDigest.equals(state.requestDigest())) return Decision.conflict();
         if ("SUCCEEDED".equals(state.status()) && state.resultJson() != null) {
-            return Decision.completed(state, JSON.parseObject(state.resultJson(), RuleExperimentExecuteResult.class));
+            return Decision.completed(state, RuleExperimentExecutionStateService.readResult(state.resultJson()));
         }
         if (!configDigest.equals(state.configDigest()) && state.dispatchJson() != null && !canAdoptRoutingRepair(state, request)) return Decision.conflict();
         String owner = UUID.randomUUID().toString();
@@ -195,6 +195,23 @@ public class RuleExperimentExecutionStateService {
         return child != null && ruleStates.canPollOriginal(trace, child);
     }
 
+    private record Snapshot(int snapshotVersion,
+                            @com.fasterxml.jackson.annotation.JsonUnwrapped RuleExperimentExecuteResult result) { }
+
+    static String writeResult(RuleExperimentExecuteResult result) {
+        return result == null ? "null" : CanonicalJson.write(new Snapshot(2, result));
+    }
+
+    public static RuleExperimentExecuteResult readResult(String json) {
+        if (json == null || "null".equals(json)) return null;
+        // Legacy experiment snapshots may contain FastJSON object references.
+        if (!json.contains("\"$ref\"")) return CanonicalJson.readSnapshot(json, RuleExperimentExecuteResult.class);
+        var raw = JSON.parseObject(json, com.alibaba.fastjson.parser.Feature.DisableSpecialKeyDetect);
+        return Integer.valueOf(2).equals(raw.getInteger("snapshotVersion"))
+                ? CanonicalJson.readSnapshot(json, RuleExperimentExecuteResult.class)
+                : JSON.parseObject(json, RuleExperimentExecuteResult.class);
+    }
+
     public void complete(Decision decision, RuleExperimentExecuteResult result) {
         if (decision == null || !decision.claimed) return;
         int changed = jdbcTemplate.update("UPDATE rule_experiment_execution_state SET status=?, result_json=?, "
@@ -204,7 +221,7 @@ public class RuleExperimentExecutionStateService {
                         : result != null && result.routingPaused() ? "PAUSED_ROUTING"
                         : result != null && result.platformStatus() == com.hengshucredit.rule.model.PlatformCode.RESULT_PENDING
                         ? "WAITING_EXTERNAL" : "FAILED_RETRYABLE",
-                JSON.toJSONString(result), result == null ? "实验结果为空" : result.getErrorMessage(),
+                writeResult(result), result == null ? "实验结果为空" : result.getErrorMessage(),
                 !"CACHE_THEN_CALL".equals(decision.externalRecoveryMode) && canPollOriginal(decision.getTraceId(), result), decision.state.id(), decision.owner);
         if (changed != 1) throw new IllegalStateException("实验执行租约已失效，无法提交旧尝试结果");
     }

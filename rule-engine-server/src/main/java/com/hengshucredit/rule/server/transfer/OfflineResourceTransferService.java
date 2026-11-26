@@ -91,6 +91,21 @@ public class OfflineResourceTransferService {
     }
 
     ExportedPackage exportPackage(List<TransferRootRequest> requests, boolean includeDependencies, TransferProgress progress) {
+        var prepared = prepareExport(requests, includeDependencies, progress);
+        return new ExportedPackage(prepared.bundle(), codec.encode(prepared.bundle(), prepared.libraries()));
+    }
+
+    @Transactional(readOnly = true)
+    TransferBundle exportTo(List<TransferRootRequest> requests, boolean includeDependencies,
+                            TransferProgress progress, java.io.OutputStream sink) throws java.io.IOException {
+        var prepared = prepareExport(requests, includeDependencies, progress);
+        codec.encodeTo(prepared.bundle(), prepared.libraries(), sink);
+        return prepared.bundle();
+    }
+
+    private record PreparedExport(TransferBundle bundle, Map<String,TransferFunctionLibraries.Library> libraries) { }
+
+    private PreparedExport prepareExport(List<TransferRootRequest> requests, boolean includeDependencies, TransferProgress progress) {
         progress.report(1, "检查导出起点和版本");
         List<TransferKey> roots = normalizeRoots(requests);
         Map<String, TransferRootRequest> selectedVersions = new LinkedHashMap<>();
@@ -233,7 +248,7 @@ public class OfflineResourceTransferService {
         var bundle = new TransferBundle(roots.stream().map(TransferKey::value).toList(),
                 new ArrayList<>(resources.values()), warnings);
         progress.report(90, "打包 " + resources.size() + " 项配置并计算摘要");
-        return new ExportedPackage(bundle, codec.encode(bundle, libraries));
+        return new PreparedExport(bundle, libraries);
     }
 
     @Transactional(readOnly = true)

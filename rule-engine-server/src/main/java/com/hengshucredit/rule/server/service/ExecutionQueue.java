@@ -195,7 +195,7 @@ public class ExecutionQueue {
             return;
         }
         if ("WAITING_EXTERNAL".equals(work.status()) && !experiments.canPollOriginal(work.trace(),
-                JSON.parseObject(state.resultJson(), RuleExperimentExecuteResult.class))) {
+                RuleExperimentExecutionStateService.readResult(state.resultJson()))) {
             failBeforeStart("rule_experiment_execution_state", work, "原外数回执缺失或状态不明，需核实后恢复");
             return;
         }

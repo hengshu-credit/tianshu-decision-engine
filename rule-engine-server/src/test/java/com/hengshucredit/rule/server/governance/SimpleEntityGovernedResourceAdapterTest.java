@@ -78,6 +78,31 @@ public class SimpleEntityGovernedResourceAdapterTest {
         Assert.assertEquals(Long.valueOf(3), references.get(0).targetResourceId());
     }
     @Test
+    public void fallbackRequestFieldIsReboundWhileBusinessDefaultsStayOpaque() {
+        var references = adapter(new TestStore()).collectDependencies(ResourceSnapshot.ofJson(
+                "{\"executionConfig\":{\"requestFields\":[{\"id\":\"order\",\"location\":\"JSON\",\"path\":\"request_id\","
+                + "\"defaultValue\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":33}}]},"
+                + "\"defaultValue\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":17}}"));
+        Assert.assertEquals(1, references.size());
+        Assert.assertEquals(Long.valueOf(33), references.get(0).targetResourceId());
+        Assert.assertEquals("$.executionConfig.requestFields[0].defaultValue.refId", references.get(0).referencePath());
+        String fields = "{\"requestFields\":[{\"id\":\"order\",\"location\":\"JSON\",\"path\":\"request_id\","
+                + "\"defaultValue\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":33}}]}";
+        var stringConfig = SimpleEntityGovernedResourceAdapter.dependenciesIn(
+                com.hengshucredit.rule.server.artifact.CanonicalJson.write(java.util.Map.of("executionConfig", fields)));
+        Assert.assertEquals(1, stringConfig.size());
+        Assert.assertEquals("$.executionConfig[json].requestFields[0].defaultValue.refId", stringConfig.get(0).referencePath());
+        var template = java.util.Map.of("modelId", 99, "varId", 777, "business", "{\"modelId\":10}",
+                "report", java.util.Map.of("kind", "REFERENCE", "refType", "VARIABLE", "refId", 33));
+        var config = java.util.Map.of("executionConfig", java.util.Map.of("requestFields", java.util.List.of(
+                java.util.Map.of("id", "F", "location", "JSON", "path", "r", "defaultValue", template))));
+        var embedded = SimpleEntityGovernedResourceAdapter.dependenciesIn(
+                com.hengshucredit.rule.server.artifact.CanonicalJson.write(config));
+        Assert.assertEquals(1, embedded.size());
+        Assert.assertEquals("$.executionConfig.requestFields[0].defaultValue.report.refId", embedded.get(0).referencePath());
+    }
+
+    @Test
     public void modelOutputReferenceDoesNotBecomeAnUnrelatedVariableId() {
         var references = adapter(new TestStore()).collectDependencies(ResourceSnapshot.ofJson(
                 "{\"sourceOperand\":{\"kind\":\"REFERENCE\",\"refType\":\"MODEL_OUTPUT\",\"refId\":12}}"));

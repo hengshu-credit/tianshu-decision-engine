@@ -454,7 +454,7 @@ public class ExternalApiInvokeService {
         Map<String, Object> invokeParams = normalizeRequestParams(params);
         String configuredKey = responseCacheSeconds > 0
                 ? buildResponseCacheKey(apiConfig.getId(), apiConfig.getCacheKeyConfig(), invokeParams) : null;
-        String responseCacheKey = configuredKey == null ? null : apiConfig.getId() + ":" + sha256(plan.identity() + ":" + configuredKey);
+        String responseCacheKey = configuredKey == null ? null : apiConfig.getId() + ":" + sha256(plan.responseCacheIdentity() + ":" + configuredKey);
         ExternalApiResponseCache.Lookup cachedResponse = responseCacheKey == null
                 ? null : externalApiResponseCache.get(apiConfig, responseCacheKey);
         long start = System.currentTimeMillis();
@@ -1545,7 +1545,10 @@ public class ExternalApiInvokeService {
             envelope.put("response", providerResponse);
             envelope.put("request", trace.requestDetails);
             if (prepared.tokenCacheKey != null && shouldRefreshToken(config, envelope)) {
-                if (trace.tokenRefreshAttempted || !retryAllowedForMethod(config)) {
+                // exchangeHttp verified the endpoint and sent this persisted key on the first attempt.
+                // A rejected token must not poison later orders even when this POST cannot be replayed.
+                if (trace.tokenRefreshAttempted || (trace.providerKey == null && !retryAllowedForMethod(config))) {
+                    externalTokenCache.invalidate(prepared.tokenCacheKey);
                     throw new TokenRefreshRejectedException(httpError);
                 }
                 trace.tokenRefreshAttempted = true;

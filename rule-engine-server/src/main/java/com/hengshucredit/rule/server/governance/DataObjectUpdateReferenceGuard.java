@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.governance;
 
+import com.hengshucredit.rule.server.service.ExternalApiExecutionConfig;
+
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
@@ -100,7 +102,7 @@ public class DataObjectUpdateReferenceGuard {
         }
         List<GovernanceIssue> issues = new ArrayList<>();
         for (Consumer consumer : consumers(objectId, incoming)) {
-            Object config = expand(JSON.toJSON(consumer.configuration()));
+            Object config = expand(JSON.toJSON(consumer.configuration()), "$");
             boolean referenced = referencesObject(config, objectId) || OperandDependencyCollector.collectReferences(config).stream()
                     .anyMatch(ref -> Set.of("DATA_OBJECT", "DATA_FIELD", "OBJECT").contains(String.valueOf(ref.getRefType()).toUpperCase(Locale.ROOT))
                             && affectedWithParents.contains(ref.getRefId()) || "DATA_OBJECT_ROOT".equals(ref.getRefType()) && Objects.equals(objectId, ref.getRefId()));
@@ -186,7 +188,7 @@ public class DataObjectUpdateReferenceGuard {
                 .map(row -> new Consumer("规则固定版本快照", row.getId(), row)).toList();
     }
 
-    private Object expand(Object value) {
+    private Object expand(Object value, String path) {
         if (value instanceof JSONObject object) {
             // 字面量可以合法包含业务 varId/refType/objectId，不是引擎关联。
             if ("LITERAL".equals(object.getString("kind"))) return new JSONObject();
@@ -194,19 +196,26 @@ public class DataObjectUpdateReferenceGuard {
             object.forEach((key, child) -> {
                 if ("sourceContent".equals(key) && !Set.of("API", "DB", "DATABASE")
                         .contains(String.valueOf(object.get("sourceType")).toUpperCase(Locale.ROOT))) return;
+                if (ExternalApiExecutionConfig.isRequestFieldDefault(key, path, object)) {
+                    var operands = new JSONArray();
+                    ExternalApiExecutionConfig.visitDefaultOperands(child, path + "." + key, (parent, field) -> parent + "." + field,
+                            (at, operand) -> operands.add(expand(operand, at)));
+                    expanded.put(key, operands);
+                    return;
+                }
                 if (Set.of("script", "example", "examples", "testSampleParams", "defaultValue").contains(key)) return;
                 Object nested = child;
                 if (JSON_CONFIG_FIELDS.contains(key) && child instanceof String text && !text.isBlank()) {
                     try { nested = JSON.parse(text); }
                     catch (RuntimeException invalidJson) { nested = null; }
                 }
-                expanded.put(key, expand(nested));
+                expanded.put(key, expand(nested, path + "." + key));
             });
             return expanded;
         }
         if (value instanceof JSONArray values) {
             JSONArray expanded = new JSONArray();
-            values.forEach(child -> expanded.add(expand(child)));
+            for (int i = 0; i < values.size(); i++) expanded.add(expand(values.get(i), path + "[" + i + "]"));
             return expanded;
         }
         return value;

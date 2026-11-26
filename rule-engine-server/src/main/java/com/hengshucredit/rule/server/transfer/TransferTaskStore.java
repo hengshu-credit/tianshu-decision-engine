@@ -86,6 +86,25 @@ public class TransferTaskStore {
         }
     }
 
+    record SavedFile(int size, String digest) { }
+
+    SavedFile saveExport(String id, java.nio.file.Path archive) throws IOException {
+        int size = Math.toIntExact(java.nio.file.Files.size(archive));
+        java.security.MessageDigest hash;
+        try { hash = java.security.MessageDigest.getInstance("SHA-256"); }
+        catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+        try (var stream = new java.security.DigestInputStream(java.nio.file.Files.newInputStream(archive), hash)) {
+            for (int index = 0; (long) index * PART_SIZE < size; index++) {
+                int length = partSize(size, index);
+                byte[] part = stream.readNBytes(length);
+                if (part.length != length) throw new IOException("导出文件不完整");
+                insertPart(id, index, part);
+            }
+            if (stream.read() != -1) throw new IOException("导出文件长度已变化");
+        }
+        return new SavedFile(size, java.util.HexFormat.of().formatHex(hash.digest()));
+    }
+
     public void saveExport(String id, byte[] bytes) {
         for (int offset = 0; offset < bytes.length; offset += PART_SIZE) {
             insertPart(id, offset / PART_SIZE, Arrays.copyOfRange(bytes, offset, Math.min(bytes.length, offset + PART_SIZE)));

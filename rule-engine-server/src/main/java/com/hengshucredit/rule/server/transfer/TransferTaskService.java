@@ -88,6 +88,11 @@ public class TransferTaskService {
             worker.execute(() -> {
                 try { work.run(); }
                 catch (Exception failure) { fail(id, failure); }
+                catch (OutOfMemoryError exhausted) {
+                    // The worker is replaced by its executor. Finalize the persisted task for polling clients.
+                    try { fail(id, new IllegalStateException("生成迁移包时节点内存不足", exhausted)); }
+                    finally { throw exhausted; }
+                }
             });
         } catch (RejectedExecutionException busy) {
             fail(id, new IllegalStateException("迁移队列已满，请稍后重试"));
@@ -134,15 +139,25 @@ public class TransferTaskService {
         }
     }
 
-    private void export(Request request, String actor, String id, TransferProgress progress) {
-        transaction.executeWithoutResult(tx -> {
-            var selection = request.selection();
-            var exported = transfer.exportPackage(selection.roots(), selection.recursive(), progress.range(0, 95, ""));
-            progress.report(96, "保存配置包和导出审计记录");
-            store.saveExport(id, exported.bytes());
-            Long logId = audit.recordExport(selection.roots(), exported, actor);
-            store.finish(id, "SUCCESS", exported.bytes().length, Map.of("logId", logId));
-        });
+    private void export(Request request, String actor, String id, TransferProgress progress) throws IOException {
+        var archive = Files.createTempFile("tianshu-export-", ".zip");
+        try {
+            transaction.executeWithoutResult(tx -> {
+                var selection = request.selection();
+                try (var sink = Files.newOutputStream(archive)) {
+                    var bundle = transfer.exportTo(selection.roots(), selection.recursive(), progress.range(0, 95, ""), sink);
+                    progress.report(96, "保存配置包和导出审计记录");
+                    var saved = store.saveExport(id, archive);
+                    Long logId = audit.recordExport(selection.roots(), bundle, saved.digest(), actor);
+                    store.finish(id, "SUCCESS", saved.size(), Map.of("logId", logId));
+                } catch (IOException failure) {
+                    throw new UncheckedIOException("无法保存离线迁移包", failure);
+                }
+            });
+        } finally {
+            try { Files.deleteIfExists(archive); }
+            catch (IOException cleanup) { log.warn("清理临时导出文件失败，任务 {}", id, cleanup); }
+        }
     }
 
     private Object process(Request request, int size, Path archive, TransferBundleCodec.Decoded decoded, String actor, TransferProgress progress) {

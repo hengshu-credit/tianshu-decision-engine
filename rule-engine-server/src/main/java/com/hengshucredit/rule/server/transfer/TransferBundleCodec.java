@@ -20,6 +20,15 @@ public final class TransferBundleCodec {
     }
 
     byte[] encode(TransferBundle bundle, Map<String,TransferFunctionLibraries.Library> libraries) {
+        return zip.encode(archive(bundle, libraries));
+    }
+
+    void encodeTo(TransferBundle bundle, Map<String,TransferFunctionLibraries.Library> libraries, java.io.OutputStream sink)
+            throws java.io.IOException {
+        zip.encodeTo(archive(bundle, libraries), sink);
+    }
+
+    private DecisionArtifactPackage archive(TransferBundle bundle, Map<String,TransferFunctionLibraries.Library> libraries) {
         bundle.resources().forEach(TransferVersionReferences::descriptors);
         validate(bundle);
         DecisionArtifactPackage archive = new DecisionArtifactPackage();
@@ -34,8 +43,7 @@ public final class TransferBundleCodec {
             var configuration = new LinkedHashMap<>(resource.configuration());
             if (resource.key().startsWith("MODEL:") && configuration.get("modelContent") instanceof String content) {
                 String binary = binaryPath(resource.key());
-                byte[] original = java.util.Base64.getDecoder().decode(content);
-                archive.addComponent(binary, "application/octet-stream", original);
+                archive.addBase64Component(binary, "application/octet-stream", content);
                 configuration.remove("modelContent");
                 configuration.put("_transferModelFile", binary);
             }
@@ -49,7 +57,7 @@ public final class TransferBundleCodec {
                     resource.requiredEnvironmentFields(), resource.versionReferences(), resource.pageSettings());
             archive.addComponent(path(resource.key()), "application/json", CanonicalJson.writeBytes(row));
         }
-        return zip.encode(archive);
+        return archive;
     }
 
     public Decoded decode(byte[] bytes) {

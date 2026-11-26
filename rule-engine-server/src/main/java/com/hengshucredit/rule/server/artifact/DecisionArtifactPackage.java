@@ -45,6 +45,35 @@ public class DecisionArtifactPackage {
         components.put(path, new Component(path, mediaType, copy ? content.clone() : content, componentMetadata));
     }
 
+    /** The transfer bundle already owns its immutable Base64 source. Decode one bounded block at a time. */
+    public void addBase64Component(String path, String mediaType, String base64) {
+        try {
+            var hash = java.security.MessageDigest.getInstance("SHA-256");
+            int size = writeBase64(base64, new java.security.DigestOutputStream(java.io.OutputStream.nullOutputStream(), hash));
+            addDeferredModel(path, mediaType, size, java.util.HexFormat.of().formatHex(hash.digest()), Map.of(),
+                    () -> java.util.Base64.getDecoder().decode(base64), output -> writeBase64(base64, output));
+        } catch (java.security.NoSuchAlgorithmException | java.io.IOException failure) {
+            throw new IllegalStateException("无法计算迁移组件摘要", failure);
+        }
+    }
+
+    private static int writeBase64(String value, java.io.OutputStream sink) throws java.io.IOException {
+        int padding = value.indexOf('=');
+        if (padding >= 0 && padding < value.length() - 2)
+            throw new IllegalArgumentException("Base64 组件尾部填充无效");
+        var decoder = java.util.Base64.getDecoder();
+        int count = 0;
+        int offset = 0;
+        while (offset < value.length()) {
+            int end = offset + Math.min(64 * 1024, value.length() - offset);
+            byte[] chunk = decoder.decode(value.substring(offset, end));
+            sink.write(chunk);
+            count = Math.addExact(count, chunk.length);
+            offset = end;
+        }
+        return count;
+    }
+
     @FunctionalInterface interface PayloadWriter { void write(java.io.OutputStream sink) throws java.io.IOException; }
 
     void addDeferredModel(String path, String mediaType, int size, String digest, Map<String, Object> metadata,

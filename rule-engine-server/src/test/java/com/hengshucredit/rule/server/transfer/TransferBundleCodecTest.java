@@ -8,6 +8,22 @@ import java.util.List;
 import java.util.Map;
 
 public class TransferBundleCodecTest {
+    @org.junit.Test
+    public void base64ModelKeepsItsOriginalBytesAcrossPackingBlocks() {
+        byte[] payload = new byte[150_007];
+        new java.util.Random(17).nextBytes(payload);
+        var source = new com.hengshucredit.rule.server.artifact.DecisionArtifactPackage();
+        var expected = new com.hengshucredit.rule.server.artifact.DecisionArtifactPackage();
+        String name = "models/test.onnx";
+        expected.addComponent(name, "application/octet-stream", payload);
+        source.addBase64Component(name, "application/octet-stream", java.util.Base64.getEncoder().encodeToString(payload));
+        var codec = new com.hengshucredit.rule.server.artifact.DecisionArtifactPackageCodec();
+        org.junit.Assert.assertArrayEquals(codec.encode(expected), codec.encode(source));
+        org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                () -> source.addBase64Component("models/invalid", "application/octet-stream", "aaaa=aaa"));
+    }
+
+
     private final TransferBundleCodec codec = new TransferBundleCodec();
 
     @Test

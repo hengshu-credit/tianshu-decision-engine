@@ -35,11 +35,14 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
     }
 
     public Long recordExport(List<TransferRootRequest> roots, ExportedPackage exported, String operator) {
+        return recordExport(roots, exported.bundle(), Sha256Digests.bytes(exported.bytes()), operator);
+    }
+
+    public Long recordExport(List<TransferRootRequest> roots, TransferBundle bundle, String packageDigest, String operator) {
         Map<String, Object> content = new LinkedHashMap<>();
         content.put("roots", roots == null ? List.of() : roots);
-        TransferBundle bundle = exported.bundle();
         content.put("lineage", lineageSnapshot(bundle, null));
-        return saveLog("EXPORT", "SUCCESS", operator, Sha256Digests.bytes(exported.bytes()),
+        return saveLog("EXPORT", "SUCCESS", operator, packageDigest,
                 bundle.roots(), bundle.resources().size(), content, null);
     }
 

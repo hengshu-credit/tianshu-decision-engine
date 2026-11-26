@@ -85,6 +85,18 @@ public final class CanonicalJson {
         catch (IOException e) { throw new IllegalArgumentException("模型版本快照 JSON 无效", e); }
     }
 
+    /** Runtime snapshots contain arbitrary business maps, including exact decimals and explicit nulls. */
+    public static <T> T readSnapshot(String value, Class<T> type) {
+        try {
+            return MAPPER.readerFor(type)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                    .without(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .readValue(value);
+        } catch (IOException invalid) {
+            throw new IllegalArgumentException("执行快照格式无效", invalid);
+        }
+    }
+
     public static Map<String, Object> readMap(String value) {
         try {
             return MAPPER.readValue(value, new TypeReference<>() { });

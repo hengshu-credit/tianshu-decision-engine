@@ -1,6 +1,6 @@
 package com.hengshucredit.rule.server.service;
 
-import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
@@ -8,7 +8,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -82,7 +81,7 @@ public class ExternalApiResponseCache {
         if (ttlSeconds <= 0) return;
         ApiCache apiCache = apiCache(config);
         Map<String, Object> copied = copy(response);
-        byte[] serialized = JSON.toJSONString(copied).getBytes(StandardCharsets.UTF_8);
+        byte[] serialized = CanonicalJson.writeBytes(copied);
         if (serialized.length > apiCache.settings.maxBytes) return;
         long now = currentTimeMillis.getAsLong();
         long expiresAt = now + ttlSeconds * 1000L;
@@ -109,7 +108,7 @@ public class ExternalApiResponseCache {
             return new LoadResult(copy(await(existing)), true);
         }
         if (apiCache.inFlight.size() >= apiCache.settings.maxInFlight) {
-            return new LoadResult(loader.call(), false);
+            return loadOnce(config, cacheKey, apiCache, loader);
         }
         CompletableFuture<Map<String, Object>> created = new CompletableFuture<>();
         existing = apiCache.inFlight.putIfAbsent(cacheKey, created);
@@ -126,15 +125,53 @@ public class ExternalApiResponseCache {
                 created.complete(copy(response));
                 return new LoadResult(response, true);
             }
-            Map<String, Object> loaded = loader.call();
-            created.complete(copy(loaded));
-            return new LoadResult(loaded, false);
+            var loaded = loadOnce(config, cacheKey, apiCache, loader);
+            created.complete(copy(loaded.getResponse()));
+            return loaded;
         } catch (Throwable e) {
             created.completeExceptionally(e);
             if (e instanceof Exception) throw (Exception) e;
             throw new IllegalStateException(e.getMessage(), e);
         } finally {
             apiCache.inFlight.remove(cacheKey, created);
+        }
+    }
+
+    private LoadResult loadOnce(RuleExternalApiConfig config, String key, ApiCache local,
+                                Callable<Map<String, Object>> loader) throws Exception {
+        if (!local.settings.redisEnabled || distributedStore == null) return new LoadResult(loader.call(), false);
+        Integer configured = "ASYNC".equalsIgnoreCase(config.getRequestMode()) ? config.getAsyncTimeoutMs() : config.getTimeoutMs();
+        long budget = Math.max(1, configured == null ? 3000 : configured);
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.min(budget, RequestDeadlineContext.remainingMillis()));
+        Long id = config.getId();
+        String owner = java.util.UUID.randomUUID().toString();
+        boolean acquired = false;
+        try {
+            while (true) {
+                CachedResponse cached;
+                try {
+                    acquired = distributedStore.acquireLoad(id, key, owner, budget + 2000L);
+                    // Recheck after acquiring: another node may have populated the entry since our initial miss.
+                    cached = distributedStore.get(id, key);
+                } catch (RuntimeException unavailable) {
+                    // Redis is an optional cache. Keep the individual order's normal provider/receipt policy.
+                    return new LoadResult(loader.call(), false);
+                }
+                if (cached != null && currentTimeMillis.getAsLong() <= cached.expiresAtMillis) {
+                    local.cache.put(key, cached);
+                    coalesced.incrementAndGet();
+                    return new LoadResult(copy(cached.response), true);
+                }
+                if (acquired) return new LoadResult(loader.call(), false);
+                long remaining = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+                if (remaining <= 0) throw new TimeoutException("跨节点等待同一外数响应超过请求时限");
+                Thread.sleep(Math.min(25, remaining));
+            }
+        } finally {
+            if (acquired) {
+                try { distributedStore.releaseLoad(id, key, owner); }
+                catch (RuntimeException unavailable) { /* Ownership also expires after the request budget. */ }
+            }
         }
     }
 
@@ -205,7 +242,7 @@ public class ExternalApiResponseCache {
     @SuppressWarnings("unchecked")
     private Map<String, Object> copy(Map<String, Object> value) {
         if (value == null) return new LinkedHashMap<>();
-        return JSON.parseObject(JSON.toJSONString(value), LinkedHashMap.class);
+        return CanonicalJson.readSnapshot(CanonicalJson.write(value), LinkedHashMap.class);
     }
 
     public static final class Lookup {

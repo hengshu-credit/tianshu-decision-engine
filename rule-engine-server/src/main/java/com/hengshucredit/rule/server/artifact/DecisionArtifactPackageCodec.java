@@ -49,9 +49,8 @@ public class DecisionArtifactPackageCodec {
 
     Encoded encodePackage(DecisionArtifactPackage artifactPackage, boolean enforceLimits,
                           com.hengshucredit.rule.server.service.ModelFileStore storage) {
-        Map<String, Object> manifest = baseManifest(artifactPackage);
-        String artifactDigest = Sha256Digests.bytes(CanonicalJson.writeBytes(manifest));
-        manifest.put("artifactDigest", artifactDigest);
+        Map<String, Object> manifest = completeManifest(artifactPackage);
+        String artifactDigest = (String) manifest.get("artifactDigest");
 
         byte[] manifestBytes = CanonicalJson.writeBytes(manifest);
         long size = manifestBytes.length + artifactPackage.getComponents().values().stream()
@@ -84,6 +83,17 @@ public class DecisionArtifactPackageCodec {
         } catch (IOException error) {
             throw new IllegalStateException("无法生成决策制品包", error);
         }
+    }
+
+    private Map<String, Object> completeManifest(DecisionArtifactPackage artifact) {
+        var manifest = baseManifest(artifact);
+        manifest.put("artifactDigest", Sha256Digests.bytes(CanonicalJson.writeBytes(manifest)));
+        return manifest;
+    }
+
+    /** Writes the same archive format without assembling the complete ZIP in heap. */
+    public void encodeTo(DecisionArtifactPackage artifact, java.io.OutputStream sink) throws IOException {
+        writePackage(artifact, CanonicalJson.writeBytes(completeManifest(artifact)), sink);
     }
 
     private void writePackage(DecisionArtifactPackage artifactPackage, byte[] manifestBytes, java.io.OutputStream sink) throws IOException {

@@ -1,8 +1,8 @@
 package com.hengshucredit.rule.server.service;
 
-import static com.hengshucredit.rule.server.service.SafeLogJson.toJsonSafely;
 
 import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.openapi.OpenApiContractCodec;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.compiler.ConditionCompiler;
@@ -1038,7 +1038,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     @SuppressWarnings("unchecked")
     private Map<String, Object> copyParams(Map<String, Object> params) {
         if (params == null || params.isEmpty()) return new LinkedHashMap<>();
-        return JSON.parseObject(JSON.toJSONString(params), Map.class);
+        return CanonicalJson.readSnapshot(CanonicalJson.write(params), LinkedHashMap.class);
     }
 
     private RuleExperimentGroupResult toGroupResult(RuleExperimentGroup group,
@@ -1088,9 +1088,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         log.setRuleCode(group.getRuleCode());
         log.setRouteReason(routeReason);
         log.setSuccess(result.isSuccess() ? 1 : 0);
-        log.setInputParams(toJsonSafely(inputParams));
-        log.setOutputResult(toJsonSafely(result.getResult()));
-        log.setTraceInfo(toJsonSafely(buildExperimentTrace(
+        log.setInputParams(SafeLogJson.output(inputParams));
+        log.setOutputResult(SafeLogJson.output(result.getResult()));
+        log.setTraceInfo(SafeLogJson.output(buildExperimentTrace(
                 experimentTraceId, result.getTraceId(), stage, routeTrace, result.getTraces())));
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
