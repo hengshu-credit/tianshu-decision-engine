@@ -95,6 +95,106 @@ public class ExternalApiConsumerServiceTest {
         assertEquals("222", ExternalApiConsumerService.select(service.resolve(1L, 9L, binding, input, options), "body.phone"));
         service.resolve(1L, 9L, binding, input, options); assertEquals(2, calls.get());
     }
+
+    @Test
+    public void confirmedProviderKeyIsPersistedBeforeSendingAndReusedAfterAnUncertainResponse() {
+        var api = api();
+        var spec = com.alibaba.fastjson.JSON.parseObject(api.getExecutionConfig());
+        spec.put("providerIdempotency", true);
+        api.setExecutionConfig(spec.toJSONString());
+        var consumer = service(new AtomicInteger(), false);
+        var persisted =
+                new java.util.concurrent.atomic.AtomicReference<
+                        VariableResolutionInvocationCache.SourceStep>();
+        var calls = new java.util.ArrayList<String>();
+        ReflectionTestUtils.setField(
+                consumer,
+                "invokeService",
+                new ExternalApiInvokeService() {
+                    @Override
+                    Map<String, Object> invokeWithProviderKey(
+                            ExternalApiRequestPlan plan, String key) {
+                        assertEquals(key, persisted.get().getMetadata().get("providerKey"));
+                        calls.add(key);
+                        if (calls.size() == 1)
+                            throw new IllegalStateException("simulated node loss after send");
+                        return Map.of("success", true, "body", Map.of("found", true));
+                    }
+                });
+        var first = options();
+        first.getInvocationCache().setSourceStepListener(persisted::set);
+        assertThrows(
+                IllegalStateException.class,
+                () ->
+                        consumer.resolveVersion(
+                                1L, api, Map.of("applicant", "111"), first, "VARIABLE:1"));
+        var resume = options();
+        resume.getInvocationCache().completeStep(persisted.get());
+        resume.getInvocationCache().setSourceStepListener(persisted::set);
+        assertEquals(
+                true,
+                consumer.resolveVersion(1L, api, Map.of("applicant", "111"), resume, "VARIABLE:1")
+                        .get("success"));
+        assertEquals(2, calls.size());
+        assertEquals(calls.get(0), calls.get(1));
+    }
+
+    @Test
+    public void deploymentReceiptCapabilityMatchesOnlyTheDeclaredMethodAndEndpoint() {
+        var invoke = new ExternalApiInvokeService();
+        invoke.setReplayableEndpoints("POST https://vendor.example/data/court");
+        var source = new com.hengshucredit.rule.model.entity.RuleExternalDatasource();
+        source.setBaseUrl("https://vendor.example");
+        var api = api();
+        api.setRequestMethod("POST");
+        api.setEndpointUrl("/data/court");
+        assertTrue(invoke.deploymentSupportsProviderKey(api, source));
+        api.setRequestMethod("GET");
+        assertFalse(invoke.deploymentSupportsProviderKey(api, source));
+        api.setRequestMethod("POST");
+        api.setEndpointUrl("/data/other");
+        assertFalse(invoke.deploymentSupportsProviderKey(api, source));
+        api.setEndpointUrl("https://other.example/data/court");
+        assertFalse(invoke.deploymentSupportsProviderKey(api, source));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> invoke.setReplayableEndpoints("POST https://vendor.example/path?key=value"));
+    }
+
+    @Test
+    public void onlyConfirmedCallsFromAnotherFrozenScopeCanBeDistinguished() {
+        String key = "API_CHAIN:9:first";
+        for (String status : java.util.List.of("SUCCESS", "UNKNOWN", "WAITING_EXTERNAL")) {
+            var cache = new VariableResolutionInvocationCache();
+            var step =
+                    new VariableResolutionInvocationCache.SourceStep(
+                            key,
+                            "EXTERNAL_API",
+                            null,
+                            null,
+                            null,
+                            status,
+                            null,
+                            null,
+                            Map.of(),
+                            Map.of("orderSourceKey", "VARIABLE:2", "orderCallContext", "MODEL"));
+            cache.restoreCompletedSteps(Map.of(key, step.toMap()));
+            if ("SUCCESS".equals(status))
+                cache.requireOriginalIdentity("VARIABLE:2", 9L, "API_CHAIN:9:other", "RULE");
+            else
+                assertThrows(
+                        ExternalApiWaitingException.class,
+                        () ->
+                                cache.requireOriginalIdentity(
+                                        "VARIABLE:2", 9L, "API_CHAIN:9:other", "RULE"));
+            assertThrows(
+                    ExternalApiWaitingException.class,
+                    () ->
+                            cache.requireOriginalIdentity(
+                                    "VARIABLE:2", 9L, "API_CHAIN:9:other", "MODEL"));
+        }
+    }
+
     @Test public void uncertainSupplierResponseDoesNotStartAnotherCall() {
         AtomicInteger calls = new AtomicInteger();
         var consumer = service(calls, false);

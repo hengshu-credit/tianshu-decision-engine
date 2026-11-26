@@ -27,12 +27,14 @@ services:
     build: ./rule-engine-mysql/example
     restart: unless-stopped
     environment:
+      EXAMPLE_ENGINE_URLS: "${EXAMPLE_ENGINE_URLS:-${EXAMPLE_ENGINE_URL:-http://server:8080}}"
       EXAMPLE_ENGINE_URL: "${EXAMPLE_ENGINE_URL:-http://server:8080}"
     extra_hosts:
       - host.docker.internal:host-gateway
     volumes:
       - *example-jar
       - example-supplier-credentials:/state:ro
+      - example-supplier-receipts:/var/lib/tianshu-example-receipts
     networks: [rule-engine]
   example-data-import:
     profiles: [example-data]

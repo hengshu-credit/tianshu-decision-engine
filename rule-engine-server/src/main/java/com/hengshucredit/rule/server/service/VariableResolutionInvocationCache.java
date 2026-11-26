@@ -108,11 +108,22 @@ public class VariableResolutionInvocationCache {
     private final Map<String,Set<String>> recoveredConsumers = new ConcurrentHashMap<>();
 
     void requireOriginalIdentity(String source, long apiId, String identity) {
+        requireOriginalIdentity(source, apiId, identity, null);
+    }
+
+    void requireOriginalIdentity(String source, long apiId, String identity, String context) {
         if (recoveredCalls.contains(identity)) return;
         String prefix = "API_CHAIN:" + apiId + ":";
         for (String key : recoveredCalls) {
             var previous = completedStep(key);
             if (previous == null || "FAILED".equals(previous.getStatus())) continue;
+            // A rule and its frozen model may legitimately consume separate contracts for the
+            // same variable/API IDs. Never reinterpret an unconfirmed or a legacy call this way.
+            Object origin = previous.getMetadata().get("orderCallContext");
+            if ("SUCCESS".equals(previous.getStatus())
+                    && origin != null
+                    && context != null
+                    && !context.equals(origin)) continue;
             var consumers = recoveredConsumers.getOrDefault(key, Set.of());
             if (source != null && consumers.contains(source) || consumers.isEmpty() && key.startsWith(prefix))
                 throw ExternalApiWaitingException.manualReview("原订单的外数请求身份已变化，请核对原接口配置和入参后恢复");

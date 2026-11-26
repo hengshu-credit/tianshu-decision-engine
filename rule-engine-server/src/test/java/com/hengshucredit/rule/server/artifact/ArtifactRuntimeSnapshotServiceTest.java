@@ -16,6 +16,38 @@ public class ArtifactRuntimeSnapshotServiceTest {
     @org.junit.Rule public org.junit.rules.TemporaryFolder modelStore = new org.junit.rules.TemporaryFolder();
 
     @Test
+    public void repeatedExecutionsShareVerifiedCatalogWithoutRetainingTheArchive() {
+        var artifact = variableArtifact();
+        var files =
+                new com.hengshucredit.rule.server.service.ModelFileStore(
+                        modelStore.getRoot().toString(), 1024, 0, null);
+        artifact.setPackageContent(
+                files.savePackage(artifact.getPackageContent())
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var service =
+                new ArtifactRuntimeSnapshotService() {
+                    @Override
+                    protected DecisionArtifact loadArtifact(Long id) {
+                        return artifact;
+                    }
+                };
+        var decodes = new java.util.concurrent.atomic.AtomicInteger();
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                service,
+                "codec",
+                new DecisionArtifactPackageCodec() {
+                    @Override
+                    DecodedPackage decodeCatalog(byte[] bytes) {
+                        decodes.incrementAndGet();
+                        return super.decodeCatalog(bytes);
+                    }
+                });
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "modelFiles", files);
+        java.util.stream.IntStream.range(0, 16).parallel().forEach(i -> service.load(1L, 10L, 1L));
+        Assert.assertEquals(1, decodes.get());
+    }
+
+    @Test
     public void verifiesPackageWhenRevisionCallerSuppliesRawDatabaseReference() {
         var pack = new DecisionArtifactPackage();
         pack.addComponent("rules/example.txt", "text/plain", new byte[]{1,2,3});

@@ -105,12 +105,13 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
             try {
                 boolean registerFirst = deferredExecution(uri);
                 if (!registerFirst && admission != null) {
-                    if (!admission.enter(requestStartedAt, policy.getRequestTimeoutMs())) {
-                        request.setAttribute(ADMISSION_ATTRIBUTE + ".depth", admission.depth());
+                    var lane = admission.forProject(context.getProjectId());
+                    if (!lane.enter(requestStartedAt, policy.getRequestTimeoutMs())) {
+                        request.setAttribute(ADMISSION_ATTRIBUTE + ".depth", lane.depth());
                         writeError(request, response, OpenApiStatuses.qpsConcurrencyExceeded());
                         return false;
                     }
-                    request.setAttribute(ADMISSION_ATTRIBUTE, Boolean.TRUE);
+                    request.setAttribute(ADMISSION_ATTRIBUTE, lane);
                 }
                 // A durable submission is authenticated here. Its project permit is acquired when execution actually starts.
                 if (!registerFirst) request.setAttribute(PERMIT_ATTRIBUTE, executionGuard.acquire(context.getAuthId(), policy));
@@ -153,9 +154,9 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
     }
 
     private void releaseAdmission(HttpServletRequest request) {
-        if (Boolean.TRUE.equals(request.getAttribute(ADMISSION_ATTRIBUTE))) {
+        if (request.getAttribute(ADMISSION_ATTRIBUTE) instanceof ExecutionAdmission lane) {
             request.removeAttribute(ADMISSION_ATTRIBUTE);
-            admission.leave();
+            lane.leave();
         }
     }
 

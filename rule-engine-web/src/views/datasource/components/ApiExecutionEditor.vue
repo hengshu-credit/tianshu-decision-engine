@@ -8,6 +8,9 @@
     <el-tabs v-model="tab" :class="{ 'embedded-tabs': embeddedTabs }">
       <el-tab-pane label="请求字段" name="request"><template v-if="tab === 'request'">
         <api-request-sample-editor v-model:value="config.requestSample" />
+        <el-form-item v-if="!asyncMode && !config.steps.length" label="供应商幂等">
+          <el-checkbox v-model="config.providerIdempotency">供应商支持 Idempotency-Key，同键返回原结果且只计费一次</el-checkbox>
+        </el-form-item>
         <el-form-item label="默认传空策略"><el-select v-model="config.nullPolicy"><el-option label="不传空值" value="OMIT" /><el-option label="传 null" value="NULL" /><el-option label="传空字符串" value="EMPTY" /></el-select></el-form-item>
         <api-parameter-fields v-model:fields="config.requestFields" :paths="requestPaths" :vars="vars" :functions="functions" :modules="[]" :validation-options="validationOptions" />
         <el-button @click="addBranch('requestBranches')">添加请求条件分支</el-button>

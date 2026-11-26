@@ -353,9 +353,75 @@ public class ExternalApiInvokeService {
         }
     }
 
+    private java.util.Set<String> replayableEndpoints = java.util.Set.of();
+
+    @org.springframework.beans.factory.annotation.Value(
+            "${rule-engine.external-call.provider-idempotent-endpoints:}")
+    void setReplayableEndpoints(String configured) {
+        var result = new java.util.HashSet<String>();
+        for (String entry : configured.split(",")) {
+            if (entry.isBlank()) continue;
+            var parts = entry.trim().split("\\s+", 2);
+            if (parts.length != 2
+                    || !java.util.Set.of("GET", "POST", "PUT").contains(parts[0])
+                    || !parts[1].equals(receiptEndpoint(parts[1])))
+                throw new IllegalArgumentException("供应商幂等能力需指定 HTTP 方法及精确地址，不含查询串或片段");
+            result.add(parts[0] + " " + parts[1]);
+        }
+        replayableEndpoints = java.util.Set.copyOf(result);
+    }
+
+    private static String receiptEndpoint(String url) {
+        try {
+            var uri = java.net.URI.create(url);
+            if (uri.getHost() == null
+                    || uri.getUserInfo() != null
+                    || uri.getFragment() != null
+                    || !("http".equals(uri.getScheme()) || "https".equals(uri.getScheme())))
+                return null;
+            return uri.getScheme()
+                    + "://"
+                    + uri.getRawAuthority()
+                    + (uri.getRawPath() == null ? "" : uri.getRawPath());
+        } catch (IllegalArgumentException malformed) {
+            return null;
+        }
+    }
+
+    boolean deploymentSupportsProviderKey(
+            RuleExternalApiConfig api, RuleExternalDatasource source) {
+        if (replayableEndpoints.isEmpty() || source == null || api.getEndpointUrl() == null)
+            return false;
+        String endpoint = receiptEndpoint(buildUrl(source.getBaseUrl(), api.getEndpointUrl()));
+        return endpoint != null
+                && replayableEndpoints.contains(api.getRequestMethod() + " " + endpoint);
+    }
+
+    Map<String, Object> invokeWithProviderKey(ExternalApiRequestPlan plan, String providerKey) {
+        try (var versions = bindResourceVersions(plan.config(), plan.params())) {
+            return invokeSelected(
+                    ExternalApiExecutionConfig.forInvocation(plan.config()),
+                    plan,
+                    true,
+                    null,
+                    null,
+                    providerKey);
+        }
+    }
+
     private Map<String, Object> invokeSelected(RuleExternalApiConfig apiConfig, ExternalApiRequestPlan plan,
                                                boolean useResponseCache, Map<String, Object> pendingAsync,
                                                java.util.function.Consumer<Map<String, Object>> persist) {
+        return invokeSelected(apiConfig, plan, useResponseCache, pendingAsync, persist, null);
+    }
+
+    private Map<String, Object> invokeSelected(
+            RuleExternalApiConfig apiConfig,
+            ExternalApiRequestPlan plan,
+            boolean useResponseCache,
+            Map<String, Object> pendingAsync,
+            java.util.function.Consumer<Map<String, Object>> persist,
+            String providerKey) {
         Map<String, Object> params = plan.params();
         if (pendingAsync != null && pendingAsync.get("blockedStepId") != null)
             throw ExternalApiWaitingException.manualReview("原外数步骤 " + pendingAsync.get("blockedStepId") + " 的受理状态未确认，已阻止重复提交");
@@ -408,6 +474,13 @@ public class ExternalApiInvokeService {
         Object resumedCallId = pendingAsync == null ? null : pendingAsync.get("callId");
         trace.callId = resumedCallId == null || String.valueOf(resumedCallId).isBlank()
                 ? UUID.randomUUID().toString() : String.valueOf(resumedCallId);
+            trace.providerKey = providerKey;
+            var spec = providerKey == null ? null : ExternalApiRequestPlan.specification(apiConfig);
+            trace.checkProviderEndpoint =
+                    providerKey != null
+                            && (spec == null
+                                    || !Boolean.TRUE.equals(spec.get("providerIdempotency")));
+            if (providerKey != null) trace.callId = providerKey;
         if (ExternalApiTrialContext.current() != null) trace.callId = ExternalApiTrialContext.current().callId(apiConfig.getId());
         trace.apiConfigId = apiConfig.getId();
         trace.resumed = pendingAsync != null;
@@ -1546,6 +1619,10 @@ public class ExternalApiInvokeService {
                                                 RuleExternalDatasource datasource,
                                                 PreparedHttpRequest prepared, int timeout,
                                                 InvokeTrace trace) {
+        if (trace.checkProviderEndpoint
+                && !replayableEndpoints.contains(
+                        prepared.method.name() + " " + receiptEndpoint(prepared.finalUrl)))
+            throw new IllegalArgumentException("实际供应商请求地址与部署确认的幂等端点不一致");
         int attemptNo = ++trace.providerAttemptNo;
         prepared.attemptNo = attemptNo;
         long start = System.currentTimeMillis();
@@ -1568,6 +1645,8 @@ public class ExternalApiInvokeService {
                 trace.requestIssued = true;
                 recordTraceStep(trace, "EXTERNAL_REQUEST", "发起外部请求", "SENT",
                         externalRequestStep(prepared), null, apiConfig.getId());
+                if (trace.providerKey != null)
+                    prepared.headers.set("Idempotency-Key", trace.providerKey);
                 response = lease.getRestTemplate().exchange(prepared.finalUrl, prepared.method,
                         new HttpEntity<>(prepared.requestBody, prepared.headers), String.class);
                 trace.responseStatus = response.getStatusCode().value();
@@ -4081,6 +4160,8 @@ public class ExternalApiInvokeService {
     }
 
     private static class InvokeTrace {
+        private String providerKey;
+        private boolean checkProviderEndpoint;
         private Map<String, Object> requestDetails;
         private Map<String, Object> responseDetails;
         private boolean billed;

@@ -102,48 +102,122 @@ public class ExternalApiConsumerService {
         VariableResolutionInvocationCache.SourceStep previous = cache.originalCall(key);
         final Map<String, Object> pendingMetadata = previous != null && "WAITING_EXTERNAL".equals(previous.getStatus())
                 ? previous.getMetadata() : null;
-        if (cache.hasSourceStepListener() && previous == null) cache.requireOriginalIdentity(sourceKey, apiId, key);
+        var providerSpec = ExternalApiRequestPlan.specification(selected);
+        boolean providerReplay =
+                providerSpec != null
+                        && (Boolean.TRUE.equals(providerSpec.get("providerIdempotency"))
+                                || invokeService.deploymentSupportsProviderKey(
+                                        selected, datasource))
+                        && (providerSpec.getJSONArray("steps") == null
+                                || providerSpec.getJSONArray("steps").isEmpty())
+                        && (selected.getRequestMode() == null
+                                || "SYNC".equalsIgnoreCase(selected.getRequestMode()));
+        // Old UNKNOWN intents never acquire a new key retroactively.
+        String providerKey =
+                providerReplay && cache.hasSourceStepListener()
+                        ? previous == null
+                                ? java.util.UUID.randomUUID().toString()
+                                : (String) previous.getMetadata().get("providerKey")
+                        : null;
+        Map<String, Object> intent =
+                providerKey == null
+                        ? Map.of("apiConfigId", apiId)
+                        : Map.of("apiConfigId", apiId, "providerKey", providerKey);
+        if (cache.hasSourceStepListener() && previous == null)
+            cache.requireOriginalIdentity(sourceKey, apiId, key, frozen == null ? "RULE" : "MODEL");
         if (sourceKey != null) cache.associateResponse(sourceKey, key);
         try {
-            return cache.resolve(key, () -> {
-                try {
-                    if (previous != null && "SUCCESS".equals(previous.getStatus())) {
-                        var original = previous.getResponse();
-                        if (original != null) return original;
-                    }
-                    Map<String, Object> response;
-                    if (cache.hasSourceStepListener()) {
-                        if (previous != null && "UNKNOWN".equals(previous.getStatus())) {
-                            throw ExternalApiWaitingException.manualReview("原外数请求的受理状态尚未确认，已阻止重复提交");
+            return cache.resolve(
+                    key,
+                    () -> {
+                        try {
+                            if (previous != null && "SUCCESS".equals(previous.getStatus())) {
+                                var original = previous.getResponse();
+                                if (original != null) return original;
+                            }
+                            Map<String, Object> response;
+                            if (cache.hasSourceStepListener()) {
+                                if (previous != null
+                                        && "UNKNOWN".equals(previous.getStatus())
+                                        && providerKey == null) {
+                                    throw ExternalApiWaitingException.manualReview(
+                                            "原外数请求的受理状态尚未确认，已阻止重复提交");
+                                }
+                                if (pendingMetadata == null) {
+                                    // 先记录发送意图。进程中断且缺少回执时，恢复方据此阻止第二次提交。
+                                    saveCall(cache, key, sourceKey, "UNKNOWN", null, intent);
+                                }
+                                response =
+                                        providerKey != null
+                                                ? invokeService.invokeWithProviderKey(
+                                                        plan, providerKey)
+                                                : invokeService.invokeCheckpointed(
+                                                        plan,
+                                                        pendingMetadata,
+                                                        receipt ->
+                                                                saveCall(
+                                                                        cache,
+                                                                        key,
+                                                                        sourceKey,
+                                                                        "WAITING_EXTERNAL",
+                                                                        null,
+                                                                        receipt));
+                                saveCall(
+                                        cache,
+                                        key,
+                                        sourceKey,
+                                        Boolean.FALSE.equals(response.get("success"))
+                                                ? "FAILED"
+                                                : "SUCCESS",
+                                        response,
+                                        Map.of("apiConfigId", apiId));
+                            } else {
+                                response =
+                                        pendingMetadata == null
+                                                ? invokeService.invokePlanned(plan)
+                                                : invokeService.invokePending(
+                                                        plan, pendingMetadata);
+                                if (pendingMetadata != null)
+                                    saveCall(
+                                            cache,
+                                            key,
+                                            sourceKey,
+                                            "SUCCESS",
+                                            response,
+                                            Map.of("apiConfigId", apiId));
+                            }
+                            return response;
+                        } catch (ExternalApiInvokeService.ApiInvokeException error) {
+                            Map<String, Object> pendingCall = error.getPendingAsync();
+                            if (pendingCall != null && !pendingCall.isEmpty()) {
+                                saveCall(
+                                        cache,
+                                        key,
+                                        sourceKey,
+                                        "WAITING_EXTERNAL",
+                                        null,
+                                        pendingCall);
+                                if (cache.hasSourceStepListener()
+                                        && Boolean.TRUE.equals(pendingCall.get("awaitingPoll"))) {
+                                    throw new ExternalApiWaitingException(
+                                            "供应商尚未完成处理，请沿用本次请求继续轮询", error);
+                                }
+                            } else if (pendingMetadata != null
+                                    && cache.hasSourceStepListener()
+                                    && error.isUnknown()) {
+                                saveCall(
+                                        cache,
+                                        key,
+                                        sourceKey,
+                                        "WAITING_EXTERNAL",
+                                        null,
+                                        pendingMetadata);
+                            } else if (cache.hasSourceStepListener() && !error.isUnknown()) {
+                                saveCall(cache, key, sourceKey, "FAILED", null, intent);
+                            }
+                            throw error;
                         }
-                        if (pendingMetadata == null) {
-                            // 先记录发送意图。进程中断且缺少回执时，恢复方据此阻止第二次提交。
-                            saveCall(cache, key, sourceKey, "UNKNOWN", null, Map.of("apiConfigId", apiId));
-                        }
-                        response = invokeService.invokeCheckpointed(plan, pendingMetadata,
-                                receipt -> saveCall(cache, key, sourceKey, "WAITING_EXTERNAL", null, receipt));
-                        saveCall(cache, key, sourceKey, Boolean.FALSE.equals(response.get("success")) ? "FAILED" : "SUCCESS",
-                                response, Map.of("apiConfigId", apiId));
-                    } else {
-                        response = pendingMetadata == null ? invokeService.invokePlanned(plan) : invokeService.invokePending(plan, pendingMetadata);
-                        if (pendingMetadata != null) saveCall(cache, key, sourceKey, "SUCCESS", response, Map.of("apiConfigId", apiId));
-                    }
-                    return response;
-                } catch (ExternalApiInvokeService.ApiInvokeException error) {
-                    Map<String, Object> pendingCall = error.getPendingAsync();
-                    if (pendingCall != null && !pendingCall.isEmpty()) {
-                        saveCall(cache, key, sourceKey, "WAITING_EXTERNAL", null, pendingCall);
-                        if (cache.hasSourceStepListener() && Boolean.TRUE.equals(pendingCall.get("awaitingPoll"))) {
-                            throw new ExternalApiWaitingException("供应商尚未完成处理，请沿用本次请求继续轮询", error);
-                        }
-                    } else if (pendingMetadata != null && cache.hasSourceStepListener() && error.isUnknown()) {
-                        saveCall(cache, key, sourceKey, "WAITING_EXTERNAL", null, pendingMetadata);
-                    } else if (cache.hasSourceStepListener() && !error.isUnknown()) {
-                        saveCall(cache, key, sourceKey, "FAILED", null, Map.of("apiConfigId", apiId));
-                    }
-                    throw error;
-                }
-            });
+                    });
         } catch (ExternalApiInvokeService.ApiInvokeException error) {
             Object configured = binding.get("exceptionStrategy");
             String strategy = configured == null || String.valueOf(configured).isBlank()
@@ -159,6 +233,8 @@ public class ExternalApiConsumerService {
                                  Map<String, Object> result, Map<String, Object> metadata) {
         var details = new LinkedHashMap<>(metadata);
         if (sourceKey != null) details.put("orderSourceKey", sourceKey);
+        details.put(
+                "orderCallContext", FrozenExternalApiScope.invocation() == null ? "RULE" : "MODEL");
         cache.completeStep(new VariableResolutionInvocationCache.SourceStep(key, "EXTERNAL_API", null, null, null,
                 status, null, result, Map.of(), details));
     }

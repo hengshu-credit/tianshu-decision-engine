@@ -38,7 +38,6 @@ import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 @Service
@@ -1650,27 +1649,28 @@ public class RuleModelService {
         if (modelId == null || maxConcurrentPerModel <= 0) {
             return modelExecutionTimeoutExecutor.execute(task, timeoutMs);
         }
-        Semaphore semaphore = modelExecutionPermits.computeIfAbsent(modelId,
-                ignored -> new Semaphore(maxConcurrentPerModel));
-        if (!semaphore.tryAcquire()) {
-            throw new ExecutionCapacityException(ExecutionCapacityException.Resource.MODEL_EXECUTION,
-                    "模型执行并发已达上限: " + maxConcurrentPerModel);
-        }
-        AtomicBoolean started = new AtomicBoolean(false);
-        try {
-            return modelExecutionTimeoutExecutor.execute(() -> {
-                started.set(true);
-                try {
-                    return task.call();
-                } finally {
-                    semaphore.release();
-                }
-            }, timeoutMs);
-        } catch (RuntimeException error) {
-            // A task rejected before it starts never reaches the finally block.
-            if (!started.get()) semaphore.release();
-            throw error;
-        }
+        Semaphore semaphore =
+                modelExecutionPermits.computeIfAbsent(
+                        modelId, ignored -> new Semaphore(maxConcurrentPerModel, true));
+        long deadline =
+                System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        // Queued jobs already count against the bounded executor/deadline. A per-model permit
+        // belongs only to a running task and must survive cancellation until that task exits.
+        return modelExecutionTimeoutExecutor.execute(
+                () -> {
+                    if (!semaphore.tryAcquire(
+                            Math.max(0, deadline - System.nanoTime()),
+                            java.util.concurrent.TimeUnit.NANOSECONDS))
+                        throw new ExecutionCapacityException(
+                                ExecutionCapacityException.Resource.MODEL_EXECUTION,
+                                "模型执行并发等待超时: " + maxConcurrentPerModel);
+                    try {
+                        return task.call();
+                    } finally {
+                        semaphore.release();
+                    }
+                },
+                timeoutMs);
     }
 
     private Map<String, Object> executeConfiguredModel(RuleModel model, Map<String, Object> params,

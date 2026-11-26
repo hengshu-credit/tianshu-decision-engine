@@ -58,6 +58,27 @@ public class ArtifactRuntimeSnapshotService {
     private final Map<ModelContentKey, String> modelContents = new LinkedHashMap<>(16, 0.75f, true);
     private long modelContentBytes;
 
+    // Immutable file references name the content digest. Cache only verified descriptors and
+    // model references; mutable runtime objects and deployment bindings are rebuilt per request.
+    private final CatalogReads catalogs = new CatalogReads();
+    private final Object coldRead = new Object();
+
+    private record ModelReferenceKey(Long projectId, String filename, String digest, int length) {}
+
+    private final com.github.benmanes.caffeine.cache.Cache<ModelReferenceKey, String>
+            verifiedModels =
+                    com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                            .maximumSize(2048)
+                            .build();
+
+    private boolean referenced(DecisionArtifact artifact) {
+        byte[] stored = artifact.getPackageContent();
+        return modelFiles != null
+                && stored != null
+                && stored.length <= 512
+                && ModelFileStore.isReference(new String(stored, StandardCharsets.UTF_8));
+    }
+
     public RuntimeSnapshot load(Long artifactId, Long definitionId, Long executionProjectId) {
         return materialize(loadArtifact(artifactId), artifactId, definitionId, executionProjectId, false);
     }
@@ -81,7 +102,8 @@ public class ArtifactRuntimeSnapshotService {
         if (artifact == null || artifact.getPackageContent() == null) {
             throw new IllegalStateException("已发布规则缺少不可变决策制品");
         }
-        DecisionArtifactPackageCodec.DecodedPackage decoded = decodeVerified(artifact, null, catalog);
+        DecisionArtifactPackageCodec.DecodedPackage decoded =
+                decodeVerified(artifact, null, catalog || referenced(artifact));
         if (!same(artifact.getArtifactDigest(), decoded.getArtifactDigest())
                 || !same(artifact.getPackageDigest(), decoded.getPackageDigest())) {
             throw new IllegalStateException("已发布决策制品摘要校验失败");
@@ -97,7 +119,15 @@ public class ArtifactRuntimeSnapshotService {
             }
         }
 
-        return buildSnapshot(decoded, bindings, deployment != null, artifactId, artifact.getArtifactDigest(), executionProjectId, catalog);
+        return buildSnapshot(
+                decoded,
+                bindings,
+                deployment != null,
+                artifactId,
+                artifact.getArtifactDigest(),
+                executionProjectId,
+                catalog,
+                referenced(artifact) ? artifact : null);
     }
 
     /** 与规则制品共用有界解码缓存；模型测试没有部署重绑定或当前目录补齐。 */
@@ -113,12 +143,26 @@ public class ArtifactRuntimeSnapshotService {
         artifact.setPackageDigest(packageDigest);
         var decoded = decodeVerified(artifact);
         if (requireExecutable) ModelApiBindingComponent.verifyModelClosure(decoded.getArtifactPackage());
-        return buildSnapshot(decoded, Collections.emptyMap(), false, null, artifactDigest, projectId, false);
+        return buildSnapshot(
+                decoded,
+                Collections.emptyMap(),
+                false,
+                null,
+                artifactDigest,
+                projectId,
+                false,
+                null);
     }
 
-    private RuntimeSnapshot buildSnapshot(DecisionArtifactPackageCodec.DecodedPackage decoded,
-                                          Map<String, Long> bindings, boolean imported,
-                                          Long artifactId, String artifactDigest, Long executionProjectId, boolean catalog) {
+    private RuntimeSnapshot buildSnapshot(
+            DecisionArtifactPackageCodec.DecodedPackage decoded,
+            Map<String, Long> bindings,
+            boolean imported,
+            Long artifactId,
+            String artifactDigest,
+            Long executionProjectId,
+            boolean catalog,
+            DecisionArtifact reference) {
         RuntimeSnapshot snapshot = new RuntimeSnapshot();
         snapshot.imported = imported;
         snapshot.artifactId = artifactId;
@@ -156,7 +200,13 @@ public class ArtifactRuntimeSnapshotService {
                 function.setStatus(1);
                 snapshot.functions.add(function);
             } else if ("MODEL".equals(resourceType)) {
-                RuleModel frozen = model(component, executionProjectId, decoded.getPackageDigest(), catalog);
+                RuleModel frozen =
+                        model(
+                                component,
+                                executionProjectId,
+                                decoded.getPackageDigest(),
+                                catalog,
+                                reference);
                 snapshot.models.add(frozen);
                 if (component.getMetadata().get("frozenExternalApiIds") instanceof List<?> apiIds) {
                     snapshot.modelApiIds.put(frozen.getId(), apiIds.stream().map(id -> Long.valueOf(String.valueOf(id))).toList());
@@ -228,18 +278,27 @@ public class ArtifactRuntimeSnapshotService {
     }
 
     private DecisionArtifactPackageCodec.DecodedPackage decodeVerified(DecisionArtifact artifact, java.util.Set<String> retainedPaths, boolean catalog) {
-        // Namespace, field and catalog lookups may verify the same immutable file in one HTTP request.
-        // Only reuse a verified projection of an identical storage reference, never inline bytes or an execution package.
         byte[] stored = artifact.getPackageContent();
-        var request = (catalog || retainedPaths != null) && modelFiles != null && stored != null && stored.length <= 512
-                && ModelFileStore.isReference(new String(stored, StandardCharsets.UTF_8))
-                ? org.springframework.web.context.request.RequestContextHolder.getRequestAttributes() : null;
-        CatalogReads catalogReads = request == null ? null : CatalogReads.forRequest(request);
-        var key = request == null ? null : new CatalogKey(new String(stored, StandardCharsets.UTF_8),
-                artifact.getPackageDigest(), artifact.getArtifactDigest());
-        if (catalogReads != null) {
-            var verified = catalogReads.cache.getIfPresent(key);
-            if (verified != null) return verified;
+        if ((catalog || retainedPaths != null) && referenced(artifact)) {
+            var key =
+                    new CatalogKey(
+                            new String(stored, StandardCharsets.UTF_8),
+                            artifact.getPackageDigest(),
+                            artifact.getArtifactDigest());
+            return catalogs.cache.get(
+                    key,
+                    ref -> {
+                        synchronized (coldRead) {
+                            var verified =
+                                    codec.decodeCatalog(
+                                            modelFiles.resolveArtifact(
+                                                    stored, ref.packageDigest()));
+                            if (!same(verified.getPackageDigest(), ref.packageDigest())
+                                    || !same(verified.getArtifactDigest(), ref.artifactDigest()))
+                                throw new IllegalStateException("已发布决策制品摘要校验失败");
+                            return verified;
+                        }
+                    });
         }
         byte[] content = modelFiles == null ? stored : modelFiles.resolveArtifact(stored, artifact.getPackageDigest());
         String digest = Sha256Digests.bytes(content);
@@ -253,14 +312,13 @@ public class ArtifactRuntimeSnapshotService {
         }
         // 解压在锁外进行；缓存只保留未绑定的组件，每次执行仍创建独立变量和模型。
         DecisionArtifactPackageCodec.DecodedPackage decoded;
-        if (catalog || request != null) decoded = codec.decodeCatalog(content);
-        else if (retainedPaths != null) decoded = retainedPaths == null ? codec.decode(content) : codec.decode(content, retainedPaths);
+        if (catalog) decoded = codec.decodeCatalog(content);
+        else if (retainedPaths != null) decoded = codec.decode(content, retainedPaths);
         else if (content.length > MAX_DECODED_BYTES) decoded = codec.decodeRuntime(content);
         else decoded = codec.decode(content);
         if (!same(decoded.getArtifactDigest(), artifact.getArtifactDigest())) {
             throw new IllegalStateException("已发布决策制品摘要校验失败");
         }
-        if (catalogReads != null) catalogReads.cache.put(key, decoded);
         if (catalog || retainedPaths != null) return decoded; // A projection must never populate the full execution cache.
         long weight = CanonicalJson.writeBytes(decoded.getArtifactPackage().getMetadata()).length;
         for (DecisionArtifactPackage.Component component : decoded.getArtifactPackage().getComponents().values()) {
@@ -298,14 +356,7 @@ public class ArtifactRuntimeSnapshotService {
                             return (int)Math.min(Integer.MAX_VALUE, bytes);
                         }).build();
 
-        static CatalogReads forRequest(org.springframework.web.context.request.RequestAttributes request) {
-            String key = CatalogReads.class.getName();
-            int scope = org.springframework.web.context.request.RequestAttributes.SCOPE_REQUEST;
-            if (request.getAttribute(key, scope) instanceof CatalogReads reads) return reads;
-            var reads = new CatalogReads();
-            request.setAttribute(key, reads, scope);
-            return reads;
-        }
+
     }
 
     private record CachedPackage(DecisionArtifactPackageCodec.DecodedPackage decoded, long weight) { }
@@ -339,8 +390,12 @@ public class ArtifactRuntimeSnapshotService {
         return content;
     }
 
-    private RuleModel model(DecisionArtifactPackage.Component component, Long executionProjectId,
-                            String packageDigest, boolean catalog) {
+    private RuleModel model(
+            DecisionArtifactPackage.Component component,
+            Long executionProjectId,
+            String packageDigest,
+            boolean catalog,
+            DecisionArtifact reference) {
         Object modelMetadata = component.getMetadata().get("model");
         if (modelMetadata == null) {
             throw new IllegalStateException("模型制品组件缺少冻结元数据: " + component.getPath());
@@ -350,9 +405,45 @@ public class ArtifactRuntimeSnapshotService {
         model.setScope("PROJECT");
         model.setStatus(1);
         if (catalog) model.setModelContent(null);
-        else model.setModelContent(modelFiles == null ? modelContent(component, packageDigest)
-                : modelFiles.fromVerifiedSnapshot(executionProjectId, model.getModelFileName() == null
-                        ? "model." + model.getModelFormat().toLowerCase(java.util.Locale.ROOT) : model.getModelFileName(), component.size(), component.digest(), component::getContent));
+        else if (modelFiles == null) model.setModelContent(modelContent(component, packageDigest));
+        else {
+            String filename =
+                    model.getModelFileName() == null
+                            ? "model." + model.getModelFormat().toLowerCase(java.util.Locale.ROOT)
+                            : model.getModelFileName();
+            if (reference == null)
+                model.setModelContent(
+                        modelFiles.fromVerifiedSnapshot(
+                                executionProjectId,
+                                filename,
+                                component.size(),
+                                component.digest(),
+                                component::getContent));
+            else {
+                var key =
+                        new ModelReferenceKey(
+                                executionProjectId, filename, component.digest(), component.size());
+                model.setModelContent(
+                        verifiedModels.get(
+                                key,
+                                modelKey -> {
+                                    synchronized (coldRead) {
+                                        return modelFiles.fromVerifiedSnapshot(
+                                                executionProjectId,
+                                                filename,
+                                                component.size(),
+                                                component.digest(),
+                                                () ->
+                                                        codec.readVerifiedModel(
+                                                                modelFiles.resolveArtifact(
+                                                                        reference
+                                                                                .getPackageContent(),
+                                                                        packageDigest),
+                                                                component));
+                                    }
+                                }));
+            }
+        }
         model.setInputFields(parseList(component.getMetadata().get("inputFields"), RuleModelInputField.class));
         model.setOutputFields(parseList(component.getMetadata().get("outputFields"), RuleModelOutputField.class));
         return model;
