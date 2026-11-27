@@ -507,6 +507,7 @@ class DeployTest(unittest.TestCase):
         names = {'docker/nginx/default.conf', 'docker/nginx/proxy.conf', 'docker/docker-compose.sftp.yml',
                  'docker/docker-compose.server.yml', 'docker/docker-compose.client.yml',
                  'docker/docker-compose.elasticsearch.yml', 'docker/docker-compose.elasticsearch.snapshot.yml',
+                 'docker/docker-compose.elasticvue.yml', 'docker/rule-engine-elasticsearch/elasticvue.conf',
                  'docker/rule-engine-elasticsearch/README.md', 'docker/rule-engine-elasticsearch/setup_es_user.py'}
         for name in names:
             self.write(self.release / name, 'release file')
@@ -518,6 +519,8 @@ class DeployTest(unittest.TestCase):
         self.assertFalse((destination / 'docker/rule-engine-mysql').exists())
         es = destination / 'docker/docker-compose.elasticsearch.yml'
         self.assertEqual(es.read_text(), 'release file')
+        self.assertEqual((destination / 'docker/docker-compose.elasticvue.yml').read_text(), 'release file')
+        self.assertEqual((destination / 'docker/rule-engine-elasticsearch/elasticvue.conf').read_text(), 'release file')
         self.assertFalse((destination / 'docker/rule-engine-elasticsearch/data').exists())
         self.write(es, 'existing ES definition with original volume')
         data = destination / 'docker/rule-engine-elasticsearch/data/existing'

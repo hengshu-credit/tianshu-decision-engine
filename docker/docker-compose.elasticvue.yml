@@ -1,0 +1,15 @@
+name: ${ELASTICVUE_PROJECT:-tianshu-elasticvue}
+services:
+  elasticvue:
+    image: cars10/elasticvue:1.17.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ELASTICVUE_HOST_PORT:-8090}:8080"
+    volumes:
+      - ./rule-engine-elasticsearch/elasticvue.conf:/etc/nginx/conf.d/elasticvue.conf:ro
+    networks: [rule-engine]
+
+networks:
+  rule-engine:
+    external: true
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu-server}-engine}

@@ -107,6 +107,23 @@ docker compose --env-file config/.env.server -f docker/docker-compose.elasticsea
 docker compose --env-file config/.env.server -f docker/docker-compose.elasticsearch.yml stop elasticsearch
 ```
 
+## Elasticvue
+
+可选服务使用 [Elasticvue 官方镜像](https://github.com/cars10/elasticvue)。在本机打开 `http://127.0.0.1:8090`，或通过已有的 HTTPS 反向代理为 Elasticvue 分配独立域名。代理转发到 Elasticvue 的 8080 容器端口（同网络）或宿主机回环的 8090 端口（同主机）。端口可通过 `ELASTICVUE_HOST_PORT` 调整。
+
+1. 在 `config/.env.server` 设置 `ELASTICVUE_PUBLIC_URL` 为操作者浏览器能打开的页面地址，如 `https://elasticvue.example.com`。使用同机浏览器或 SSH 本地转发时可填 `http://127.0.0.1:8090`。留空即隐藏入口。使用自有 Elasticvue 实例时直接填写该页面地址。
+2. 使用包内服务时，确认它与天枢 ES 共用 `ENGINE_NETWORK`，然后在安装目录启动。
+
+   ```bash
+   docker compose --env-file config/.env.server -f docker/docker-compose.elasticvue.yml up -d elasticvue
+   ```
+
+3. 将配置应用到所有 server 副本。旧安装保留现场 Compose，需先在当前 server 的 `environment` 中补上 `ELASTICVUE_PUBLIC_URL: "${ELASTICVUE_PUBLIC_URL:-}"`，再按原部署流程重建 server。启用 `RULE_SEARCH_ENABLED=true` 且拥有全局及所有项目日志查看权限的账户，可在 **执行日志 → 运行状态 → 打开 Elasticvue** 新开页面。
+4. 首次在 Elasticvue 选择添加集群。对于包内单节点，在集群地址填写同一页面源下的 `/es/` 完整地址，如 `https://elasticvue.example.com/es/`，输入个人 ES 用户名和密码后连接。此路径转发到同网络的 `elasticsearch:9200`。使用外部集群时，填写为 Elasticvue 配置的可达集群地址，并按官方说明为跨域访问设置精确的允许来源。
+5. 打开 Search，选择执行日志月索引（默认 `tianshu-execution-log-v1-*`），用 `trace_id:"实际追踪号"` 查询。调用日志选择 `tianshu-runtime-call-v1-*`。结果中的 `project_id`、`created_at` 等字段可用于核对记录。加密的业务正文通过天枢日志详情按权限查看。
+
+Elasticvue 直接使用个人 ES 授权。为查询人员分配限定索引前缀的 `read`、`view_index_metadata` 和所需的集群 `monitor` 权限，索引管理操作按人另行授权；共享索引内的项目隔离需要在 ES 侧实施。天枢服务账号、主密钥和用户的控制台会话均无需填入部署链接。
+
 ## 旧命名卷迁移
 
 先用正在运行的 ES 容器和上面的 `docker inspect` 命令查看挂载。类型为 `volume` 时，记录实际卷名、Compose 项目名、旧定义和 env。更新引擎会保留现场已有的 ES 定义。切换 ES 定义属于单独的维护操作，换成新文件后首次启动会打开新目录中的集群。

@@ -14,6 +14,19 @@ const snapshot = {
 }
 
 describe('ExecutionMetricsPanel', () => {
+  test('获得日志检索入口时在新标签打开，刷新为受限快照后隐藏', async () => {
+    const url = 'https://search.example.org/'
+    runtimeLogApi.getExecutionMetrics.mockResolvedValueOnce({ data: { ...snapshot, logSearch: { elasticvueUrl: url } } })
+    const wrapper = mount(ExecutionMetricsPanel)
+    await flushPromises()
+    const link = wrapper.get('a')
+    expect(link.text()).toBe('打开 Elasticvue')
+    expect(link.attributes()).toMatchObject({ href: url, target: '_blank', rel: 'noopener noreferrer' })
+    runtimeLogApi.getExecutionMetrics.mockResolvedValueOnce({ data: { ...snapshot, logSearch: { detailsRestricted: true } } })
+    await wrapper.vm.loadMetrics()
+    expect(wrapper.find('a').exists()).toBe(false)
+    wrapper.unmount()
+  })
   test('模型预热重试更新就绪状态，迟到的旧指标不能回写失败状态', async () => {
     let finishMetrics
     runtimeLogApi.getExecutionMetrics.mockImplementationOnce(() => new Promise(resolve => { finishMetrics = resolve }))

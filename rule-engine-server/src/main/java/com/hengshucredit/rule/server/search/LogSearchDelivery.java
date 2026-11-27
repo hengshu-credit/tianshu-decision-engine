@@ -69,6 +69,26 @@ public class LogSearchDelivery {
     @Value("${rule-engine.search.compact-logs:false}")
     private boolean compactLogs;
 
+    private String elasticvueUrl;
+
+    @Value("${ELASTICVUE_PUBLIC_URL:}")
+    void configureElasticvue(String address) {
+        elasticvueUrl = null;
+        if (address == null || address.isBlank()) return;
+        try {
+            var url = new java.net.URI(address.trim());
+            if (("https".equalsIgnoreCase(url.getScheme()) || "http".equalsIgnoreCase(url.getScheme()))
+                    && url.getHost() != null && url.getRawUserInfo() == null
+                    && url.getRawQuery() == null && url.getRawFragment() == null) {
+                elasticvueUrl = url.toASCIIString();
+                return;
+            }
+        } catch (java.net.URISyntaxException ignored) {
+            // 不在日志中输出可能包含凭据的地址。
+        }
+        LOG.warn("ELASTICVUE_PUBLIC_URL 需要无凭据、查询串和片段的 HTTP(S) 地址，已隐藏入口");
+    }
+
     private final LongAdder delivered = new LongAdder();
     private final LongAdder failures = new LongAdder();
     private boolean templatesReady;
@@ -289,6 +309,7 @@ public class LogSearchDelivery {
 
     public Map<String, Object> metrics() {
         Map<String, Object> result = new LinkedHashMap<>(client.readMetrics());
+        if (elasticvueUrl != null) result.put("elasticvueUrl", elasticvueUrl);
         result.put("delivered", delivered.sum());
         result.put("failures", failures.sum());
         result.put("lastError", lastError);

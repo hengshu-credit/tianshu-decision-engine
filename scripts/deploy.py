@@ -98,6 +98,7 @@ def verify_release(release):
 def install_app_definitions(release, target, verified, sdk=False):
     """补齐缺少的 ES 部署文件；已有定义和数据挂载由运维维护。"""
     names = ('docker/docker-compose.elasticsearch.yml', 'docker/docker-compose.elasticsearch.snapshot.yml',
+             'docker/docker-compose.elasticvue.yml', 'docker/rule-engine-elasticsearch/elasticvue.conf',
              'docker/rule-engine-elasticsearch/README.md', 'docker/rule-engine-elasticsearch/setup_es_user.py')
     if (target / LAYOUT_FILE).is_file():
         print('识别为已有部署，按布局记录更新应用。', flush=True)

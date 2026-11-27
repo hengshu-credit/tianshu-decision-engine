@@ -9,6 +9,8 @@
         </p>
       </div>
       <div class="execution-metrics-panel__actions">
+        <a v-if="metrics.logSearch?.elasticvueUrl" :href="metrics.logSearch.elasticvueUrl"
+          target="_blank" rel="noopener noreferrer">打开 Elasticvue</a>
         <span
           data-testid="execution-metrics-snapshot-status"
           class="execution-metrics-panel__updated"
@@ -524,9 +526,15 @@ export default {
 
 .execution-metrics-panel__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   flex: 0 0 auto;
   gap: 10px;
+}
+
+.execution-metrics-panel__actions a {
+  color: var(--el-color-primary);
+  text-underline-offset: 3px;
 }
 
 .execution-metrics-panel__updated {
