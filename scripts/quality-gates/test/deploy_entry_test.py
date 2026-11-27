@@ -89,6 +89,12 @@ class DeployTest(unittest.TestCase):
                 self.assertIn('{{json .Config.Labels}}', command)
                 output = '\n'.join(json.dumps(c['Config']['Labels']) for c in self.containers)
         elif 'config' in command:
+            compose_file = Path(command[command.index('-f') + 1])
+            if compose_file.name == 'docker-compose.elasticsearch.yml':
+                mounts = [{'type': 'bind', 'source': str(compose_file.parent / 'rule-engine-elasticsearch' / folder),
+                           'target': '/usr/share/elasticsearch/' + folder} for folder in ('data', 'logs')]
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    'name': 'original-es', 'services': {'elasticsearch': {'volumes': mounts}}}), '')
             services = ['runtime-sdk'] if any('docker-compose.client.yml' in str(x) for x in command) else ['server', 'web']
             config = {'name': 'env-default-project', 'services': {}}
             base = Path(command[command.index('-f') + 1]).parent.parent
@@ -269,6 +275,28 @@ class DeployTest(unittest.TestCase):
         self.make_nested_legacy()
         self.assertRaises(deployment.DeployError, self.deploy)
         self.assertFalse(self.commands)
+
+    def test_adopt_rebinds_es_data_and_logs_under_the_new_outer_docker_directory(self):
+        legacy = self.make_nested_legacy()
+        compose_file = legacy / 'docker/docker-compose.elasticsearch.yml'
+        self.write(compose_file, 'existing ES configuration')
+        es = self.container('elasticsearch')
+        es['Config']['Labels'].update({'com.docker.compose.project': 'original-es',
+                                       'com.docker.compose.project.config_files': str(compose_file)})
+        self.containers.append(es)
+        mounts = []
+        for name in ('data', 'logs'):
+            source = compose_file.parent / 'rule-engine-elasticsearch' / name
+            self.write(source / 'keep', name)
+            mounts.append({'Type': 'bind', 'Source': str(source), 'Destination': '/usr/share/elasticsearch/' + name})
+        self.live_mounts.append(mounts)
+        self.adopt()
+        self.assertEqual([c[-1] for c in self.commands if 'stop' in c].count('elasticsearch'), 1)
+        self.assertEqual([c[-1] for c in self.commands if 'up' in c].count('elasticsearch'), 1)
+        for name in ('data', 'logs'):
+            self.assertEqual((self.target / 'docker/rule-engine-elasticsearch' / name / 'keep').read_text(), name)
+        self.assertTrue(any(p['project'] == 'original-es' and p['services'] == ['elasticsearch']
+                            for p in json.loads((self.target / deployment.LAYOUT_FILE).read_text())['projects']))
 
     def test_missing_layout_record_never_falls_back_to_outer_env_backup(self):
         self.make_nested_legacy()
@@ -471,13 +499,15 @@ class DeployTest(unittest.TestCase):
         self.assertIn('env-default-project', updates[0])
         self.assertEqual((self.target / 'docker/runtime/runtime.jar').read_text(), 'old-runtime')
 
-    def test_bootstrap_only_installs_app_files_and_preserves_existing_infrastructure(self):
+    def test_bootstrap_adds_es_files_and_preserves_existing_deployment_and_storage(self):
         destination = self.root / 'fresh'
         self.write(destination / '.env.server', 'existing credentials')
         self.write(destination / 'docker/docker-compose.mysql.yml', 'existing MySQL')
         self.write(destination / 'docker/nginx/proxy.conf', 'custom proxy')
         names = {'docker/nginx/default.conf', 'docker/nginx/proxy.conf', 'docker/docker-compose.sftp.yml',
-                 'docker/docker-compose.server.yml', 'docker/docker-compose.client.yml'}
+                 'docker/docker-compose.server.yml', 'docker/docker-compose.client.yml',
+                 'docker/docker-compose.elasticsearch.yml', 'docker/docker-compose.elasticsearch.snapshot.yml',
+                 'docker/rule-engine-elasticsearch/README.md', 'docker/rule-engine-elasticsearch/setup_es_user.py'}
         for name in names:
             self.write(self.release / name, 'release file')
         deployment.install_app_definitions(self.release, destination, names)
@@ -486,9 +516,21 @@ class DeployTest(unittest.TestCase):
         self.assertEqual((destination / 'docker/docker-compose.mysql.yml').read_text(), 'existing MySQL')
         self.assertEqual((destination / '.env.server').read_text(), 'existing credentials')
         self.assertFalse((destination / 'docker/rule-engine-mysql').exists())
+        es = destination / 'docker/docker-compose.elasticsearch.yml'
+        self.assertEqual(es.read_text(), 'release file')
+        self.assertFalse((destination / 'docker/rule-engine-elasticsearch/data').exists())
+        self.write(es, 'existing ES definition with original volume')
+        data = destination / 'docker/rule-engine-elasticsearch/data/existing'
+        self.write(data, 'persisted ES data')
         self.write(destination / 'docker/docker-compose.server.yml', 'installed definition')
         deployment.install_app_definitions(self.release, destination, names)
         self.assertEqual((destination / 'docker/docker-compose.server.yml').read_text(), 'installed definition')
+        self.assertEqual(es.read_text(), 'existing ES definition with original volume')
+        es.unlink()
+        self.write(destination / deployment.LAYOUT_FILE, '{}')
+        deployment.install_app_definitions(self.release, destination, names)
+        self.assertEqual(es.read_text(), 'release file')
+        self.assertEqual(data.read_text(), 'persisted ES data')
 
     def test_bootstrap_fails_before_writing_if_env_or_checked_files_missing(self):
         destination = self.root / 'unconfigured'

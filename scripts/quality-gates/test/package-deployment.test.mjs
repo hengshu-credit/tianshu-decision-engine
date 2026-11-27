@@ -27,10 +27,10 @@ test('部署说明使用 ASCII 文件名，保留中文正文并正确链接包�
   try {
     const source = path.join(directory, 'source')
     mkdirSync(path.join(source, 'docs'), { recursive: true })
-    writeFileSync(path.join(source, 'docs/server-upload.md'), '# 部署说明\n[构建](release-packaging.md)\n[设计](blue-green-deployment-design.md)\n[Docker](../docker/README.md)\n[旧版](deployment-flat-legacy.md)\n')
+    writeFileSync(path.join(source, 'docs/server-upload.md'), '# 部署说明\n[构建](release-packaging.md)\n[设计](blue-green-deployment-design.md)\n[Docker](../docker/README.md)\n[ES](../docker/rule-engine-elasticsearch/README.md)\n[旧版](deployment-flat-legacy.md)\n')
     writeDeploymentReadme(source, directory)
     assert.deepEqual(readdirSync(directory).sort(), ['README-DEPLOY.md', 'source'])
-    assert.equal(readFileSync(path.join(directory, 'README-DEPLOY.md'), 'utf8'), '# 部署说明\n[构建](docs/release-packaging.md)\n[设计](docs/blue-green-deployment-design.md)\n[Docker](docker/README.md)\n[旧版](docs/deployment-flat-legacy.md)\n')
+    assert.equal(readFileSync(path.join(directory, 'README-DEPLOY.md'), 'utf8'), '# 部署说明\n[构建](docs/release-packaging.md)\n[设计](docs/blue-green-deployment-design.md)\n[Docker](docker/README.md)\n[ES](docker/rule-engine-elasticsearch/README.md)\n[旧版](docs/deployment-flat-legacy.md)\n')
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
 
@@ -53,8 +53,17 @@ test('解压源码无需 .git 可重新打包，拒绝清单路径越界且排�
   try {
     writeFileSync(path.join(directory, 'pom.xml'), '<project/>')
     writeFileSync(path.join(directory, '.env.client'), 'private')
-    writeFileSync(path.join(directory, '.release-source-files.json'), JSON.stringify(['pom.xml', '.env.client']))
-    assert.deepEqual(releaseSourceFiles(directory), ['pom.xml'])
+    const es = 'docker/rule-engine-elasticsearch'
+    const files = ['pom.xml', '.env.client', es + '/README.md']
+    for (const subdir of ['data', 'logs', 'snapshots']) {
+      mkdirSync(path.join(directory, es, subdir), { recursive: true })
+      const liveFile = es + '/' + subdir + '/private-contents'
+      writeFileSync(path.join(directory, liveFile), 'runtime state')
+      files.push(liveFile)
+    }
+    writeFileSync(path.join(directory, es, 'README.md'), 'deployment instructions')
+    writeFileSync(path.join(directory, '.release-source-files.json'), JSON.stringify(files))
+    assert.deepEqual(releaseSourceFiles(directory), [es + '/README.md', 'pom.xml'])
     for (const entry of ['../private', '/etc/passwd', 'C:/private', '..\\private']) {
       writeFileSync(path.join(directory, '.release-source-files.json'), JSON.stringify([entry]))
       assert.throws(() => releaseSourceFiles(directory), /非法相对路径/)

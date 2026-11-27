@@ -10,6 +10,8 @@ rule-engine-web/dist
 rule-engine-web/test-results
 docker/rule-engine-mysql/data
 docker/rule-engine-redis/data
+docker/rule-engine-elasticsearch/data
+docker/rule-engine-elasticsearch/snapshots
 docker/runtime
 **/logs
 *.log

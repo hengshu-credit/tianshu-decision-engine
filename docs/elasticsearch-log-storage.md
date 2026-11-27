@@ -33,11 +33,14 @@
 
 在 `.env.server` 中设置 `RULE_SEARCH_ENABLED=true`、`RULE_SEARCH_URL`、`RULE_SEARCH_INDEX_PREFIX`。生产集群可以使用 HTTPS 和限定前缀权限的 `RULE_SEARCH_API_KEY`，也支持 `RULE_SEARCH_USERNAME` 与 `RULE_SEARCH_PASSWORD`。服务账户需要模板管理、创建索引、写入和读取对应索引的权限。自签发 CA 应加入服务器 JVM 信任库。
 
-本地单节点演示可设置 `ELASTICSEARCH_BOOTSTRAP_PASSWORD`，连接已经创建的 `ENGINE_NETWORK`，让 server 使用 `http://elasticsearch:9200`。容器的 HTTP 端口只发布到宿主机回环。运行以下命令启动 ES。
+单节点部署使用安装目录内的 `docker/docker-compose.elasticsearch.yml`，宿主机的 `docker/rule-engine-elasticsearch/data/` 挂载到容器的 `/usr/share/elasticsearch/data`。首次创建目录并赋予镜像用户写权限，设置 `ELASTICSEARCH_BOOTSTRAP_PASSWORD`、核对已有 `ENGINE_NETWORK` 后启动。server 使用 `http://elasticsearch:9200`，宿主机端口绑定回环。旧命名卷切换前需先完成快照迁移和核验。[ES 部署、权限和旧卷迁移](../docker/rule-engine-elasticsearch/README.md)
 
 ```bash
-docker compose --env-file .env.server -f docker/docker-compose.elasticsearch.yml up -d
+sudo install -d -o 1000 -g 0 -m 0770 docker/rule-engine-elasticsearch/{data,logs}
+docker compose --env-file config/.env.server -f docker/docker-compose.elasticsearch.yml up -d elasticsearch
 ```
+
+平铺安装将上面命令的 `config/.env.server` 换为 `.env.server`。
 
 首次上线先升级所有写入节点并复核 schema，再统一启用检索。已有安装使用外层固定 Compose 时，需将新版 server 的 `RULE_SEARCH_*` 环境映射合并到现有定义并重建应用容器。普通安装脚本保留已有 Compose。数据库由 server 按包内 schema 升级，外部维护时可使用增量迁移文件。
 

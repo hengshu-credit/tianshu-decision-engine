@@ -2,6 +2,8 @@
 
 服务端可接入 Elasticsearch，将执行日志、调用日志、追踪与历史特征分开索引。配置项、独立 Compose、存量补齐和回切流程见[日志混合存储](../docs/elasticsearch-log-storage.md)。
 
+ES 主文件为 `docker/docker-compose.elasticsearch.yml`，索引和文件日志分别位于安装目录的 `docker/rule-engine-elasticsearch/data/` 和 `logs/`。在已有 ES 上更换挂载前，按[独立 ES 部署与迁移](rule-engine-elasticsearch/README.md)完成快照及恢复核验。
+
 生产环境采用外层共享服务、内层应用版本布局：`config/.env.server`、`config/.env.client` 是生效配置，根目录原 env 仅为备份；应用位于 `deploy-prod/current`，上一版在 `previous`。已有 deploy-prod 先按 [一次性目录整理](../docs/server-upload.md) 操作，之后在安装目录运行 `bash install-release.sh 发布包.zip` 更新。本文下方是源码检出/旧平铺模式的 Compose 参考；已整理环境手工运维时，env 参数必须改用 `--env-file config/.env.server` 或 `config/.env.client`，并沿用原项目名。
 
 MySQL、Redis、Kafka 共用长期保留的一套环境；日常只替换 JAR 与前端 dist，保留原 env、Compose、Nginx 配置及数据。独立迁移 SQL 随包交付到 migrations/，在停止旧应用并完成备份后、新版启动前按需执行。上传、更新与回退步骤见 [服务器部署与升级](../docs/server-upload.md)。统一入口调用本次包内的 `deploy.py` 完成校验、备份、替换与重启，兼容 `docker compose` 和 `docker-compose`。以下完整 Compose 命令用于手工运维。推荐 server/client 分开管理，默认 server 2 副本、web 1 个、可选 SDK runtime 1 个；MySQL、Redis 复用现有服务。

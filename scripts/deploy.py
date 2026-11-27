@@ -14,7 +14,7 @@ import tempfile
 
 
 APP_SERVICES = ('server', 'web', 'runtime-sdk', 'sdk')
-SERVICE_ORDER = ('mysql', 'redis', 'kafka') + APP_SERVICES
+SERVICE_ORDER = ('mysql', 'redis', 'kafka', 'elasticsearch') + APP_SERVICES
 LAYOUT_FILE = '.deployment-layout.json'
 ARTIFACTS = {'server': ('server.jar', '/app/app.jar'),
              'web': ('dist', '/usr/share/nginx/html'),
@@ -96,23 +96,23 @@ def verify_release(release):
 
 
 def install_app_definitions(release, target, verified, sdk=False):
-    """既有安装沿用原部署定义。新安装只补应用 Compose 与 Web 配置。"""
+    """补齐缺少的 ES 部署文件；已有定义和数据挂载由运维维护。"""
+    names = ('docker/docker-compose.elasticsearch.yml', 'docker/docker-compose.elasticsearch.snapshot.yml',
+             'docker/rule-engine-elasticsearch/README.md', 'docker/rule-engine-elasticsearch/setup_es_user.py')
     if (target / LAYOUT_FILE).is_file():
         print('识别为已有部署，按布局记录更新应用。', flush=True)
-        return
-    if any((target / name).exists() for name in ('config', 'deploy-prod/current', 'deploy-prod/docker')):
-        raise DeployError('请核对旧部署布局，再执行应用安装。')
-    required_envs = ['.env.server'] + (['.env.client'] if sdk else [])
-    for name in required_envs:
-        if not (target / name).is_file():
-            raise DeployError('请在安装目录配置实际的 ' + name + '，模板在 ' + str(release / (name + '.example')))
-    # 明确存在应用定义即视为已有安装；不向自定义或 full 拓扑混入新定义。
-    if any((target / 'docker' / file).exists() for file in (
-            'docker-compose.server.yml', 'docker-compose.full.yml', 'docker-compose.yml')):
-        print('识别为已有部署，使用现有 Compose 更新应用。', flush=True)
-        return
-    names = ('docker/nginx/default.conf', 'docker/nginx/proxy.conf', 'docker/docker-compose.sftp.yml',
-             'docker/docker-compose.client.yml', 'docker/docker-compose.server.yml')
+    else:
+        if any((target / name).exists() for name in ('config', 'deploy-prod/current', 'deploy-prod/docker')):
+            raise DeployError('请核对旧部署布局，再执行应用安装。')
+        for name in ['.env.server'] + (['.env.client'] if sdk else []):
+            if not (target / name).is_file():
+                raise DeployError('请在安装目录配置实际的 ' + name + '，模板在 ' + str(release / (name + '.example')))
+        if any((target / 'docker' / file).exists() for file in (
+                'docker-compose.server.yml', 'docker-compose.full.yml', 'docker-compose.yml')):
+            print('识别为已有部署，使用现有 Compose 更新应用。', flush=True)
+        else:
+            names += ('docker/nginx/default.conf', 'docker/nginx/proxy.conf', 'docker/docker-compose.sftp.yml',
+                      'docker/docker-compose.client.yml', 'docker/docker-compose.server.yml')
     for name in names:
         destination = target / name
         if name not in verified or destination.resolve() != destination:
@@ -124,7 +124,6 @@ def install_app_definitions(release, target, verified, sdk=False):
         if not destination.exists():
             destination.parent.mkdir(parents=True, exist_ok=True)
             replace_file(release / name, destination)
-    print('识别为首次部署，应用配置已就绪。', flush=True)
 
 
 def compose_plan(command, target, files, project=None, containers=(), sdk=False, selected=None, env_root=None):

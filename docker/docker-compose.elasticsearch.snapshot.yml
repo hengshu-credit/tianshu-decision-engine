@@ -1,0 +1,11 @@
+# 迁移时与 ES 主 Compose 一起使用。提前为镜像用户创建 snapshots 目录。
+services:
+  elasticsearch:
+    environment:
+      path.repo: /mnt/tianshu-snapshots
+    volumes:
+      - type: bind
+        source: ./rule-engine-elasticsearch/snapshots
+        target: /mnt/tianshu-snapshots
+        bind:
+          create_host_path: false

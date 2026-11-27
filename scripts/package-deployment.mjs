@@ -35,6 +35,7 @@ export function releaseSourceFiles(directory) {
     if (typeof file !== 'string' || path.posix.isAbsolute(file) || path.win32.isAbsolute(file)
       || file.includes('\\') || file.split('/').includes('..')) throw new Error('源码清单包含非法相对路径')
     if (file.split('/').some(part => part.startsWith('.env') && !part.endsWith('.example'))) return false
+    if (/^docker\/rule-engine-elasticsearch\/(data|logs|snapshots)\//.test(path.posix.normalize(file))) return false
     return existsSync(path.join(directory, file)) && statSync(path.join(directory, file)).isFile()
   }).sort()
 }
@@ -54,7 +55,7 @@ export function writeDeploymentReadme(sourceRoot, stageRoot) {
   writeFileSync(path.join(stageRoot, 'README-DEPLOY.md'), readFileSync(path.join(sourceRoot, 'docs', 'server-upload.md'), 'utf8')
     .replace('(release-packaging.md)', '(docs/release-packaging.md)')
     .replace('(blue-green-deployment-design.md)', '(docs/blue-green-deployment-design.md)')
-    .replaceAll('(../docker/README.md', '(docker/README.md')
+    .replaceAll('(../docker/', '(docker/')
     .replace('(deployment-flat-legacy.md)', '(docs/deployment-flat-legacy.md)'))
 }
 

@@ -12,11 +12,17 @@ services:
     ports:
       - "127.0.0.1:${ELASTICSEARCH_HOST_PORT:-9200}:9200"
     volumes:
-      - elasticsearch-data:/usr/share/elasticsearch/data
+      - type: bind
+        source: ./rule-engine-elasticsearch/data
+        target: /usr/share/elasticsearch/data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./rule-engine-elasticsearch/logs
+        target: /usr/share/elasticsearch/logs
+        bind:
+          create_host_path: false
     networks: [rule-engine]
-
-volumes:
-  elasticsearch-data:
 
 networks:
   rule-engine:

@@ -14,19 +14,20 @@ for (const mode of ['plugin', 'standalone', 'early-v2', 'legacy-only']) {
     const cwd = mkdtempSync(path.join(os.tmpdir(), 'compose down '))
     try {
       const file = path.join(cwd, 'docker/docker-compose.full.yml')
+      const esFile = path.join(cwd, 'docker/docker-compose.elasticsearch.yml')
       mkdirSync(path.dirname(file))
       const bin = path.join(cwd, 'bin')
       mkdirSync(bin)
-      for (const name of [file, '.env.client', '.env.server', 'actions']) writeFileSync(path.resolve(cwd, name), '')
-      const labels = ['server', 'mysql'].map(service => JSON.stringify({
-        'com.docker.compose.project': 'installed',
+      for (const name of [file, esFile, '.env.client', '.env.server', 'actions']) writeFileSync(path.resolve(cwd, name), '')
+      const labels = ['server', 'mysql', 'elasticsearch'].map(service => JSON.stringify({
+        'com.docker.compose.project': service === 'elasticsearch' ? 'installed-es' : 'installed',
         'com.docker.compose.service': service,
-        'com.docker.compose.project.config_files': file,
+        'com.docker.compose.project.config_files': service === 'elasticsearch' ? esFile : file,
       })).join('\n')
       writeFileSync(path.join(cwd, 'labels'), labels + '\n')
       writeFileSync(path.join(bin, 'docker'), `#!/bin/sh
 case "$1" in
-  ps) echo 'app db'; exit 0;;
+  ps) echo 'app db es'; exit 0;;
   inspect) cat labels; exit 0;;
   compose) [ "$MODE" = plugin ] || { echo 'See docker --help' >&2; exit 1; }; shift;;
   *) exit 55;;
@@ -40,10 +41,13 @@ case "$1" in
   version) if [ "$MODE" = legacy-only ]; then echo 1.29.2; else echo v2.29.2; fi;;
   down) if [ "$MODE" = early-v2 ]; then echo 'Usage: down [OPTIONS]'; else echo 'Usage: down [OPTIONS] [SERVICES]'; fi;;
   --project-name)
-    [ "$2" = installed ] || exit 56
+    project=$2
+    [ "$project" = installed ] || [ "$project" = installed-es ] || exit 56
     while [ "$1" != '*' ] && [ "$#" -gt 0 ]; do shift; done
     shift
-    if [ "$1" = config ]; then printf 'server\\nmysql\\n'; else echo "$driver $*" >> actions; fi;;
+    if [ "$1" = config ]; then
+      if [ "$project" = installed-es ]; then echo elasticsearch; else printf 'server\\nmysql\\n'; fi
+    else echo "$driver $*" >> actions; fi;;
   *) exit 57;;
 esac
 `, { mode: 0o755 })
@@ -58,6 +62,10 @@ esac
         return
       }
       assert.equal(preview.status, 0, preview.stderr)
+      assert.doesNotMatch(preview.stdout, /elasticsearch/)
+      const all = run('--all', '--dry-run')
+      assert.equal(all.status, 0, all.stderr)
+      assert.match(all.stdout, /docker-compose\.elasticsearch\.yml.*\belasticsearch\b/)
       assert.match(preview.stdout, mode === 'plugin' ? /^docker compose / : /^docker-compose /)
       const actual = run()
       assert.equal(actual.status, 0, actual.stderr)

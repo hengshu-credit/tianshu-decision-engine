@@ -16,9 +16,12 @@
 │   ├── docker-compose.mysql.yml
 │   ├── docker-compose.redis.yml
 │   ├── docker-compose.kafka.yml
+│   ├── docker-compose.elasticsearch.yml          # ES 单节点
+│   ├── docker-compose.elasticsearch.snapshot.yml # 可选的快照仓库挂载
 │   ├── nginx/
 │   ├── rule-engine-mysql/           # 原配置、数据和日志
 │   ├── rule-engine-redis/           # 原配置、数据和日志
+│   ├── rule-engine-elasticsearch/   # data/ 索引，logs/ 文件日志，snapshots/ 迁移快照
 │   └── rule-engine-kafka/           # 原启动配置；数据继续使用原命名卷
 ├── deploy-prod/
 │   ├── current/                     # 当前运行版本
@@ -36,6 +39,10 @@
 ```
 
 Compose 自动兼容现代 `docker compose` 与 `docker-compose`，优先前者；要求支持 `config --format json`、`up --wait`，不支持旧 Python Compose v1。服务器需要 Python 3.8+ 标准库和 Docker，无需 Maven、Node.js 或第三方 Python 包。构建入口见 [跨平台发布构建](release-packaging.md)。
+
+## Elasticsearch
+
+已运行天枢的安装先核对 ES 挂载。新装 ES 时，在外层 `docker/rule-engine-elasticsearch/` 准备 `data/` 和 `logs/`，再启动 `docker/docker-compose.elasticsearch.yml`。此前使用命名卷时，先从旧集群制作快照，并在新目录恢复和核对原索引，再启用引擎写入。[ES 部署与迁移步骤](../docker/rule-engine-elasticsearch/README.md)
 
 ## 默认文件服务
 
