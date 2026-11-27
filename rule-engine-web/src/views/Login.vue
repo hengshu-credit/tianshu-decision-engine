@@ -302,7 +302,7 @@ $login-muted: var(--tianshu-text-tertiary);
   --el-input-border-color: var(--tianshu-border);
   --el-input-hover-border-color: var(--el-color-primary-light-3);
   --el-input-focus-border-color: var(--el-color-primary);
-  --el-input-placeholder-color: var(--tianshu-text-tertiary);
+  --el-input-placeholder-color: var(--tianshu-input-hint);
   --el-input-icon-color: var(--tianshu-text-tertiary);
 }
 :deep(.login-form .el-input__wrapper) {
@@ -344,38 +344,7 @@ $login-muted: var(--tianshu-text-tertiary);
 .login-btn.is-loading::before {
   background-color: transparent;
 }
-.login-spinner {
-  display: inline-grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  margin-inline-end: 8px;
-}
-.login-spinner::before,
-.login-spinner::after {
-  content: '';
-  grid-area: 1 / 1;
-  border-radius: 50%;
-}
-.login-spinner::before {
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
-  border: 2px solid currentColor;
-  background: color-mix(in srgb, currentColor 8%, transparent);
-  clip-path: polygon(50% 50%, 50% 0, 100% 0, 100% 50%, 50% 50%, 50% 100%, 0 100%, 0 50%);
-  animation: login-spin 1.35s linear infinite;
-}
-.login-spinner::after {
-  width: 4px;
-  height: 4px;
-  background: currentColor;
-}
-@keyframes login-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .login-spinner::before { animation: none; }
-}
+.login-spinner { font-size: 22px; margin-inline-end: 8px; }
 .login-btn:not(.is-loading):hover {
   box-shadow: 0 10px 28px var(--tianshu-primary-shadow);
 }

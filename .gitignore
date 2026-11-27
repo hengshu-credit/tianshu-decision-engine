@@ -29,6 +29,9 @@ rule_examples
 /docker/rule-engine-mysql/logs/
 /docker/rule-engine-redis/data/
 /docker/rule-engine-redis/logs/
+/docker/rule-engine-elasticsearch/data/
+/docker/rule-engine-elasticsearch/logs/
+/docker/rule-engine-elasticsearch/snapshots/
 .worktrees/
 docs/superpowers/*
 .npm-cache-temp

@@ -10,6 +10,27 @@ import java.util.Set;
 
 /** 保存、审批、预览和真实调用共用 V2 结构校验。 */
 public final class ExternalApiExecutionConfig {
+    private static final java.util.regex.Pattern REQUEST_FIELD = java.util.regex.Pattern.compile(
+            "(?:^|[./])executionConfig(?:[./]@json|\\[json\\])?(?:\\.requestFields\\[\\d+\\]|/requestFields/\\d+)$");
+
+    /** A V2 request-field default is an executable operand, unlike defaults on business variables. */
+    public static void visitDefaultOperands(Object value, String path,
+                                          java.util.function.BinaryOperator<String> childPath,
+                                          java.util.function.BiConsumer<String, java.util.Map<?, ?>> visitor) {
+        // evaluate() treats scalar/list values as literal, and plain maps as templates of nested values.
+        if (!(value instanceof java.util.Map<?, ?> map)) return;
+        if (map.get("kind") instanceof String kind) {
+            if (!"LITERAL".equals(kind)) visitor.accept(path, map);
+        } else {
+            map.forEach((key, child) -> visitDefaultOperands(child, childPath.apply(path, String.valueOf(key)), childPath, visitor));
+        }
+    }
+
+    public static boolean isRequestFieldDefault(String key, String ownerPath, java.util.Map<?, ?> owner) {
+        return "defaultValue".equals(key) && owner.containsKey("location") && owner.containsKey("id")
+                && owner.containsKey("path") && REQUEST_FIELD.matcher(ownerPath).find();
+    }
+
     private static final Set<String> PURE_FUNCTIONS = BuiltinFunctionCatalog.definitions().stream()
             .filter(function -> function.getImplClass() != null && Set.of("com.hengshucredit.rule.core.function.AggregateBuiltinFunctions",
                     "com.hengshucredit.rule.core.function.DecisionBuiltinFunctions", "com.hengshucredit.rule.core.function.DigestBuiltinFunctions").contains(function.getImplClass()))

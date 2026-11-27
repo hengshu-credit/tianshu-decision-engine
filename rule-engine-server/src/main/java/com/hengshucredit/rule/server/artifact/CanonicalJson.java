@@ -26,6 +26,21 @@ public final class CanonicalJson {
     private CanonicalJson() {
     }
 
+    /** Compare JSON documents without changing stored text, literal strings or array order. */
+    public static boolean sameDocument(String left, String right) {
+        if (java.util.Objects.equals(left, right)) return true;
+        if (left == null || right == null) return false;
+        var reader = MAPPER.readerFor(com.fasterxml.jackson.databind.JsonNode.class)
+                .with(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                .with(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        try {
+            var parsed = reader.readTree(left);
+            return parsed != null && !parsed.isMissingNode() && parsed.equals(reader.readTree(right));
+        } catch (IOException invalid) {
+            return false;
+        }
+    }
+
     public static byte[] writeBytes(Object value) {
         try {
             return MAPPER.writeValueAsBytes(value);
@@ -68,6 +83,18 @@ public final class CanonicalJson {
     public static Map<String,Object> readModelSnapshot(String json) {
         try { return MODEL_COMPONENT_MAPPER.readValue(json, new TypeReference<>() { }); }
         catch (IOException e) { throw new IllegalArgumentException("模型版本快照 JSON 无效", e); }
+    }
+
+    /** Runtime snapshots contain arbitrary business maps, including exact decimals and explicit nulls. */
+    public static <T> T readSnapshot(String value, Class<T> type) {
+        try {
+            return MAPPER.readerFor(type)
+                    .with(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                    .without(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                    .readValue(value);
+        } catch (IOException invalid) {
+            throw new IllegalArgumentException("执行快照格式无效", invalid);
+        }
     }
 
     public static Map<String, Object> readMap(String value) {

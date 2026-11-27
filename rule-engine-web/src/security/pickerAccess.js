@@ -18,6 +18,7 @@ export function canViewPickerItem(item) {
   const { type, id } = identity(item)
   // 无持久化 ID 的内置运算和当前编辑对象的局部协议字段不属于资源目录。
   if (type === 'API_CONTEXT' || type === 'FUNCTION' && id == null) return true
+  if (type === 'MOCK_RULE') return hasPermission(['field:view', 'rule:view'], item)
   return hasPermission(resourceViewPermission(type))
 }
 

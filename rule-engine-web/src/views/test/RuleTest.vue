@@ -1,6 +1,6 @@
 <template>
-  <div class="uiue-list-page rule-test-page">
-    <el-tabs v-model="activeTestTab" class="test-page-tabs" aria-label="规则测试工作区" @tab-change="onWorkspaceTabChange">
+  <div class="uiue-list-page rule-test-page" :class="{ 'management-list-page': activeTestTab !== 'test' }">
+    <el-tabs v-model="activeTestTab" class="test-page-tabs" :class="{ 'management-table-region': activeTestTab !== 'test' }" aria-label="规则测试工作区" @tab-change="onWorkspaceTabChange">
       <el-tab-pane label="规则测试" name="test" class="test-workspace">
     <config-layer-guide
       guide-id="rule-test.steps"
@@ -12,9 +12,9 @@
         { key: 'trace', label: '执行并查看追踪', detail: '核对结果、耗时和命中路径' },
       ]"
     />
-    <execution-impact-panel v-if="selectedRuleId" :runtime-nodes="testRuntimeNodes" :model="definitionModel" :model-type="inputExecutionIdentity?.modelType || selectedRule?.modelType || ''" :loaded="!!inputExecutionIdentity && !!definitionModel" />
+    <execution-impact-panel v-if="selectedRuleId" :key="selectedRuleId + '/' + selectedTestSourceValue" :runtime-nodes="testRuntimeNodes" :model="definitionModel" :model-type="inputExecutionIdentity?.modelType || selectedRule?.modelType || ''" :loaded="!!inputExecutionIdentity && !!definitionModel" />
     <dismissible-guidance v-else guide-id="rule-test.notice" label="测试调用与写入说明" heading="测试调用与写入说明">
-      先选择版本来源，再核对执行模式和影响清单。本页单次、固定用例和批量测试均为真实联调。
+      先选择版本来源，再核对执行模式和影响清单。本页执行测试会按规则配置调用真实服务。
     </dismissible-guidance>
     <div class="test-layout">
       <!-- 左侧：选择规则 + 参数输入 -->
@@ -73,7 +73,9 @@
           <el-alert v-if="testSourcesError" :title="testSourcesError" type="error" :closable="false" show-icon>
             <el-button link @click="reloadTestSources">重新加载测试版本</el-button>
           </el-alert>
-          <el-alert v-else-if="selectedExecutionSource" :title="executionSourceLabel(selectedExecutionSource, selectedTestSourceLabel || inputExecutionIdentity)" type="info" :closable="false" show-icon />
+          <dismissible-guidance v-else-if="selectedExecutionSource" :key="selectedRuleId + '/' + selectedTestSourceValue" label="测试版本说明">
+            {{ executionSourceLabel(selectedExecutionSource, selectedTestSourceLabel || inputExecutionIdentity) }}
+          </dismissible-guidance>
           <div
             v-if="ruleScope === 'PROJECT' && projectsError"
             class="test-setup-state is-error"
@@ -109,7 +111,8 @@
               >重新检查</el-button
             >
           </div>
-          <div v-if="selectedRule" class="rule-info">
+          <details v-if="selectedRule" class="rule-info">
+            <summary>规则与版本详情</summary>
             <el-descriptions :column="2" size="small" border>
               <el-descriptions-item label="规则编码">{{
                 selectedRule.ruleCode
@@ -133,7 +136,7 @@
                 </el-tag>
               </el-descriptions-item>
             </el-descriptions>
-          </div>
+          </details>
           <ul v-if="contextWarnings.length" class="context-load-warnings">
             <li v-for="warning in contextWarnings" :key="warning">
               {{ warning }}
@@ -147,67 +150,41 @@
           :inert="testCaseLoading || generatingMock"
         >
           <div class="uiue-card-title input-parameters-title">
-            输入参数
-            <el-button
-              link
-              size="small"
-              style="margin-left: 12px"
-              @click="loadVariables"
-              v-if="selectedRule"
-            >
-              <el-icon><el-icon-refresh /></el-icon> 重新加载字段
-            </el-button>
-            <el-button
-              link
-              size="small"
-              style="margin-left: 8px"
-              @click="addParam"
-              v-if="inputMode === 'form'"
-            >
-              <el-icon><el-icon-plus /></el-icon> 手动添加
-            </el-button>
-            <el-button
-              link
-              size="small"
-              style="margin-left: 8px"
-              :disabled="!testContextReady || !selectedExecutionSource || inputLoadState !== 'READY' || executing || batchExecuting"
-              :loading="generatingMock"
-              @click="generateMock"
-            >
-              <el-icon><el-icon-magic-stick /></el-icon> 自动生成
-            </el-button>
+            <span>输入参数</span>
+            <div class="input-actions">
+              <el-button size="small" :loading="inputLoadState === 'LOADING'" :disabled="!selectedRule || generatingMock || testSourcesLoading" @click="loadVariables">重新加载字段</el-button>
+              <el-button size="small" :loading="generatingMock" :disabled="!testContextReady || !selectedExecutionSource || inputLoadState !== 'READY' || executing || batchExecuting" @click="generateMock">加载MOCK数据</el-button>
+            </div>
           </div>
           <div class="input-mode-toolbar">
             <el-radio-group :model-value="inputMode" size="small" aria-label="输入方式" @update:model-value="switchInputMode">
               <el-radio-button value="form">表单填写</el-radio-button>
               <el-radio-button value="json">JSON 编辑</el-radio-button>
             </el-radio-group>
-            <el-button link size="small" :disabled="inputSampleJson === null || inputLoadState === 'LOADING' || inputLoadState === 'ERROR'" @click="generateInputSample">生成样例</el-button>
+            <div class="input-actions">
+              <el-button link size="small" :loading="testCasesLoading" :disabled="!testContextReady || executing" @click="loadRequestSample">载入样例</el-button>
+              <el-button v-if="inputMode === 'form'" link size="small" @click="addParam"><el-icon><el-icon-plus /></el-icon> 添加参数</el-button>
+            </div>
           </div>
-          <div
+          <dismissible-guidance
             v-if="selectedRule && inputLoadState !== 'IDLE'"
+            :key="inputLoadRequestId + '/' + inputLoadState"
             class="input-load-state"
             :class="'is-' + inputLoadState.toLowerCase()"
+            label="输入状态提示"
+            :heading="inputLoadStateTitle"
           >
-            <div>
-              <strong>{{ inputLoadStateTitle }}</strong>
-              <span>{{ inputLoadStateDescription }}</span>
-            </div>
-            <el-button
-              v-if="inputLoadState === 'ERROR' || inputLoadState === 'EMPTY'"
-              link
-              size="small"
-              :loading="inputLoadState === 'LOADING'"
-              @click="loadVariables"
-              >重新加载</el-button
-            >
-          </div>
+            {{ inputLoadStateDescription }}
+          </dismissible-guidance>
           <ul v-if="inputLoadWarnings.length" class="input-load-warnings">
             <li v-for="warning in inputLoadWarnings" :key="warning">
               {{ warning }}
             </li>
           </ul>
-          <div v-if="inputMode === 'json'" class="input-json-editor" data-testid="rule-test-input-json">
+          <div v-if="inputLoadState === 'LOADING' && !params.length && inputMode === 'form'" class="input-panel-loading" role="status" aria-label="正在读取输入字段">
+            <el-icon-loading size="48px" />
+          </div>
+          <div v-else-if="inputMode === 'json'" class="input-json-editor" data-testid="rule-test-input-json">
             <monaco-editor :key="inputEditorKey" v-model:value="paramsJson" language="json" height="300px" />
             <div v-if="inputJsonError" class="input-json-error" role="alert">{{ inputJsonError }}</div>
           </div>
@@ -271,7 +248,7 @@
                 link
                 size="small"
                 class="btn-delete"
-                style="margin-left: 4px"
+                :aria-label="'删除参数 ' + (p.key || idx + 1)"
                 @click="params.splice(idx, 1)"
               >
                 <el-icon><el-icon-delete /></el-icon>
@@ -290,124 +267,19 @@
           />
         </div>
 
-        <div
-          v-if="selectedRule"
-          class="uiue-card fixed-cases-card"
-          :class="{
-            'is-empty':
-              !testCasesLoading && !testCasesError && testCases.length === 0,
-          }"
-        >
-          <div class="uiue-card-title fixed-cases-title">
-            <span>固定测试用例收藏</span>
-            <span>
-              <el-button link size="small" @click="reportsVisible = true">回归报告</el-button>
-              <el-button v-permission="'rule:edit'" link size="small" :disabled="testCaseLoading" @click="saveCurrentTestCase"
-                ><el-icon><el-icon-star-off /></el-icon>
-                保存为新用例</el-button
-              >
-              <el-button v-if="loadedTestCase" v-permission="'rule:edit'" link size="small" :disabled="testCaseLoading" :loading="testCaseSaving" @click="saveCurrentTestCase('UPDATE')">保存当前用例</el-button>
-              <el-button
-                link
-                size="small"
-                :loading="batchExecuting"
-                :disabled="!testContextReady || selectedTestCaseIds.length === 0"
-                @click="executeSelectedTestCases"
-                v-permission="'rule:edit'"
-                ><el-icon><el-icon-video-play /></el-icon> 批量执行</el-button
-              >
-              <el-button v-if="batchExecuting" link size="small" :disabled="batchStopRequested" @click="stopBatchExecution">停止后续</el-button>
-            </span>
-          </div>
-          <p v-if="batchTotal" role="status">
-            已完成 {{ batchResults.length }} / {{ batchTotal }} 个用例。
-            {{ batchStopRequested ? '已停止后续用例；已提交的请求会继续完成并保留结果。' : batchExecuting ? '正在执行当前用例。' : '批量执行结束。' }}
-          </p>
-          <p class="fixed-case-empty">已有启用固定用例时，发布前须全部通过。请选择已保存的草稿执行回归；临时修改的用例输入或预期不计入发布证据。</p>
-          <div
-            v-if="
-              !testCasesLoading && !testCasesError && testCases.length === 0
-            "
-            class="fixed-case-empty"
-          >
-            暂无收藏用例，可将当前参数与结果保存为固定用例
-          </div>
-          <async-state
-            v-else
-            :loading="testCasesLoading"
-            :error="testCasesError"
-            :empty="false"
-            compact
-            @retry="loadTestCases"
-          >
-            <el-checkbox-group
-              v-model="selectedTestCaseIds"
-              class="fixed-case-list"
-            >
-              <div
-                v-for="testCase in testCases"
-                :key="testCase.id"
-                class="fixed-case-row"
-              >
-                <el-checkbox :value="testCase.id">{{
-                  testCase.scenarioName
-                }}</el-checkbox>
-                <el-button
-                  link
-                  size="small"
-                  @click="applyTestCase(testCase)"
-                  >载入</el-button
-                >
-              </div>
-            </el-checkbox-group>
-          </async-state>
-          <el-table show-overflow-tooltip
-            v-if="batchResults.length"
-            :data="batchResults"
-            border
-            size="small"
-            class="batch-result-table"
-          >
-            <el-table-column prop="scenarioName" label="用例" min-width="130" />
-            <el-table-column label="执行结果" min-width="90">
-              <template v-slot="{ row }"
-                ><el-tag
-                  :type="row.executionStatus === 'THROTTLED' ? 'warning' : row.success ? 'success' : 'danger'"
-                  size="small"
-                  >{{ row.executionStatus === 'THROTTLED' ? executionStatusLabel(row.executionStatus) : row.success ? '成功' : '失败' }}</el-tag
-                ></template
-              >
-            </el-table-column>
-            <el-table-column label="预期校验" min-width="110">
-              <template #default="{ row }"><el-tag :type="validationTagType(row.validationStatus)">{{ validationLabel(row.validationStatus) }}</el-tag></template>
-            </el-table-column>
-            <el-table-column label="校验详情" min-width="220">
-              <template v-slot="{ row }">
-                <span>{{ row.validationMessage }}</span>
-                <div v-if="row.diffs.length" class="diff-lines">
-                  <div v-for="(diff, index) in row.diffs" :key="index">
-                    <code>{{ diff.path }}</code
-                    >：{{ diff.expectedMissing ? '字段不存在' : diff.expectedJson }} →
-                    {{ diff.actualMissing ? '字段不存在' : diff.actualJson }}
-                  </div>
-                </div>
-                <div v-for="(check, index) in row.checks" :key="index">{{ check.label }}：{{ check.message }}<span v-if="check.status === 'FAILED'">；预期 {{ check.expectedJson }}，实际 {{ check.actualMissing ? '字段不存在' : check.actualJson }}</span></div>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-
         <div class="test-actions">
-          <span class="test-timeout-label">页面请求超时</span>
-          <el-input-number
-            v-model="requestTimeoutMs"
-            :min="1000"
-            :max="1800000"
-            :step="1000"
-            size="small"
-            class="test-timeout-input"
-          />
-          <span class="test-timeout-unit">毫秒</span>
+          <label class="test-timeout-label">请求超时
+            <el-input-number
+              v-model="requestTimeoutMs"
+              :min="1000"
+              :max="1800000"
+              :step="1000"
+              size="small"
+              class="test-timeout-input"
+            />
+            <span class="test-timeout-unit">毫秒</span>
+          </label>
+          <el-button v-if="acceptanceExamples" size="small" :disabled="!testContextReady || executing || batchExecuting || testCaseLoading" @click="exampleIndex = 0; examplesVisible = true">业务验收样例</el-button>
           <el-button
             type="primary"
             :loading="executing"
@@ -417,7 +289,7 @@
           >
             <el-icon><el-icon-video-play /></el-icon> 执行测试
           </el-button>
-          <el-button :disabled="testCaseLoading" @click="handleClear">清空</el-button>
+          <el-button link :disabled="testCaseLoading" @click="handleClear">清空输入</el-button>
         </div>
       </div>
 
@@ -436,12 +308,12 @@
           </div>
           <div
             v-else-if="executing"
-            style="text-align: center; padding: 60px 0"
+            class="result-loading" role="status" aria-label="规则执行中"
           >
-            <el-icon style="font-size: 32px; color: var(--el-color-primary)"
+            <el-icon style="font-size: 52px"
               ><el-icon-loading
             /></el-icon>
-            <p style="color: var(--tianshu-text-tertiary); margin-top: 12px">规则执行中...</p>
+
           </div>
           <div v-else class="test-result-content">
             <el-alert
@@ -457,6 +329,8 @@
 
             <div class="test-validation-result" data-testid="test-validation-result">
               <el-tag :type="validationStale ? 'info' : validationTagType(testValidation.status)">{{ validationStale ? '待重新校验' : validationLabel(testValidation.status) }}</el-tag>
+              <p v-if="testValidation.status === 'FAILED' && !validationStale && (exampleHint || loadedTestCase?.description)">{{ exampleHint ? '排查位置' : '用例说明' }} · {{ exampleHint || loadedTestCase.description }}</p>
+              <el-button v-if="testValidation.status === 'FAILED' && !validationStale && testedDesigner" link type="primary" @click="$router.push(testedDesigner)">查看本次测试的设计版本</el-button>
               <span>{{ validationStale ? '输入或预期已修改，请重新执行后查看校验结果' : testValidation.message }}</span>
               <template v-if="!validationStale">
                 <div v-for="(check, index) in testValidation.checks || []" :key="index">{{ check.label }}：{{ check.message }}<span v-if="check.status === 'FAILED'">；预期 {{ check.expectedJson }}，实际 {{ check.actualMissing ? '字段不存在' : check.actualJson }}</span></div>
@@ -548,19 +422,130 @@
       </div>
     </div>
       </el-tab-pane>
-      <el-tab-pane label="测试用例" name="cases" class="test-management" lazy>
-        <test-cases-panel v-if="activeTestTab === 'cases'" @apply="openCatalogCase" />
-      </el-tab-pane>
-      <el-tab-pane label="Mock 规则" name="mock" class="test-management" lazy>
-        <mock-rules-panel v-if="activeTestTab === 'mock'" />
+      <el-tab-pane label="测试用例" name="cases" class="test-management management-table-region" lazy>
+        <test-cases-panel ref="caseDirectory" v-if="activeTestTab === 'cases'" @apply="openCatalogCase" @default-saved="syncCatalogDefault">
+          <template #toolbar-actions>
+            <el-button v-if="selectedRule" size="small" @click="openCaseTools">当前规则用例</el-button>
+          </template>
+        </test-cases-panel>
+        <el-dialog v-if="selectedRule && activeTestTab === 'cases'" v-model="caseToolsVisible" :title="selectedRule.ruleName + ' · ' + selectedTestSourceLabel" width="min(760px, 94vw)" append-to-body>
+          <div class="case-actions">
+              <el-button v-permission="'rule:edit'" link size="small" :disabled="testCaseLoading || savingCaseMode === 'UPDATE'" :loading="savingCaseMode === 'NEW'" @click="saveCurrentTestCase()"
+                ><el-icon><el-icon-star-off /></el-icon>
+                保存为新用例</el-button
+              >
+              <el-button v-if="loadedTestCase" v-permission="'rule:edit'" link size="small" :disabled="testCaseLoading || savingCaseMode === 'NEW'" :loading="savingCaseMode === 'UPDATE'" @click="saveCurrentTestCase('UPDATE')">保存当前用例</el-button>
+          </div>
+          <p v-if="batchTotal" role="status">
+            已完成 {{ batchResults.length }} / {{ batchTotal }} 个用例。
+            {{ batchStopRequested ? '已停止后续用例；已提交的请求会继续完成并保留结果。' : batchExecuting ? '正在执行当前用例。' : '批量执行结束。' }}
+          </p>
+          <p v-if="testCases.length" class="fixed-case-empty">发布前须用已保存的草稿验证全部启用用例。临时修改的输入和预期仅用于本次测试。</p>
+          <div
+            v-if="
+              !testCasesLoading && !testCasesError && testCases.length === 0
+            "
+            class="fixed-case-empty"
+          >
+            暂无固定用例。保存当前输入和预期后，可在这里重复测试。
+          </div>
+          <async-state
+            v-else
+            :loading="testCasesLoading"
+            :error="testCasesError"
+            :empty="false"
+            compact
+            @retry="loadTestCases"
+          >
+            <el-checkbox-group
+              v-model="selectedTestCaseIds"
+              class="fixed-case-list"
+            >
+              <div
+                v-for="testCase in testCases"
+                :key="testCase.id"
+                class="fixed-case-row"
+              >
+                <el-checkbox :value="testCase.id">{{
+                  testCase.scenarioName
+                }}</el-checkbox>
+                <el-button
+                  link
+                  size="small"
+                  @click="applyTestCase(testCase)"
+                  >载入</el-button
+                >
+              </div>
+            </el-checkbox-group>
+          </async-state>
+          <div v-if="testCases.length || batchExecuting" class="case-actions batch-actions">
+            <span>已选 {{ selectedTestCaseIds.length }} 个用例</span>
+              <el-button
+                link
+                size="small"
+                :loading="batchExecuting"
+                :disabled="!testContextReady || selectedTestCaseIds.length === 0"
+                @click="executeSelectedTestCases"
+                v-permission="'rule:edit'"
+                ><el-icon><el-icon-video-play /></el-icon> 批量执行</el-button
+              >
+              <el-button v-if="batchExecuting" link size="small" :disabled="batchStopRequested" @click="stopBatchExecution">停止后续</el-button>
+          </div>
+          <el-table show-overflow-tooltip
+            v-if="batchResults.length"
+            :data="batchResults"
+            border
+            size="small"
+            class="batch-result-table"
+          >
+            <el-table-column prop="scenarioName" label="用例" min-width="130" />
+            <el-table-column label="执行结果" min-width="90">
+              <template v-slot="{ row }"
+                ><el-tag
+                  :type="row.executionStatus === 'THROTTLED' ? 'warning' : row.success ? 'success' : 'danger'"
+                  size="small"
+                  >{{ row.executionStatus === 'THROTTLED' ? executionStatusLabel(row.executionStatus) : row.success ? '成功' : '失败' }}</el-tag
+                ></template
+              >
+            </el-table-column>
+            <el-table-column label="预期校验" min-width="110">
+              <template #default="{ row }"><el-tag :type="validationTagType(row.validationStatus)">{{ validationLabel(row.validationStatus) }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="校验详情" min-width="220">
+              <template v-slot="{ row }">
+                <span>{{ row.validationMessage }}</span>
+                <div v-if="row.diffs.length" class="diff-lines">
+                  <div v-for="(diff, index) in row.diffs" :key="index">
+                    <code>{{ diff.path }}</code
+                    >：{{ diff.expectedMissing ? '字段不存在' : diff.expectedJson }} →
+                    {{ diff.actualMissing ? '字段不存在' : diff.actualJson }}
+                  </div>
+                </div>
+                <div v-for="(check, index) in row.checks" :key="index">{{ check.label }}：{{ check.message }}<span v-if="check.status === 'FAILED'">；预期 {{ check.expectedJson }}，实际 {{ check.actualMissing ? '字段不存在' : check.actualJson }}</span></div>
+              </template>
+            </el-table-column>
+          </el-table>
+          <template #footer><el-button @click="reportsVisible = true">查看回归结果</el-button><el-button @click="caseToolsVisible = false">关闭</el-button></template>
+        </el-dialog>
       </el-tab-pane>
     </el-tabs>
+    <el-dialog v-if="acceptanceExamples" v-model="examplesVisible" title="业务验收样例" width="min(640px, 94vw)" append-to-body>
+      <p>这些样例适用于下列规则配置。请先核对当前修订的输入、输出与业务条件。</p>
+      <p>{{ acceptanceExamples[0] }}</p>
+      <el-select v-model="exampleIndex" aria-label="选择验收场景">
+        <el-option v-for="(item, index) in acceptanceExamples[2]" :key="item[0]" :label="item[0]" :value="index" />
+      </el-select>
+      <h4>输入</h4><pre>{{ JSON.stringify(acceptanceExamples[2][exampleIndex][1], null, 2) }}</pre>
+      <h4>预期结果</h4><pre>{{ JSON.stringify(acceptanceExamples[2][exampleIndex][2], null, 2) }}</pre>
+      <p>结果不符时，{{ acceptanceExamples[1] }}。</p>
+      <template #footer><el-button @click="examplesVisible = false">取消</el-button><el-button type="primary" @click="loadAcceptanceExample">替换当前输入与预期</el-button></template>
+    </el-dialog>
     <regression-report-drawer v-if="reportsVisible && selectedRuleId" :definition-id="selectedRuleId" :revision-id="inputExecutionIdentity?.revisionId || null" @close="reportsVisible = false" />
   </div>
 </template>
 
 <script>
-import MockRulesPanel from '@/components/test/MockRulesPanel.vue'
+import { pageTabState } from '@/mixins/pageTabState'
 import TestCasesPanel from '@/components/test/TestCasesPanel.vue'
 import { generateTestInput } from '@/api/testData'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
@@ -573,9 +558,7 @@ import { validationLabel, validationTagType } from '@/utils/testValidationStatus
 import {
   Star as ElIconStarOff,
   VideoPlay as ElIconVideoPlay,
-  Refresh as ElIconRefresh,
   Plus as ElIconPlus,
-  MagicStick as ElIconMagicStick,
   Delete as ElIconDelete,
 } from '@element-plus/icons-vue'
 import { listProjects } from '@/api/project'
@@ -604,16 +587,17 @@ import ExpectedOutputEditor from '@/components/test/ExpectedOutputEditor.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import { cloneExactJson, createExactNumber, exactNumberText, isExactNumber, parseExactJson, parseExecutionSnapshotJson, stringifyExactJson } from '@/utils/exactJson'
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
+import designerExamples from '@/constants/designerAcceptanceExamples'
+import { normalizeRuleModelType, ruleDesignerLocation } from '@/utils/ruleDesignerNavigation'
 import { normalizeTestResult } from '@/utils/testResult'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { executionStatusLabel, executionStatusHint } from '@/utils/executionStatus'
 import { revisionTestSource, executionSourceLabel, requireExecutionIdentity } from '@/utils/ruleTestExecutionSource'
-import { routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, routeProjectId } from '@/utils/projectContext'
 import {
   normalizeTestSchema,
   schemaFieldsToTestFields,
   flattenSchemaSample,
-  buildNestedSchemaParams,
 } from '@/utils/testSchema'
 import {
   filterTraceTree,
@@ -621,7 +605,8 @@ import {
 } from '@/utils/testCaseTools'
 
 export default {
-  components: { MockRulesPanel, TestCasesPanel, DismissibleGuidance, ExecutionImpactPanel, ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
+  mixins: [pageTabState('activeTestTab', ['test', 'cases'])],
+  components: { TestCasesPanel, DismissibleGuidance, ExecutionImpactPanel, ProjectResourceSelect, RemoteFilterSelect, RegressionReportDrawer, RuleValidationReport,
     TraceTree,
     AsyncState,
     ConfigLayerGuide,
@@ -629,9 +614,7 @@ export default {
     MonacoEditor,
     ElIconStarOff,
     ElIconVideoPlay,
-    ElIconRefresh,
     ElIconPlus,
-    ElIconMagicStick,
     ElIconDelete,
     ElIconLoading,
   },
@@ -640,6 +623,9 @@ export default {
     return {
       activeTestTab: 'test',
       generatingMock: false,
+      examplesVisible: false,
+      exampleIndex: 0,
+      exampleHint: '',
       reportsVisible: false,
       projects: [],
       projectsLoading: false,
@@ -663,7 +649,6 @@ export default {
       inputMode: 'form',
       paramsJson: '{}',
       inputEditorKey: 0,
-      inputSampleJson: null,
       inputLoadState: 'IDLE',
       inputLoadError: '',
       inputLoadSource: '',
@@ -688,7 +673,8 @@ export default {
       loadedRequestJson: '',
       loadedInputParamsJson: '',
       testCaseEditSession: 0,
-      testCaseSaving: false,
+      savingCaseMode: null,
+      caseToolsVisible: false,
       testCaseLoading: false,
       executedInputParamsJson: '',
       traceTab: 'tree',
@@ -735,6 +721,20 @@ export default {
     this.ruleListRequestId++
   },
   computed: {
+    testedDesigner() {
+      const id = this.lastRawResponse?.data?.executionIdentity
+      if (!id || String(id.definitionId) !== String(this.selectedRuleId)) return null
+      const route = ruleDesignerLocation({ id: id.definitionId, modelType: id.modelType || this.selectedRule?.modelType })
+      const version = id.sourceType === 'VERSION'
+      const target = version ? id.sourceId : id.revisionId
+      if (!route || !target) return null
+      return { ...route, query: { sourceType: version ? 'VERSION' : 'REVISION', sourceId: String(target),
+        ...(this.selectedProjectId ? { projectId: String(this.selectedProjectId) } : {}) } }
+    },
+    acceptanceExamples() {
+      return designerExamples[normalizeRuleModelType(this.inputExecutionIdentity?.modelType || this.selectedRule?.modelType)]
+    },
+    testCaseSaving() { return this.savingCaseMode !== null },
     testContextReady() {
       return !!this.selectedRuleId && !this.testSourcesLoading && !this.testSourcesError
         && this.inputLoadState !== 'LOADING' && !(this.selectedExecutionSource && this.inputLoadState === 'ERROR')
@@ -881,8 +881,11 @@ export default {
     executionStatusHint,
     validationLabel, validationTagType,
     resetExpectationContext() {
+      this.exampleHint = ''
+      this.examplesVisible = false
+      this.exampleIndex = 0
       this.testCaseEditSession++
-      this.testCaseSaving = false
+      this.savingCaseMode = null
       this.testCaseLoading = false
       this.expectationJson = '{"version":1,"mode":"NONE","checks":[]}'
       this.expectedSnapshotJson = ''
@@ -919,9 +922,9 @@ export default {
       return stringifyExactJson(request)
     },
     async applyProjectContext(projectId) {
-      this.contextProjectId = Number(projectId)
+      this.contextProjectId = normalizeProjectId(projectId)
       this.ruleScope = 'PROJECT'
-      this.selectedProjectId = Number(projectId)
+      this.selectedProjectId = normalizeProjectId(projectId)
       await this.onProjectChange()
     },
     async loadRulesByScope() {
@@ -1180,13 +1183,27 @@ export default {
         if (!this.isActiveTestCaseRequest(requestId, ruleId)) return
         this.testCasesError = this.requestErrorMessage(
           e,
-          '固定测试用例加载失败，请重试'
+          '规则样例请求加载失败，请重试'
         )
       } finally {
         if (this.isActiveTestCaseRequest(requestId, ruleId)) {
           this.testCasesLoading = false
         }
       }
+    },
+    loadAcceptanceExample() {
+      if (!this.testContextReady || !this.acceptanceExamples) return
+      const [, input, expected] = this.acceptanceExamples[2][this.exampleIndex]
+      this.resetExecutionState()
+      this.loadedTestCase = null
+      this.loadedRequestJson = ''
+      this.loadedInputParamsJson = ''
+      this.replaceParamsFromValues(input)
+      this.updateInputJson(stringifyExactJson(input, 2))
+      this.expectationJson = '{"version":1,"mode":"SNAPSHOT"}'
+      this.expectedSnapshotJson = stringifyExactJson({ success: true, result: expected }, 2)
+      this.exampleHint = this.acceptanceExamples[1]
+      this.examplesVisible = false
     },
     async saveCurrentTestCase(mode = 'NEW') {
       if (!this.selectedRuleId || this.testCaseSaving || this.testCaseLoading) return
@@ -1212,13 +1229,13 @@ export default {
       const existing = mode === 'UPDATE' ? this.loadedTestCase : null
       const saveRequest = {
         scenarioName: existing?.scenarioName || '',
-        description: existing?.description || '规则测试页保存的固定测试用例',
+        description: existing?.description || this.exampleHint || '规则测试页保存的固定测试用例',
         requestJson, responseJson, expectationJson: config,
         responseSource: executedResponse && responseJson === this.lastRawResponseJson ? 'EXECUTED' : 'MANUAL',
         businessCodePath: existing?.businessCodePath || '', includeInDoc: existing?.includeInDoc || 0,
         sortOrder: existing?.sortOrder, status: existing?.status ?? 1,
       }
-      this.testCaseSaving = true
+      this.savingCaseMode = existing ? 'UPDATE' : 'NEW'
       try {
         if (!existing) {
           const promptResult = await this.$prompt('请输入固定用例名称', '收藏测试用例', {
@@ -1234,17 +1251,19 @@ export default {
         this.loadedRequestJson = requestJson
         this.loadedInputParamsJson = paramsJson
         await this.loadTestCases({ preserveSelection: true })
+        this.$refs.caseDirectory?.refresh()
         this.notifySuccess(existing ? '测试用例已更新' : '固定测试用例已收藏')
       } catch (error) {
         if (error && typeof error === 'object' && error.message) this.notifyWarning(error.message)
       } finally {
-        if (session === this.testCaseEditSession) this.testCaseSaving = false
+        if (session === this.testCaseEditSession) this.savingCaseMode = null
       }
     },
     async applyTestCase(testCase) {
       const ruleId = this.selectedRuleId
       const session = ++this.testCaseEditSession
-      this.testCaseSaving = false
+      this.savingCaseMode = null
+      this.exampleHint = ''
       const values = scenarioParams(testCase && testCase.requestJson)
       this.testCaseLoading = true
       this.expectationJson = testCase.expectationJson ?? null
@@ -1406,9 +1425,12 @@ export default {
         this.appendWarnings(warnings, schema.diagnostics)
         var schemaFields = schemaFieldsToTestFields(schema.inputs)
         // 与规则详情测试弹窗共用 Schema、字段转换和嵌套样例生成逻辑。
-        this.inputSampleJson = stringifyExactJson(Object.keys(schema.sampleParams).length
-          ? schema.sampleParams
-          : buildNestedSchemaParams(schemaFields, flattenSchemaSample(schemaFields, schema.sampleParams)), 2)
+        if (schema.savedDefault && !previousValues.size) {
+          this.replaceParamsFromValues(schema.sampleParams)
+          this.commitInputLoad(requestId,ruleId,this.params,'SCHEMA',warnings)
+          this.updateInputJson(stringifyExactJson(schema.sampleParams, 2))
+          return
+        }
         if (schemaFields.length > 0) {
           var schemaValues = flattenSchemaSample(
             schemaFields,
@@ -1460,7 +1482,7 @@ export default {
           )
           return
         }
-        if (source && source.sourceType !== 'WORKSPACE') {
+        if (schema.generatedExamples || source && source.sourceType !== 'WORKSPACE') {
           this.commitInputLoad(requestId, ruleId, manualParams, 'SCHEMA', warnings)
           return
         }
@@ -1487,9 +1509,6 @@ export default {
             warnings
           )
           if (!this.isActiveInputRequest(requestId, ruleId)) return
-          this.inputSampleJson = stringifyExactJson(this.buildFormParamMap(fallbackParams.map((param) => ({
-            ...param, value: this.sampleValueForInputField(fields.find(field => (field.scriptName || field.fieldName) === param.key), param.type),
-          }))), 2)
           this.commitInputLoad(
             requestId,
             ruleId,
@@ -1671,12 +1690,25 @@ export default {
         this.inputMode = mode
       } catch (error) { this.notifyWarning(error.message) }
     },
-    generateInputSample() {
-      if (this.inputSampleJson === null || ['LOADING', 'ERROR'].includes(this.inputLoadState)) return
-      const values = parseExactJson(this.inputSampleJson)
-      this.replaceParamsFromValues(values)
-      this.updateInputJson(stringifyExactJson(values, 2))
-      this.resetExecutionState()
+    async loadRequestSample() {
+      const ruleId = this.selectedRuleId
+      const inputRequest = this.inputLoadRequestId
+      if (this.testCasesError) await this.loadTestCases()
+      if (!this.isActiveInputRequest(inputRequest, ruleId) || this.activeTestTab !== 'test') return
+      if (this.testCasesError) { this.notifyError(this.testCasesError); return }
+      for (const sample of this.testCases) {
+        if (sample.status != null && Number(sample.status) !== 1) continue
+        let values
+        try { values = parseExactJson(sample.requestJson).params }
+        catch { continue }
+        if (!values || typeof values !== 'object' || Array.isArray(values) || isExactNumber(values)) continue
+        this.replaceParamsFromValues(values)
+        this.updateInputJson(stringifyExactJson(values, 2))
+        this.resetExecutionState()
+        this.notifySuccess('已载入样例：' + sample.scenarioName)
+        return
+      }
+      this.notifyInfo('当前规则暂无可用的样例请求')
     },
     async generateMock() {
       const source = this.selectedExecutionSource
@@ -1697,9 +1729,20 @@ export default {
       } catch (e) { this.notifyError(this.requestErrorMessage(e, '测试输入生成失败')) }
       finally { this.generatingMock = false }
     },
+    openCaseTools() {
+      this.caseToolsVisible = true
+      if (!this.batchExecuting && !this.testCaseSaving) this.loadTestCases({ preserveSelection: true })
+    },
     async onWorkspaceTabChange(tab) {
-      if (tab !== 'test' || !this.selectedRuleId) return
+      this.caseToolsVisible = false
+      if (tab !== 'test' || !this.selectedRuleId || this.batchExecuting) return
       await this.loadTestCases({ preserveSelection: true })
+    },
+    syncCatalogDefault(row,json) {
+      if (row.type !== 'RULE' || String(this.selectedRuleId) !== String(row.ownerId)) return
+      this.replaceParamsFromValues(parseExactJson(json))
+      this.updateInputJson(json)
+      this.resetExecutionState()
     },
     async openCatalogCase(row) {
       const { data: rule } = await getDefinition(row.ownerId)
@@ -1710,7 +1753,7 @@ export default {
       this.rules = [rule]
       this.activeTestTab = 'test'
       await this.onRuleChange()
-      if (String(this.selectedRuleId) !== String(rule.id)) return
+      if (String(this.selectedRuleId) !== String(rule.id) || row.source === 'DEFAULT') return
       const saved = this.testCases.find(item => String(item.id) === String(row.id))
       if (saved) await this.applyTestCase(saved)
       else this.notifyWarning('用例加载失败，请刷新用例列表')
@@ -1788,7 +1831,6 @@ export default {
     resetInputLoadState() {
       this.applyTestDesign(null)
       this.testRuntimeNodes = []
-      this.inputSampleJson = null
       this.inputExecutionIdentity = null
       ++this.inputLoadRequestId
       this.inputLoadState = 'IDLE'
@@ -2052,6 +2094,14 @@ export default {
   justify-content: space-between;
   margin-bottom: 12px;
 }
+.input-parameters-title { justify-content: space-between; }
+.input-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.input-actions .el-button { margin: 0; max-width: 100%; height: auto; min-height: var(--el-component-size-small); white-space: normal; }
+.input-actions .el-button :deep(span) { overflow-wrap: anywhere; }
+.rule-info summary { cursor: pointer; font-size: 12px; color: var(--tianshu-text-secondary); }
+.rule-info[open] summary { margin-bottom: 8px; }
+.input-panel-loading { display: grid; min-height: 96px; place-items: center; }
+.result-loading { display: grid; flex: 1; min-height: 160px; place-items: center; }
 .input-json-editor {
   margin-top: 12px;
 }
@@ -2078,47 +2128,31 @@ export default {
   }
 }
 .test-timeout-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-end: auto;
   color: var(--tianshu-text-secondary);
 }
 .test-timeout-unit {
   color: var(--tianshu-text-tertiary);
 }
 .test-timeout-input {
-  width: 150px;
-}
-.fixed-cases-card {
-  margin-top: 12px;
-}
-.fixed-cases-card.is-empty {
-  padding-bottom: 8px;
+  width: 108px;
 }
 .fixed-case-empty {
   color: var(--tianshu-text-tertiary);
   font-size: 12px;
   line-height: 20px;
 }
-.fixed-cases-title {
+.case-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-
-  > span:first-child {
-    flex-shrink: 0;
-    white-space: nowrap;
-  }
-
-  > span:last-child {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 4px 8px;
-
-    .el-button + .el-button {
-      margin-left: 0;
-    }
-  }
+  gap: 8px;
 }
+.case-actions .el-button { margin: 0; }
+.batch-actions { margin-top: 12px; color: var(--tianshu-text-secondary); font-size: 12px; }
 .case-state {
   padding: 12px 0;
   color: var(--tianshu-text-tertiary);
@@ -2230,8 +2264,7 @@ export default {
 .rule-info {
   margin-top: 12px;
 }
-.test-setup-state,
-.input-load-state {
+.test-setup-state {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2243,18 +2276,14 @@ export default {
   background: var(--tianshu-bg-soft);
 }
 .test-setup-state strong,
-.test-setup-state span,
-.input-load-state strong,
-.input-load-state span {
+.test-setup-state span {
   display: block;
 }
-.test-setup-state strong,
-.input-load-state strong {
+.test-setup-state strong {
   color: var(--tianshu-text-primary);
   font-size: 12px;
 }
-.test-setup-state span,
-.input-load-state span {
+.test-setup-state span {
   margin-top: 3px;
   color: var(--tianshu-text-tertiary);
   font-size: 11px;
@@ -2266,20 +2295,23 @@ export default {
   background: var(--tianshu-danger-bg);
 }
 .test-setup-state.is-error strong,
-.input-load-state.is-error strong {
+.input-load-state.is-error :deep(.guidance-heading) {
   color: var(--tianshu-danger-text);
 }
 .input-load-state.is-ready {
   border-color: var(--tianshu-success-border);
   background: var(--tianshu-success-bg);
 }
-.input-load-state.is-ready strong {
+.input-load-state.is-ready :deep(.guidance-heading) {
   color: var(--tianshu-success-text);
 }
 .input-load-state.is-loading {
   border-color: var(--tianshu-info-border);
   background: var(--tianshu-info-bg);
 }
+.input-load-state, .input-load-warnings + .el-form { margin-block-start: 12px; }
+.input-load-state { margin-bottom: 12px; }
+
 .input-load-warnings,
 .context-load-warnings {
   margin: 8px 0 0;
@@ -2296,15 +2328,18 @@ export default {
   margin-bottom: 8px;
 }
 .param-key {
-  flex: 0 0 140px;
+  flex: 0 1 140px;
+  min-width: 0;
   margin-right: 8px;
 }
 .param-label {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  max-width: 32%;
+  overflow-wrap: anywhere;
   color: var(--tianshu-text-tertiary);
   font-size: 12px;
   margin-right: 8px;
-  white-space: nowrap;
+  white-space: normal;
 }
 .param-value {
   flex: 1;

@@ -11,6 +11,24 @@ import static org.junit.Assert.*;
 import com.hengshucredit.rule.server.mapper.TransferProjectResourceMapper;
 
 public class OfflineResourceTransferServiceTest {
+    @Test public void scanReadinessOnlyAppliesToSelectedModelWrites() {
+        var model = new TransferBundle.Resource("MODEL:1", Map.of("modelCode", "creditModel"), List.of(), List.of());
+        var variable = new TransferBundle.Resource("VARIABLE:1", Map.of("varCode", "score"), List.of(), List.of());
+        var bundle = new TransferBundle(List.of(model.key(), variable.key()), List.of(model, variable), List.of());
+        var decoded = new TransferBundleCodec.Decoded(bundle, "test-digest", Map.of(), Map.of());
+        var service = service();
+        var scanner = new com.hengshucredit.rule.server.upload.UploadSecurity(new com.hengshucredit.rule.server.upload.UploadScanProperties());
+        try {
+            var files = new com.hengshucredit.rule.server.service.ModelFileStore(".", 1024, 0, scanner);
+            ReflectionTestUtils.setField(service, "modelFiles", files);
+            var all = new TransferImportOptions(null, "PROJECT", "REUSE", "REUSE", "", true, "new", null, Map.of());
+            assertTrue(service.preview(decoded, all).get("modelScanIssue").toString().contains("UPLOAD_ANTIVIRUS_HOST"));
+            var variablesOnly = new TransferImportOptions(null, "PROJECT", "REUSE", "REUSE", "", true, "new", null,
+                    Map.of(), false, List.of(variable.key()), Map.of(), Map.of(), Map.of());
+            assertFalse(service.preview(decoded, variablesOnly).containsKey("modelScanIssue"));
+        } finally { scanner.close(); }
+    }
+
     @Test public void latestExportUsesProductionSnapshotEvenWhenCompatibilityProjectionContainsAnotherDraft() {
         var adapter = new StubAdapter("RULE", Map.of("id", 9, "ruleCode", "draft"), List.of());
         var service = service(adapter);
@@ -164,7 +182,7 @@ public class OfflineResourceTransferServiceTest {
         return service;
     }
 
-    private static class StubAdapter implements GovernedResourceAdapter {
+    static class StubAdapter implements GovernedResourceAdapter {
         final String type;
         final Map<String, Object> config;
         final List<ResourceDependencyRef> dependencies;

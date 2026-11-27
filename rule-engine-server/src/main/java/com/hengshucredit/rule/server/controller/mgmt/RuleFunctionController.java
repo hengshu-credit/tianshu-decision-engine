@@ -38,6 +38,25 @@ public class RuleFunctionController {
 
     @Resource
     private FunctionMethodCatalogService methodCatalogService;
+    @Resource
+    private com.hengshucredit.rule.server.security.ConsoleProjectAccess projectAccess;
+
+    public record ScriptTestRequest(RuleFunction function, Map<String, Object> params) {}
+
+    @PostMapping("/script-test")
+    @RequirePermission("function:edit")
+    public ApiResponse<Map<String, Object>> testScript(@RequestBody ScriptTestRequest request) {
+        RuleFunction function = request.function();
+        if (function == null || !"SCRIPT".equals(function.getImplType())) throw new IllegalArgumentException("请选择脚本函数");
+        boolean global = "GLOBAL".equals(function.getScope());
+        if (!global && (!"PROJECT".equals(function.getScope()) || function.getProjectId() == null || function.getProjectId() <= 0))
+            throw new IllegalArgumentException("请选择函数所属项目");
+        Long project = global ? 0L : function.getProjectId();
+        if (global) projectAccess.requireGlobalEditable();
+        else projectAccess.requireProject(project);
+        projectAccess.requirePermission("function:edit", project);
+        return functionTestResponse(functionService.testScript(function, request.params()));
+    }
 
     @PostMapping("/methods")
     @RequirePermission("function:view")
@@ -141,12 +160,16 @@ public class RuleFunctionController {
                                             @RequestBody(required = false) Map<String, Object> params) {
         try {
             Map<String, Object> result = functionService.testFunction(id, params);
-            return Boolean.FALSE.equals(result.get("success"))
-                    ? ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.FUNCTION_EXECUTION_ERROR,
-                            (String) result.get("errorMessage"), result) : ApiResponse.ok(result);
+            return functionTestResponse(result);
         } catch (IllegalArgumentException e) {
             return ApiResponse.fail(e);
         }
+    }
+
+    private ApiResponse<Map<String, Object>> functionTestResponse(Map<String, Object> result) {
+        return Boolean.FALSE.equals(result.get("success"))
+                ? ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.FUNCTION_EXECUTION_ERROR,
+                        (String) result.get("errorMessage"), result) : ApiResponse.ok(result);
     }
 
     /** 推送函数新增/更新消息 */

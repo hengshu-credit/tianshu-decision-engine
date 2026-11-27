@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.hengshucredit.rule.server.search.LogSearchDelivery;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.hengshucredit.rule.model.ApiResponse;
 
 import com.hengshucredit.rule.server.service.DecisionExecutionPersistence;
@@ -55,6 +57,8 @@ public class ExecutionMetricsController {
     private RuleExecutionPersistenceOutboxService executionPersistenceOutboxService;
     @Resource
     private LogRetentionService logRetentionService;
+    @Autowired(required = false)
+    private LogSearchDelivery searchDelivery;
     @Value("${RULE_ENGINE_INSTANCE_ID:}")
     private String configuredInstanceId;
 
@@ -77,6 +81,8 @@ public class ExecutionMetricsController {
         if (onnxWarmupStatus != null) result.put("onnxWarmup", consoleProjects.globalStatusSummary(onnxWarmupStatus.details(), "model:view"));
         result.put("publishOutbox", rulePublishOutboxService.snapshot());
         result.put("executionPersistenceOutbox", executionPersistenceOutboxService.snapshot());
+        if (searchDelivery != null) result.put("logSearch",consoleProjects == null ? searchDelivery.metrics()
+                : consoleProjects.globalStatusSummary(searchDelivery.metrics(),"log:view"));
         result.put("logRetention", logRetentionService == null ? java.util.Collections.emptyMap()
                 : logRetentionService.snapshot());
         return ApiResponse.ok(result);

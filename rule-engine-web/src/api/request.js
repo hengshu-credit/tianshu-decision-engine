@@ -25,7 +25,8 @@ function showRequestError(message, error) {
   }
   if (recentRequestErrors.has(text)) return
   recentRequestErrors.set(text, now)
-  ElMessage.error(text)
+  if (error?.response?.data?.data?.errorCode === 'GOVERNANCE_NO_CHANGES') ElMessage.info(error.response.data.detail || text)
+  else ElMessage.error(text)
 }
 
 const service = axios.create({

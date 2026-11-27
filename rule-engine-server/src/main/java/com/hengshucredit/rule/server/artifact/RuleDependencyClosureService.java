@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.artifact;
 
+import com.hengshucredit.rule.server.service.DataObjectScriptPath;
 import com.hengshucredit.rule.server.service.ModelFileStore;
 
 import com.alibaba.fastjson.JSON;
@@ -538,8 +539,9 @@ public class RuleDependencyClosureService {
                 }
             }
         } else if ("SFTP".equals(source)) {
-            addExternalBinding(variable, actualType, "SFTP", config.getLong("sftpDatasourceId"),
-                    path, dependencies, issues);
+            if (!Boolean.TRUE.equals(config.get("engineSftp"))) {
+                addExternalBinding(variable, actualType, "SFTP", config.getLong("sftpDatasourceId"), path, dependencies, issues);
+            }
             collectStructuredReferences(JSON.toJSONString(config.get("remotePath")), variable.getProjectId(),
                     dependencies, issues, new LinkedHashSet<>(), new LinkedHashSet<>());
         } else if ("LIST".equals(source)) {
@@ -728,7 +730,8 @@ public class RuleDependencyClosureService {
             if (snapshot.get("unavailableReasons") instanceof List<?> reasons && !reasons.isEmpty()) {
                 throw new IllegalArgumentException("模型版本依赖未完整冻结: " + reasons);
             }
-            var decoded = new DecisionArtifactPackageCodec().decode(ModelFileStore.snapshotBytes(modelFiles, snapshot));
+            var codec = new DecisionArtifactPackageCodec();
+            var decoded = codec.decodeCatalog(ModelFileStore.snapshotBytes(modelFiles, snapshot));
             if (!decoded.getArtifactDigest().equals(snapshot.get("artifactDigest"))
                     || !decoded.getPackageDigest().equals(snapshot.get("packageDigest"))) {
                 throw new IllegalArgumentException("模型版本制品摘要不匹配");
@@ -747,8 +750,12 @@ public class RuleDependencyClosureService {
                         throw new IllegalArgumentException("同一模型依赖出现不同版本: " + id);
                     }
                 }
-                ArtifactDependency frozen = new ArtifactDependency(key, type, id, number, component.getPath(), component.getMediaType(),
-                        String.valueOf(metadata.get("embeddingMode")), Sha256Digests.bytes(component.getContent()), component.getContent(), metadata);
+                ArtifactDependency frozen = ArtifactDependency.frozen(key, type, id, number,
+                        String.valueOf(metadata.get("embeddingMode")), component, metadata,
+                        "MODEL".equals(type) ? () -> codec.readVerifiedModel(ModelFileStore.snapshotBytes(modelFiles, snapshot), component)
+                                : component::immutableContent,
+                        "MODEL".equals(type) ? sink -> codec.writeVerifiedModel(ModelFileStore.snapshotBytes(modelFiles, snapshot), component, sink)
+                                : null);
                 mergeDependency(frozen, dependencies);
             }
         } catch (RuntimeException error) {
@@ -936,11 +943,7 @@ public class RuleDependencyClosureService {
         snapshot.put("objectCode", owner == null ? null : owner.getObjectCode());
         String objectPath = owner == null ? null : owner.getScriptName();
         if (owner != null && (objectPath == null || objectPath.isBlank())) objectPath = owner.getObjectCode();
-        String fieldPath = field.getScriptName();
-        if (fieldPath == null || fieldPath.isBlank()) fieldPath = field.getVarCode();
-        if (objectPath != null && fieldPath != null && !fieldPath.equals(objectPath) && !fieldPath.startsWith(objectPath + ".")) {
-            fieldPath = objectPath + "." + fieldPath;
-        }
+        String fieldPath = DataObjectScriptPath.resolve(objectPath, field, this::loadDataObjectField);
         snapshot.put("referencePath", fieldPath);
         if (!addJsonDependency("DATA_OBJECT:" + fieldId, "DATA_OBJECT", fieldId, null,
                 "data-object-fields/" + fieldId + ".json", "EMBEDDED", snapshot, dependencies)) return;

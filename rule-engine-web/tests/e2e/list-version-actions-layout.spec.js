@@ -121,7 +121,7 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     await expect(preview).toContainText('允许申请')
     const rulesSection = preview.locator('[data-section="rule:rules"]')
     await rulesSection.locator('.section-toggle').click()
-    await expect(rulesSection.locator('.business-preview-card')).toHaveCount(0)
+    await expect(rulesSection.locator('.business-preview-card')).toBeHidden()
     await preview.locator('.preview-jump').click()
     await page.getByRole('option', { name: '规则', exact: true }).click()
     await expect(rulesSection.locator('.business-preview-card')).toBeVisible()

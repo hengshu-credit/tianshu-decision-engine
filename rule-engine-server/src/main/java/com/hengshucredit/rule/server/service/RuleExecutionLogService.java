@@ -1,5 +1,11 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.server.search.ElasticLogClient.Ref;
+import com.hengshucredit.rule.server.search.LogSearchPages;
+import java.io.Serializable;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.transaction.annotation.Isolation;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -35,6 +41,9 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
     @Resource
     private RuleSetStatisticsStore statisticsStore;
     @Resource private HistoryFieldIndex historyIndex;
+    @Autowired(required = false)
+    private LogSearchPages searchPages;
+    @Value("${rule-engine.search.enabled:false}") private boolean deferStatistics;
 
     public void applyPublishedAttribution(RuleExecutionLog log, String authenticatedProjectCode) {
         if (log == null || !hasText(log.getRuleCode())) return;
@@ -52,7 +61,11 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
      */
     @Transactional
     public void saveLogical(RuleExecutionLog log) {
-        if (log != null) {
+        if (log != null && deferStatistics) {
+            log.setRuleSetStatsJson(null);
+            log.setRuleSetStatsStatus(null);
+            log.setRuleSetStatsVersion(null);
+        } else if (log != null) {
             RuleSetTraceSummary summary = RuleSetTraceSummary.fromTrace(log.getTraceInfo());
             log.setRuleSetStatsJson(summary.json());
             log.setRuleSetStatsStatus(summary.status());
@@ -115,6 +128,9 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
                 .eq(RuleExecutionLog::getCreateTime, existing.getCreateTime())
                 .eq(RuleExecutionLog::getTraceId, log.getTraceId())
                 .apply("COALESCE(attempt_no, 1) <= {0}", attempt(log))
+                .setSql("es_revision=es_revision+1,es_due_at=CURRENT_TIMESTAMP(6),es_attempts=0,es_trace_archive=NULL")
+                .set(deferStatistics,RuleExecutionLog::getRuleSetStatsVersion,null)
+                .set(deferStatistics,RuleExecutionLog::getRuleSetStatsStatus,null)
                 .set(log.getHistoryFields() == null, RuleExecutionLog::getHistoryFields, null)
                 .set(log.getOutputResult() == null, RuleExecutionLog::getOutputResult, null)
                 .set(log.getTraceInfo() == null, RuleExecutionLog::getTraceInfo, null)
@@ -124,12 +140,13 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
             if (current != null && attempt(current) > attempt(log)) return;
             throw new IllegalStateException("执行日志更新未生效");
         }
-        persistStatistics(log);
+        if (deferStatistics && statisticsStore != null) statisticsStore.invalidate(existing.getId(),existing.getCreateTime());
+        else persistStatistics(log);
         if (historyIndex != null) historyIndex.replace(existing, log);
     }
 
     private void persistStatistics(RuleExecutionLog log) {
-        if (statisticsStore != null) statisticsStore.persist(log.getId(), log.getCreateTime(), log.getRuleSetStatsJson(), log.getRuleSetStatsStatus());
+        if (!deferStatistics && statisticsStore != null) statisticsStore.persist(log.getId(), log.getCreateTime(), log.getRuleSetStatsJson(), log.getRuleSetStatsStatus());
     }
 
     private static int attempt(RuleExecutionLog log) {
@@ -185,11 +202,23 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
                 authType, authCode, tokenCode, startTime, endTime, versionQuery, null);
     }
 
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public IPage<RuleExecutionLog> pageList(int pageNum, int pageSize, String modelType, String source,
                                             String projectCode, String projectName, String ruleCode,
                                             String traceId, String authType, String authCode, String tokenCode,
                                             LocalDateTime startTime, LocalDateTime endTime,
                                             com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery, Long projectId) {
+        return pageList(pageNum,pageSize,modelType,source,projectCode,projectName,ruleCode,traceId,authType,authCode,
+                tokenCode,startTime,endTime,versionQuery,projectId,false);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public IPage<RuleExecutionLog> pageList(int pageNum, int pageSize, String modelType, String source,
+                                            String projectCode, String projectName, String ruleCode,
+                                            String traceId, String authType, String authCode, String tokenCode,
+                                            LocalDateTime startTime, LocalDateTime endTime,
+                                            com.hengshucredit.rule.model.dto.ExecutionVersionQuery versionQuery,
+                                            Long projectId, boolean summaryOnly) {
         ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(null, projectName);
         if (projectMatches.isActive() && projectMatches.isEmpty()) {
             return new Page<>(pageNum, pageSize);
@@ -215,8 +244,31 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
         if (hasText(tokenCode)) wrapper.like(RuleExecutionLog::getTokenCode, tokenCode);
         if (startTime != null) wrapper.ge(RuleExecutionLog::getCreateTime, startTime);
         if (endTime != null) wrapper.le(RuleExecutionLog::getCreateTime, endTime);
-        wrapper.orderByDesc(RuleExecutionLog::getCreateTime);
+        wrapper.orderByDesc(RuleExecutionLog::getCreateTime,RuleExecutionLog::getId);
+        if (summaryOnly) return baseMapper.selectSummaryPage(new Page<>(pageNum,pageSize),wrapper);
+        if (searchPages != null) return searchPages.executions(() -> baseMapper.selectSearchPage(new Page<>(pageNum,pageSize),wrapper));
         return baseMapper.selectLogicalPage(new Page<>(pageNum, pageSize), wrapper);
+    }
+
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public RuleExecutionLog getById(Serializable id) {
+        if (searchPages != null) {
+            var ref = baseMapper.selectAuditIdentity(id);
+            if (ref == null) return null;
+            return searchPages.executions(() -> new Page<Ref>(1,1,1)
+                    .setRecords(List.of(ref))).getRecords().get(0);
+        }
+        return baseMapper.selectAuditLogById(id);
+    }
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public RuleExecutionLog detail(long id, LocalDateTime createTime) {
+        var wrapper = new LambdaQueryWrapper<RuleExecutionLog>().eq(RuleExecutionLog::getId,id)
+                .eq(RuleExecutionLog::getCreateTime,createTime);
+        var page = searchPages == null ? baseMapper.selectLogicalPage(new Page<>(1,1,false),wrapper)
+                : searchPages.executions(() -> baseMapper.selectSearchPage(new Page<>(1,1,false),wrapper));
+        return page.getRecords().isEmpty() ? null : page.getRecords().get(0);
     }
 
     @Resource

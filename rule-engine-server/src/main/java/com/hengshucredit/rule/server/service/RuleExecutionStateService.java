@@ -19,6 +19,50 @@ public class RuleExecutionStateService {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
+    /**
+     * Old completed snapshots may omit nulls or contain serializer references. Only the matching
+     * successful physical audit revision can supply the original business output.
+     */
+    public com.alibaba.fastjson.JSONObject publicResult(State state) {
+        var stored =
+                JSON.parseObject(
+                        state.resultJson(),
+                        com.alibaba.fastjson.parser.Feature.DisableSpecialKeyDetect);
+        stored.remove("experimentResolvedParams");
+        if (Integer.valueOf(2).equals(stored.remove("snapshotVersion"))
+                || jdbcTemplate == null
+                || !"SUCCEEDED".equals(state.status())) return stored;
+        var outputs =
+                jdbcTemplate.queryForList(
+                        "SELECT output_result FROM rule_execution_log_current WHERE trace_id=? "
+                                + "AND success=1 AND execution_project_id <=> ? AND root_rule_id=? AND COALESCE(attempt_no,1)=? "
+                                + "AND revision_id <=> ? AND artifact_digest <=> ? AND output_result IS NOT NULL",
+                        String.class,
+                        state.rootTraceId(),
+                        state.projectId(),
+                        state.definitionId(),
+                        state.attemptNo(),
+                        state.currentRevisionId(),
+                        state.artifactDigest());
+        if (outputs.size() == 1)
+            stored.put(
+                    "result",
+                    JSON.parse(
+                            outputs.get(0),
+                            com.alibaba.fastjson.parser.Feature.DisableSpecialKeyDetect));
+        return stored;
+    }
+
+    public com.hengshucredit.rule.model.dto.RuleResult completedResult(State state) {
+        var snapshot = publicResult(state);
+        var result = snapshot.toJavaObject(com.hengshucredit.rule.model.dto.RuleResult.class);
+        // FastJSON's bean coercion round-trips Object properties without null map values.
+        // Keep the business subtree exactly as it will be returned by the /result endpoint.
+        result.setResult(snapshot.get("result"));
+        if (snapshot.get("traces") instanceof java.util.List<?> traces) result.setTraces(new java.util.ArrayList<>(traces));
+        return result;
+    }
+
     public State find(Long projectId, Long definitionId, String keyHash) {
         List<State> rows = jdbcTemplate.query(
                 "SELECT id, project_id, definition_id, rule_code, idempotency_key_hash, request_digest, "

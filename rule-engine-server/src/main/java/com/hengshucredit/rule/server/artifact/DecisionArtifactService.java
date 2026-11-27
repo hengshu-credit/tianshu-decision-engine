@@ -59,6 +59,12 @@ public class DecisionArtifactService {
     @Transactional
     public DecisionArtifact buildApprovedArtifact(Long revisionId, String actor,
             RulePreflightValidationService.Analysis prepared) {
+        return buildApprovedArtifact(revisionId, actor, prepared, true);
+    }
+
+    @Transactional
+    public DecisionArtifact buildApprovedArtifact(Long revisionId, String actor,
+            RulePreflightValidationService.Analysis prepared, boolean returnPackageBytes) {
         RuleRevision revision = loadRevision(revisionId);
         if (revision == null) throw new IllegalArgumentException("规则修订不存在");
         if (!"REVIEW".equals(revision.getState()) && !"APPROVED".equals(revision.getState())) {
@@ -139,15 +145,15 @@ public class DecisionArtifactService {
             if ("EXPLICIT_BINDING".equals(dependency.getEmbeddingMode())) {
                 portableMetadata.putAll(CanonicalJson.readMap(dependency.getContent()));
             }
-            artifactPackage.addComponent(dependency.getComponentPath(), dependency.getMediaType(),
-                    dependency.getContent(), portableMetadata);
+            dependency.addTo(artifactPackage, portableMetadata);
         }
 
-        byte[] packageContent = codec.encode(artifactPackage);
-        DecisionArtifactPackageCodec.DecodedPackage decoded = codec.decode(packageContent);
-        DecisionArtifact existing = findByDigest(decoded.getArtifactDigest());
+        var encoded = codec.encodePackage(artifactPackage, true, returnPackageBytes ? null : modelFiles);
+        byte[] packageContent = encoded.bytes();
+        String packageDigest = encoded.packageDigest();
+        DecisionArtifact existing = findByDigest(encoded.artifactDigest());
         if (existing != null) {
-            if (!decoded.getPackageDigest().equals(existing.getPackageDigest())) {
+            if (!packageDigest.equals(existing.getPackageDigest())) {
                 throw new IllegalStateException("相同制品摘要对应不同包内容");
             }
             return existing;
@@ -156,18 +162,18 @@ public class DecisionArtifactService {
         DecisionArtifact artifact = new DecisionArtifact();
         artifact.setDefinitionId(revision.getDefinitionId());
         artifact.setRevisionId(revisionId);
-        artifact.setArtifactDigest(decoded.getArtifactDigest());
-        artifact.setPackageDigest(decoded.getPackageDigest());
+        artifact.setArtifactDigest(encoded.artifactDigest());
+        artifact.setPackageDigest(packageDigest);
         artifact.setFormatVersion(DecisionArtifactPackage.FORMAT_VERSION);
-        artifact.setManifestJson(buildManifestJson(artifactPackage, decoded.getArtifactDigest()));
+        artifact.setManifestJson(buildManifestJson(artifactPackage, encoded.artifactDigest()));
         artifact.setValidationReportJson(CanonicalJson.write(validation));
         artifact.setRuntimeConstraintsJson(runtimeConstraints(closure.getDependencies()));
-        artifact.setPackageContent(modelFiles == null ? packageContent : modelFiles.artifactContent(artifactPackage, packageContent));
-        artifact.setPackageSize((long) packageContent.length);
+        artifact.setPackageContent(encoded.stored() || modelFiles == null ? packageContent : modelFiles.artifactContent(artifactPackage, packageContent));
+        artifact.setPackageSize(encoded.size());
         artifact.setCreateBy(actor);
         artifact.setCreateTime(LocalDateTime.now());
         insertArtifact(artifact);
-        artifact.setPackageContent(packageContent);
+        if (returnPackageBytes) artifact.setPackageContent(packageContent);
 
         Map<String, ArtifactDependency> byPath = new HashMap<>();
         for (ArtifactDependency dependency : closure.getDependencies()) {
@@ -185,8 +191,8 @@ public class DecisionArtifactService {
             record.setSourceVersion(dependency == null ? revision.getRevisionNo() : dependency.getVersion());
             record.setPackagePath(component.getPath());
             record.setMediaType(component.getMediaType());
-            record.setContentDigest(Sha256Digests.bytes(component.getContent()));
-            record.setContentSize((long) component.getContent().length);
+            record.setContentDigest(component.digest());
+            record.setContentSize((long) component.size());
             record.setMetadataJson(dependency == null ? null : CanonicalJson.write(dependency.getMetadata()));
             record.setCreateTime(LocalDateTime.now());
             insertComponent(record);
@@ -258,8 +264,8 @@ public class DecisionArtifactService {
                 .map(component -> Map.<String, Object>of(
                         "path", component.getPath(),
                         "mediaType", component.getMediaType(),
-                        "size", component.getContent().length,
-                        "digest", Sha256Digests.bytes(component.getContent())))
+                        "size", component.size(),
+                        "digest", component.digest()))
                 .toList();
         Map<String, Object> manifest = new LinkedHashMap<>();
         manifest.put("formatVersion", DecisionArtifactPackage.FORMAT_VERSION);

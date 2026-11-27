@@ -180,7 +180,7 @@ public class RuleSyncController {
         String acceptedTrace = idempotency.getRootTraceId();
         try {
             if (executionQueue != null) {
-                admitted = executionQueue.enter();
+                admitted = executionQueue.enter(auth);
                 if (!admitted) return acceptedTrace == null ? ApiResponse.fail(PlatformCode.CAPACITY_EXCEEDED,null)
                         : executionQueue.defer(false, acceptedTrace);
                 permit = executionQueue.permit(auth);
@@ -204,7 +204,7 @@ public class RuleSyncController {
             throw error;
         } finally {
             if (permit != null) permit.close();
-            if (admitted) executionQueue.leave();
+            if (admitted) executionQueue.leave(auth);
         }
     }
 

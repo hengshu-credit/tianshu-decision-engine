@@ -132,6 +132,22 @@ public class OfflineResourceTransferController {
         }
     }
 
+    @Resource private com.hengshucredit.rule.server.transfer.TransferProjectSetService projectSets;
+
+    @PostMapping(value = "/project-set/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequirePermission("transfer:import")
+    public ApiResponse<com.hengshucredit.rule.server.transfer.TransferProjectSetService.Result> previewSet(
+            @RequestPart("file") MultipartFile file) {
+        return ApiResponse.ok(projectSets.preview(file));
+    }
+
+    @PostMapping(value = "/project-set/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequirePermission("transfer:import")
+    public ApiResponse<com.hengshucredit.rule.server.transfer.TransferProjectSetService.Result> importSet(
+            @RequestPart("file") MultipartFile file, @RequestPart("digest") String digest) {
+        return ApiResponse.ok(projectSets.apply(file, digest, operatorResolver.resolve()));
+    }
+
     @GetMapping("/resource-fields")
     @RequirePermission("transfer:view")
     public ApiResponse<List<Map<String, Object>>> resourceFields(@RequestParam String resourceType,
@@ -177,8 +193,11 @@ public class OfflineResourceTransferController {
     public ApiResponse<com.baomidou.mybatisplus.core.metadata.IPage<OfflineTransferLog>> logs(
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "20") int pageSize,
-            @RequestParam(required = false) String operationType) {
-        return ApiResponse.ok(logService.page(pageNum, pageSize, operationType));
+            @RequestParam(required = false) String operationType,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "false") boolean summaryOnly) {
+        return ApiResponse.ok(logService.page(pageNum, pageSize, operationType, status, keyword, summaryOnly));
     }
 
     @GetMapping("/logs/{id}")

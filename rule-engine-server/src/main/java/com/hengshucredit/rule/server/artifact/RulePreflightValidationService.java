@@ -341,7 +341,7 @@ public class RulePreflightValidationService {
 
     protected RuleFieldAnalyzer.ResolvedFields resolveFields(
             RuleDefinition definition, RuleRevision revision) {
-        return ruleFieldAnalyzer.resolveFields(null, revision.getModelJson(),
+        return ruleFieldAnalyzer.resolveFields(definition.getId(), revision.getModelJson(),
                 definition.getModelType(), definition.getProjectId());
     }
 

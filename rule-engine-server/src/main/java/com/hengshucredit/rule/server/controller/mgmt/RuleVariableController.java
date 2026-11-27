@@ -105,6 +105,15 @@ public class RuleVariableController {
         return ApiResponse.ok(result);
     }
 
+    @PostMapping("/import/inputs/json")
+    @RequirePermission("approval:submit")
+    public ApiResponse<Map<String, Object>> importInputsJson(@RequestBody Map<String, String> body) {
+        String id = body.get("projectId");
+        return ApiResponse.ok(governanceBatchImportService.importInputVariablesFromJson(
+                id == null || id.isEmpty() ? null : Long.valueOf(id), body.getOrDefault("scope", "PROJECT"),
+                body.get("jsonContent"), operatorResolver.resolve()));
+    }
+
     /** 从扁平 JSON 批量生成常量生命周期审批草稿。 */
     @PostMapping("/import/constants/json")
     @RequirePermission("approval:submit")
@@ -269,6 +278,6 @@ public class RuleVariableController {
     @com.hengshucredit.rule.server.security.RequirePermission("field:view")
     public ApiResponse<java.util.List<Map<String,Object>>> testCases(@PathVariable Long id) {
         if (variableService.getById(id) == null) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "测试资源不存在");
-        return ApiResponse.ok(testCaseJdbc.queryForList("SELECT context_definition_id AS contextDefinitionId, case_code AS code, case_name AS name, params_json AS paramsJson, expected_json AS expectedJson FROM rule_variable_test_case WHERE variable_id=? ORDER BY id", id));
+        return ApiResponse.ok(testCaseJdbc.queryForList("SELECT CAST(id AS CHAR) AS id, context_definition_id AS contextDefinitionId, case_code AS code, case_name AS name, params_json AS paramsJson, expected_json AS expectedJson FROM rule_variable_test_case WHERE variable_id=? ORDER BY id", id));
     }
 }

@@ -14,10 +14,20 @@ export default function configurationDialogsMixin(dialogs) {
         this.configurationBaseline = JSON.stringify(baseline)
         this.configurationLeaveApproved = false
       },
-      async closeConfigurationDialog(visible, done) {
+      configurationDialogChanged(visible) {
+        if (this.configurationBaseline == null) return true
         const current = JSON.parse(this.configurationFingerprint)
-        const baseline = this.configurationBaseline == null ? current : JSON.parse(this.configurationBaseline)
-        const changed = JSON.stringify(current[visible]) !== JSON.stringify(baseline[visible])
+        const baseline = JSON.parse(this.configurationBaseline)
+        return JSON.stringify(current[visible]) !== JSON.stringify(baseline[visible])
+      },
+      finishUnchangedEdit(visible, existingId) {
+        if (!existingId || !this[visible] || this.configurationDialogChanged(visible)) return false
+        this.$message.info('配置未修改，无需保存')
+        this[visible] = false
+        return true
+      },
+      async closeConfigurationDialog(visible, done) {
+        const changed = this.configurationDialogChanged(visible)
         if (!dialogs.some(dialog => dialog.visible === visible) || !(await this.confirmConfigurationLeave(changed))) return
         this[visible] = false
         if (typeof done === 'function') done()

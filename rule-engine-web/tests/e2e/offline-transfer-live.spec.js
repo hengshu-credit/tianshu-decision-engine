@@ -1,5 +1,21 @@
 const { expect, test } = require('@playwright/test')
 
+async function nextTransferResult(page, operation, expectedStatus = 'SUCCESS') {
+  const submitted = await page.waitForRequest(request =>
+    new URL(request.url()).pathname === '/api/rule/transfer/tasks' && request.postDataJSON().operation === operation)
+  const { taskId } = submitted.postDataJSON()
+  const finished = await page.waitForResponse(async response => {
+    if (new URL(response.url()).pathname !== '/api/rule/transfer/tasks/' + taskId) return false
+    return ['SUCCESS', 'FAILED'].includes((await response.json()).data?.status)
+  })
+  const ticket = await (await submitted.response()).json()
+  expect(ticket.success, ticket.detail).toBe(true)
+  expect(ticket.data).toBe(taskId)
+  const task = (await finished.json()).data
+  expect(task.status, task.result?.message).toBe(expectedStatus)
+  return task.result
+}
+
 test.afterEach(async ({ page }) => {
   for (const input of await page.locator('input[type="password"]').all()) await input.fill('')
 })
@@ -19,7 +35,7 @@ test('真实函数复用：相同配置复用，变更后拒绝复用并可选�
     await page.locator('input[autocomplete="current-password"]').fill(process.env.E2E_PASSWORD)
     const response = page.waitForResponse('**/api/auth/console/login')
     await page.locator('button[type="submit"]').click()
-    expect((await (await response).json()).code).toBe(200)
+    expect((await (await response).json()).success).toBe(true)
   }
   await expect(page.locator('.layout-sidebar')).toBeVisible()
   await page.getByRole('textbox', { name: '函数编码', exact: true }).fill(sourceCode)
@@ -49,31 +65,29 @@ test('真实函数复用：相同配置复用，变更后拒绝复用并可选�
     await page.getByRole('option', { name: label, exact: true }).click()
   }
   const preview = async () => {
-    const response = page.waitForResponse('**/api/rule/transfer/preview/options')
+    const result = nextTransferResult(page, 'PREVIEW')
     await page.getByRole('button', { name: '预览冲突', exact: true }).click()
-    const result = await (await response).json()
-    expect(result.code, result.message).toBe(200)
-    return result.data
+    return result
   }
   const apply = async success => {
     await page.getByRole('button', { name: '确认导入', exact: true }).click()
-    const response = page.waitForResponse('**/api/rule/transfer/import')
+    const pending = nextTransferResult(page, 'IMPORT', success ? 'SUCCESS' : 'FAILED')
     const dialog = page.getByRole('dialog', { name: '确认导入' })
     await dialog.getByRole('button', { name: '确定', exact: true }).click()
-    const result = await (await response).json()
-    expect(result.code, result.message).toBe(success ? 200 : 422)
+    const result = await pending
     if (success) await page.getByRole('dialog', { name: '导入结果' }).getByRole('button', { name: '关闭此对话框' }).click()
     else await expect(page.getByRole('dialog', { name: '导入结果' })).toBeHidden()
     return result
   }
   const newCode = `reuse_verify_${Date.now()}`
+  const newName = `复用策略验收 ${newCode}`
   await page.locator('input[type="file"]').setInputFiles(filename)
   await page.getByText('导入时新建项目', { exact: true }).click()
   await page.getByPlaceholder('新项目编码（可覆盖源编码）').fill(newCode)
-  await page.getByPlaceholder('新项目名称（可覆盖源名称）').fill('复用策略独立验收项目')
+  await page.getByPlaceholder('新项目名称（可覆盖源名称）').fill(newName)
   await choosePolicy('复用相同配置')
   await preview()
-  const created = (await apply(true)).data
+  const created = await apply(true)
   const copiedFunctionId = created.resourceIdMapping[`FUNCTION:${source.id}`]
   expect(copiedFunctionId).not.toBe(source.id)
 
@@ -82,7 +96,7 @@ test('真实函数复用：相同配置复用，变更后拒绝复用并可选�
   await page.getByRole('option', { name: new RegExp(` / ${newCode}$`) }).click()
   const samePreview = await preview()
   expect(samePreview.conflicts.find(item => item.resourceType === 'FUNCTION').conflictType).toBe('IDENTICAL')
-  const reused = (await apply(true)).data
+  const reused = await apply(true)
   expect(reused.resources.find(item => item.sourceKey === `FUNCTION:${source.id}`).status).toBe('REUSED')
   expect(reused.resourceIdMapping[`FUNCTION:${source.id}`]).toBe(copiedFunctionId)
 
@@ -90,11 +104,19 @@ test('真实函数复用：相同配置复用，变更后拒绝复用并可选�
   await page.getByRole('textbox', { name: '项目编码', exact: true }).fill(newCode)
   await page.getByRole('textbox', { name: '函数编码', exact: true }).fill(sourceCode)
   await page.getByRole('button', { name: '查询', exact: true }).click()
-  const functionRow = page.getByRole('row').filter({ hasText: source.projectName || newCode }).filter({ has: page.getByRole('cell', { name: sourceCode, exact: true }) }).first()
+  const functionRow = page.getByRole('row')
+    .filter({ has: page.getByRole('cell', { name: newName, exact: true }) })
+    .filter({ has: page.getByRole('cell', { name: sourceCode, exact: true }) })
+  await expect(functionRow).toHaveCount(1)
   await expect(functionRow).toBeVisible()
   await functionRow.getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByPlaceholder('函数功能说明').fill(`配置差异验收 ${newCode}`)
+  const savedDraft = page.waitForResponse(response => new URL(response.url()).pathname === '/api/rule/governance/drafts' && response.request().method() === 'POST')
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
+  const draft = (await (await savedDraft).json()).data
+  expect(String(draft.resourceId)).toBe(String(copiedFunctionId))
+  await page.getByRole('button', { name: '草稿与审批', exact: true }).click()
+  await page.locator(`button[data-review-id="${draft.id}"]`).click()
   await expect(page).toHaveURL(/#\/approval\/\d+/)
   for (const label of ['提交审批', '通过并生效']) {
     await page.getByRole('button', { name: label, exact: true }).click()
@@ -114,7 +136,7 @@ test('真实函数复用：相同配置复用，变更后拒绝复用并可选�
   await choosePolicy('新建并追加后缀')
   await page.getByPlaceholder('新建后缀，如 _dev').fill('_reuse_check')
   await preview()
-  const suffixed = (await apply(true)).data
+  const suffixed = await apply(true)
   expect(suffixed.resourceIdMapping[`FUNCTION:${source.id}`]).not.toBe(copiedFunctionId)
   expect(suffixed.resources.find(item => item.sourceKey === `FUNCTION:${source.id}`).status).toBe('CREATED')
   expect(pageErrors).toEqual([])
@@ -143,17 +165,20 @@ test('真实离线迁移：全局、已有项目覆盖策略、新建项目均�
     if (await page.locator('input[autocomplete="current-password"]').count()) {
       await page.locator('input[autocomplete="current-password"]').fill('').catch(() => {})
     }
-    expect(login.code, login.message).toBe(200)
+    expect(login.success, login.detail).toBe(true)
   }
   await expect(page.locator('.layout-sidebar')).toBeVisible()
-  const row = page.locator('.el-table__body-wrapper tbody tr').first()
+  const sourceProject = process.env.E2E_TRANSFER_SOURCE_PROJECT_CODE
+  const rows = page.locator('.el-table__body-wrapper tbody tr')
+  const row = sourceProject ? rows.filter({ has: page.getByRole('cell', { name: sourceProject, exact: true }) }) : rows.first()
   await expect(row).toBeVisible()
   const projectCode = (await row.locator('td').nth(0).innerText()).trim()
   await row.getByRole('button', { name: '进入', exact: true }).click()
   await expect(page).toHaveURL(/#\/project\/\d+/)
   const sourceId = Number(/#\/project\/(\d+)/.exec(page.url())[1])
   await page.getByRole('button', { name: '离线迁移', exact: true }).first().click()
-  await expect(page.getByRole('heading', { name: '离线配置迁移' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '配置迁移', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '离线配置迁移' })).toHaveCount(0)
   await page.locator('.root-type').click()
   await page.getByRole('option', { name: '项目', exact: true }).click()
   await page.getByRole('combobox', { name: '第 1 项导出资源', exact: true }).fill(projectCode)
@@ -169,19 +194,17 @@ test('真实离线迁移：全局、已有项目覆盖策略、新建项目均�
     await page.getByRole('option', { name: value, exact: true }).click()
   }
   const importFromUi = async () => {
-    const previewResponse = page.waitForResponse('**/api/rule/transfer/preview/options')
+    const previewResponse = nextTransferResult(page, 'PREVIEW')
     await page.getByRole('button', { name: '预览冲突', exact: true }).click()
-    const preview = await (await previewResponse).json()
-    expect(preview.code, preview.message).toBe(200)
-    expect(preview.data.conflictCount).toBe(0)
+    const preview = await previewResponse
+    expect(preview.conflictCount).toBe(0)
     await page.getByRole('button', { name: '确认导入', exact: true }).click()
-    const appliedResponse = page.waitForResponse('**/api/rule/transfer/import')
+    const appliedResponse = nextTransferResult(page, 'IMPORT')
     await page.getByRole('dialog', { name: '确认导入' }).getByRole('button', { name: '确定', exact: true }).click()
-    const applied = await (await appliedResponse).json()
-    expect(applied.code, applied.message).toBe(200)
+    const applied = await appliedResponse
     await expect(page.getByRole('dialog', { name: '导入结果' })).toBeVisible()
     await page.getByRole('dialog', { name: '导入结果' }).getByRole('button', { name: '关闭此对话框' }).click()
-    return applied.data
+    return applied
   }
 
   await choose('目标范围', '全局')
@@ -217,4 +240,62 @@ test('真实离线迁移：全局、已有项目覆盖策略、新建项目均�
   await page.screenshot({ path: testInfo.outputPath('real-new-project.png'), fullPage: true })
   expect(pageErrors).toEqual([])
   console.log(JSON.stringify({ sourceId, createdProjectId: created.targetProjectId, createdProjectCode: newCode }))
+})
+test('跨部署迁移固定用例并处理第二次导入的同名冲突', async ({ page, browser }, info) => {
+  const sourceUrl = process.env.E2E_BASE_URL, targetUrl = process.env.E2E_TRANSFER_TARGET_URL
+  test.skip(!process.env.E2E_ISOLATED_OPTIMIZATION || !targetUrl || !sourceUrl, '需要两套独立本地部署')
+  expect(new URL(sourceUrl).origin).not.toBe(new URL(targetUrl).origin)
+  test.setTimeout(180000)
+  const open = async (p, base, username, password) => {
+    await p.goto(base + '/#/transfer')
+    await p.locator('input[autocomplete="username"]').fill(username)
+    await p.locator('input[autocomplete="current-password"]').fill(password)
+    await p.locator('button[type="submit"]').click()
+    await expect(p.getByRole('heading', { name: '导出配置' })).toBeVisible()
+  }
+  await open(page, sourceUrl, process.env.E2E_USERNAME, process.env.E2E_PASSWORD)
+  const rule = process.env.E2E_TRANSFER_RULE
+  await page.getByRole('combobox', { name: '第 1 项导出资源' }).fill(rule)
+  await page.getByRole('option').filter({ hasText: rule }).click()
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: '生成并下载配置包' }).click()
+  const zip = info.outputPath('source-rule.zip')
+  await (await download).saveAs(zip)
+  const session = await browser.newContext()
+  try {
+    const dest = await session.newPage()
+    await open(dest, targetUrl, process.env.E2E_TARGET_USERNAME, process.env.E2E_TARGET_PASSWORD)
+    const projectCode = process.env.E2E_TRANSFER_PROJECT
+    const targetProject = dest.getByRole('combobox', { name: '目标项目', exact: true })
+    await targetProject.fill(projectCode)
+    await dest.getByRole('option').filter({ hasText: projectCode }).click()
+    await dest.locator('input[type="file"]').setInputFiles(zip)
+    const preview = async () => {
+      const response = nextTransferResult(dest, 'PREVIEW')
+      await dest.getByRole('button', { name: '预览冲突', exact: true }).click()
+      return response
+    }
+    const apply = async () => {
+      await dest.getByRole('button', { name: '确认导入', exact: true }).click()
+      const response = nextTransferResult(dest, 'IMPORT')
+      await dest.getByRole('dialog', { name: '确认导入' }).getByRole('button', { name: '确定', exact: true }).click()
+      const result = await response
+      await dest.getByRole('dialog', { name: '导入结果' }).getByRole('button', { name: '关闭此对话框' }).click()
+      return result
+    }
+    const reviewed = await preview()
+    const resource = reviewed.resources.find(r => r.resourceType === 'RULE' && r.resourceCode === rule)
+    expect(resource).toBeTruthy()
+    const first = await apply()
+    const firstId = first.resourceIdMapping[resource.key]
+    expect(firstId).toBeTruthy()
+    expect(String(firstId)).not.toBe(String(resource.sourceResourceId))
+    await dest.locator('input[type="file"]').setInputFiles(zip)
+    await dest.getByRole('textbox', { name: '新建后缀' }).fill('_verified')
+    const repeated = await preview()
+    expect(repeated.conflicts.some(item => item.resourceKey === resource.key)).toBe(true)
+    const second = await apply()
+    expect(second.resourceIdMapping[resource.key]).toBeTruthy()
+    expect(second.resourceIdMapping[resource.key]).not.toBe(firstId)
+  } finally { await session.close() }
 })

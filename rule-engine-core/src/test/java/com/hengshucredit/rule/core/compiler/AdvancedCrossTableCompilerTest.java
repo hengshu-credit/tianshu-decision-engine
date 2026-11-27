@@ -230,6 +230,37 @@ public class AdvancedCrossTableCompilerTest {
         return ((Map<?, ?>) execution.getResult()).get("rate") != null;
     }
 
+    @Test
+    public void emptyDesignerCellsSkipAssignmentAndKeepExplicitValues() {
+        for (String type : java.util.List.of("NUMBER", "BOOLEAN", "STRING")) {
+            String filled = switch (type) {
+                case "NUMBER" -> "0";
+                case "BOOLEAN" -> "false";
+                default -> "ok";
+            };
+            var model = com.alibaba.fastjson.JSON.parseObject(modelJson());
+            model.getJSONObject("resultVar").put("varType", type);
+            var dimension = model.getJSONArray("colDimensions").getJSONObject(0);
+            dimension.put("segments", java.util.List.of(Map.of("operator", "==", "value", "1"),
+                    Map.of("operator", "==", "value", "2")));
+            model.put("cells", java.util.List.of(java.util.List.of(
+                    Map.of("kind", "LITERAL", "value", "", "valueType", type),
+                    Map.of("kind", "LITERAL", "value", filled, "valueType", type))));
+            CompileResult compiled = compiler.compile(model.toJSONString());
+            assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
+            for (int score : new int[]{1, 2}) {
+                var result = engine.execute(compiled.getCompiledScript(), new HashMap<>(Map.of("age", 30, "score", score)));
+                assertTrue(result.getErrorMessage(), result.isSuccess());
+                Map<?, ?> outputs = (Map<?, ?>) result.getResult();
+                assertTrue(outputs.containsKey("rate"));
+                if (score == 1) assertNull(outputs.get("rate"));
+                else if ("NUMBER".equals(type)) assertEquals(0, ((Number) outputs.get("rate")).intValue());
+                else if ("BOOLEAN".equals(type)) assertEquals(Boolean.FALSE, outputs.get("rate"));
+                else assertEquals(filled, outputs.get("rate"));
+            }
+        }
+    }
+
     private String modelJson() {
         return "{"
                 + "\"resultVar\":{\"varCode\":\"rate\",\"varType\":\"DOUBLE\"},"

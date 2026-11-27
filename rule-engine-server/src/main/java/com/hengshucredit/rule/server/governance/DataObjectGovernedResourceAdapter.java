@@ -46,6 +46,8 @@ public class DataObjectGovernedResourceAdapter
     @SuppressWarnings("unchecked")
     public ResourceSnapshot normalizeDraft(ResourceSnapshot draft) {
         Map<String, Object> value = CanonicalJson.readMap(draft.snapshotJson());
+        String rootName = stringValue(value.get("scriptName"));
+        if (rootName == null || rootName.isBlank()) value.put("scriptName", value.get("objectCode"));
         // Old versions must restore their defaults, not retain a newer projection's non-null settings.
         value.putIfAbsent("lazyLoadReferences", false);
         if (value.get("fields") instanceof List<?> fields) {
@@ -238,8 +240,8 @@ public class DataObjectGovernedResourceAdapter
                                      List<GovernanceIssue> issues) {
         List<FieldDraft> fields = parseDrafts(snapshot);
         RuleDataObject owner = JSON.parseObject(CanonicalJson.write(snapshot), RuleDataObject.class);
-        if (owner.getMockRuleId() != null && !mockCatalog.compatible(owner.getMockRuleId(), "OBJECT"))
-            issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "请选择对象类型的 Mock 规则", "DATA_OBJECT", owner.getId(), "$.mockRuleId"));
+        if ((owner.getExampleMode() != null || owner.getMockRuleId() != null) && !mockCatalog.validExample(owner.getExampleMode(), owner.getMockRuleId(), "OBJECT", owner.getProjectId(), owner.getExampleCaseBinding()))
+            issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "请检查整体对象示例的规则、用例路径与数据类型", "DATA_OBJECT", owner.getId(), "$.mockRuleId"));
         validateObjectSource(snapshot, owner, issues);
         if ("API".equals(owner.getSourceType()) && sourceValidator != null) {
             var source = new com.hengshucredit.rule.model.entity.RuleVariable();
@@ -271,8 +273,8 @@ public class DataObjectGovernedResourceAdapter
                         longValue(snapshot.get("id")),
                         "$.fields"));
             }
-            if (field.getMockRuleId() != null && !mockCatalog.compatible(field.getMockRuleId(), field.getVarType()))
-                issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "子字段 Mock 规则与字段类型不兼容", "DATA_OBJECT", owner.getId(), "$.fields"));
+            if ((field.getExampleMode() != null || field.getMockRuleId() != null) && !mockCatalog.validExample(field.getExampleMode(), field.getMockRuleId(), field.getVarType(), owner.getProjectId(), field.getExampleCaseBinding()))
+                issues.add(GovernanceIssue.error("MOCK_RULE_INVALID", "请检查子字段示例的规则、用例路径与数据类型", "DATA_OBJECT", owner.getId(), "$.fields"));
             referenceValidator.validate(owner, field, referenceFields).forEach(issue ->
                     issues.add(GovernanceIssue.error(issue.getCode(), issue.getMessage(),
                             GovernanceResourceTypes.DATA_OBJECT, owner.getId(), issue.getPath())));

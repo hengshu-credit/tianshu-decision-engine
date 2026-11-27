@@ -1,7 +1,8 @@
+import { metadataResponse } from '@/utils/metadataResponse'
 import request from './request'
 
 export function listRuntimeLogs(params) {
-  return request({ url: '/rule/runtime-log/list', method: 'get', params })
+  return request({ ...metadataResponse, url: '/rule/runtime-log/list', method: 'get', params })
 }
 
 export function getExternalApiStats(params) {
@@ -46,4 +47,8 @@ export function getRuleSetStats(params) {
 
 export function replayExecutionLog(id) {
   return request({ url: `/rule/log/${id}/replay`, method: 'post' })
+}
+
+export function getExecutionLogDetail(id, createTime) {
+  return request({ url: `/rule/log/${id}`, method: 'get', params: { createTime: createTime.replace(' ', 'T') } })
 }

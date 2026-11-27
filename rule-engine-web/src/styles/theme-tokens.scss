@@ -15,6 +15,7 @@
   --tianshu-text-primary: #172033;
   --tianshu-text-secondary: #475569;
   --tianshu-text-tertiary: #5b6678;
+  --tianshu-input-hint: #6e7785;
   --tianshu-text-disabled: #94a3b8;
   --tianshu-text-inverse: #ffffff;
   --tianshu-border: #cbd5e1;
@@ -102,7 +103,7 @@
   --el-text-color-primary: var(--tianshu-text-primary);
   --el-text-color-regular: var(--tianshu-text-secondary);
   --el-text-color-secondary: var(--tianshu-text-tertiary);
-  --el-text-color-placeholder: var(--tianshu-text-tertiary);
+  --el-text-color-placeholder: var(--tianshu-input-hint);
   --el-text-color-disabled: var(--tianshu-text-disabled);
   --el-border-color: var(--tianshu-border);
   --el-border-color-light: var(--tianshu-border-subtle);
@@ -131,6 +132,7 @@
   --tianshu-text-primary: #edf2ff;
   --tianshu-text-secondary: #c2cce0;
   --tianshu-text-tertiary: #93a2bd;
+  --tianshu-input-hint: #8a99b1;
   --tianshu-text-disabled: #66748e;
   --tianshu-text-inverse: #111827;
   --tianshu-selection-bg: rgba(var(--el-color-primary-rgb), 0.38);
@@ -188,7 +190,7 @@
   --el-text-color-primary: var(--tianshu-text-primary);
   --el-text-color-regular: var(--tianshu-text-secondary);
   --el-text-color-secondary: var(--tianshu-text-tertiary);
-  --el-text-color-placeholder: var(--tianshu-text-tertiary);
+  --el-text-color-placeholder: var(--tianshu-input-hint);
   --el-text-color-disabled: var(--tianshu-text-disabled);
   --el-border-color: var(--tianshu-border);
   --el-border-color-light: var(--tianshu-border-subtle);

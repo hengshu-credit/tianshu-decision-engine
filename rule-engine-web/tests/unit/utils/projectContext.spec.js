@@ -10,6 +10,11 @@ describe('projectContext', () => {
   test('只接受正整数项目 ID', () => {
     expect(normalizeProjectId('9')).toBe(9)
     expect(normalizeProjectId(3)).toBe(3)
+    const highId = '9007199254740993'
+    expect(normalizeProjectId(highId)).toBe(highId)
+    expect(withProjectContext('/log', highId).query.projectId).toBe(highId)
+    expect(normalizeProjectId(Number(highId))).toBeNull()
+    expect(normalizeProjectId('9223372036854775808')).toBeNull()
     expect(normalizeProjectId('0')).toBeNull()
     expect(normalizeProjectId('bad')).toBeNull()
   })

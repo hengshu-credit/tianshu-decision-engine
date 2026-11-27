@@ -17,12 +17,28 @@ vi.mock('@/api/lineage', () => ({
   getLineageGraph: vi.fn(),
 }))
 
+vi.mock('@/utils/restoreProjectSet', () => ({ restorePublishedStep: vi.fn() }))
+import { restorePublishedStep } from '@/utils/restoreProjectSet'
 import * as transferApi from '@/api/transfer'
 import * as lineageApi from '@/api/lineage'
 import { listProjects } from '@/api/project'
 import OfflineTransfer from '@/views/transfer/OfflineTransfer.vue'
 
 describe('OfflineTransfer', () => {
+  test('模型扫描预检未通过时保留资源预览，阻止确认导入', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.importFile = new File(['model'], 'models.zip')
+    wrapper.vm.previewFile = wrapper.vm.importFile
+    wrapper.vm.preview = { packageDigest: 'model-digest', modelScanIssue: '请配置 UPLOAD_ANTIVIRUS_HOST' }
+    wrapper.vm.previewOptionsSignature = wrapper.vm.optionsSignature
+    expect(wrapper.vm.hasCurrentPreview).toBe(false)
+    await wrapper.vm.applyPackage()
+    expect(transferApi.importResourceTransfer).not.toHaveBeenCalled()
+    wrapper.vm.preview = { packageDigest: 'model-digest' }
+    expect(wrapper.vm.hasCurrentPreview).toBe(true)
+    wrapper.unmount()
+  })
+
   test('版本映射未通过或变更后必须重新预检才能导入', async () => {
     const wrapper = shallowMount(OfflineTransfer)
     wrapper.vm.importFile = new File(['data'], 'versions.zip')
@@ -180,7 +196,7 @@ describe('OfflineTransfer', () => {
     await wrapper.vm.exportPackage()
     expect(transferApi.exportResourceTransfer).toHaveBeenCalledWith(
       [{ resourceType: 'RULE', resourceId: 101 }],
-      { includeDependencies: false },
+      { includeDependencies: false }, expect.objectContaining({ title: '导出配置' }),
     )
     wrapper.unmount()
   })
@@ -193,6 +209,41 @@ describe('OfflineTransfer', () => {
     expect(lineageApi.getLineageGraph).toHaveBeenCalledWith({
       nodeType: 'RULE', nodeId: 101, direction: 'ALL', maxDepth: 2,
     })
+    wrapper.unmount()
+  })
+
+  test('导出选择保留相邻大整数 ID，迟到的当前图不能覆盖后来选择的资源', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    const root = wrapper.vm.roots[0]
+    let finishOld
+    lineageApi.getLineageGraph.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    root.resourceId = '9007199254740993'
+    const old = wrapper.vm.loadExportLineage(root)
+    const firstId = lineageApi.getLineageGraph.mock.calls[0][0].nodeId
+    root.resourceId = '9007199254740992'
+    wrapper.vm.selectedExportRootKey = root.key
+    const current = { startNode: { id: 'RULE:' + root.resourceId, versionLabel: 'v3' }, nodes: [], edges: [] }
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data: current })
+    await wrapper.vm.loadExportLineage(root)
+    finishOld({ data: { startNode: { id: 'RULE:9007199254740993' } } })
+    await old
+    expect(firstId).toBe('9007199254740993')
+    expect(wrapper.vm.exportLineageGraph).toEqual(current)
+    wrapper.unmount()
+  })
+
+  test('选择导出历史版本时，源环境当前血缘节点保留实际版本', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    const root = wrapper.vm.roots[0]
+    root.resourceId = 101
+    root.versionSelection = { versionMode: 'FIXED', versionId: 12 }
+    root.versionLabel = '指定 v1'
+    wrapper.vm.selectedExportRootKey = root.key
+    const startNode = { id: 'RULE:101', versionLabel: 'v3' }
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data: { startNode, nodes: [startNode], edges: [] } })
+    await wrapper.vm.loadExportLineage(root)
+    expect(wrapper.vm.exportLineageGraph.startNode.versionLabel).toBe('v3')
+    expect(root.versionSelection.versionId).toBe(12)
     wrapper.unmount()
   })
 
@@ -224,7 +275,7 @@ describe('OfflineTransfer', () => {
     wrapper.vm.resourceActionsDraft['RULE:1'] = 'SUFFIX'
     await wrapper.vm.applyPackage()
     expect(transferApi.importResourceTransfer).toHaveBeenCalledWith(expect.any(File),
-      expect.objectContaining({ selectedResourceKeys: ['VARIABLE:7', 'RULE:1'], resourceActions: { 'RULE:1': 'SUFFIX' } }))
+      expect.objectContaining({ selectedResourceKeys: ['VARIABLE:7', 'RULE:1'], resourceActions: { 'RULE:1': 'SUFFIX' } }), expect.objectContaining({ title: '导入配置' }))
     wrapper.unmount()
   })
 
@@ -299,12 +350,35 @@ describe('OfflineTransfer', () => {
     expect(ElMessageBox.confirm).toHaveBeenCalledTimes(1)
     expect(transferApi.importResourceTransfer).toHaveBeenCalledTimes(1)
     expect(transferApi.importResourceTransfer).toHaveBeenCalledWith(originalFile,
-      expect.objectContaining({ targetScope: 'GLOBAL', createProject: false, targetProjectId: null }))
+      expect.objectContaining({ targetScope: 'GLOBAL', createProject: false, targetProjectId: null }), expect.objectContaining({ title: '导入配置' }))
     expect(ElMessageBox.confirm.mock.calls[0][0]).toContain('全局')
     expect(wrapper.vm.resultVisible).toBe(true)
     expect(wrapper.vm.preview).toBeNull()
     await wrapper.vm.applyPackage()
     expect(transferApi.importResourceTransfer).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  test('带固定用例的单包先保存草稿，再按顺序验证；中断后从失败规则继续', async () => {
+    const wrapper = await previewGlobal()
+    wrapper.vm.options.publishRules = true
+    transferApi.previewResourceTransfer.mockResolvedValueOnce({ data: { packageDigest: 'supplier', resources: [], ruleCaseCount: 47 } })
+    await wrapper.vm.previewPackage()
+    const steps = [{ type: 'RULE', code: 'one', actionId: '51' }, { type: 'RULE', code: 'two', actionId: '52' }]
+    transferApi.importResourceTransfer.mockResolvedValueOnce({ data: { publicationSteps: steps } })
+    restorePublishedStep.mockResolvedValueOnce().mockRejectedValueOnce(new Error('固定用例未通过')).mockResolvedValueOnce()
+    await wrapper.vm.applyPackage()
+    expect(ElMessageBox.confirm.mock.calls[0][0]).toContain('47 个固定用例')
+    expect(transferApi.importResourceTransfer.mock.lastCall[3]).toBe(true)
+    expect(wrapper.vm.pendingPublication).toBe(true)
+    expect(wrapper.vm.previewError).toContain('配置已导入，发布未完成')
+    expect(wrapper.vm.activationIndex).toBe(1)
+    await wrapper.vm.applyPackage()
+    await wrapper.vm.resumeActivation()
+    expect(transferApi.importResourceTransfer).toHaveBeenCalledTimes(1)
+    expect(restorePublishedStep.mock.calls.map(([step]) => step.actionId)).toEqual(['51', '52', '52'])
+    expect(wrapper.vm.pendingPublication).toBe(false)
+    expect(wrapper.vm.resultVisible).toBe(true)
     wrapper.unmount()
   })
 
@@ -413,6 +487,37 @@ describe('OfflineTransfer', () => {
     expect(wrapper.vm.resourceActionsDraft).toEqual({ 'VARIABLE:1': 'REUSE' })
     wrapper.vm.resourceActionsDraft['VARIABLE:1'] = 'SUFFIX'
     expect(wrapper.vm.normalizedOptions().resourceActions).toEqual({ 'VARIABLE:1': 'SUFFIX' })
+    wrapper.unmount()
+  })
+
+  test('切换默认冲突策略只清理对应类型的自动建议，保留逐项选择', async () => {
+    const wrapper = await previewGlobal()
+    wrapper.vm.resourceActionsDraft = { 'VARIABLE:1': 'REUSE', 'FUNCTION:2': 'REUSE', 'FUNCTION:3': 'OVERWRITE' }
+    wrapper.vm.explicitActionKeys.add('FUNCTION:3')
+    wrapper.vm.options.resourcePolicy = 'OVERWRITE'
+    expect(wrapper.vm.normalizedOptions().resourceActions).toEqual({ 'VARIABLE:1': 'REUSE', 'FUNCTION:3': 'OVERWRITE' })
+    wrapper.vm.options.variablePolicy = 'SUFFIX'
+    expect(wrapper.vm.normalizedOptions().resourceActions).toEqual({ 'FUNCTION:3': 'OVERWRITE' })
+    wrapper.unmount()
+  })
+
+  test('查询回到第一页，迟到的旧响应不能覆盖筛选结果，刷新沿用已提交条件', async () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    let finishOld
+    transferApi.listTransferLogs.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve }))
+    wrapper.vm.logPageNum = 3
+    const old = wrapper.vm.loadLogs()
+    wrapper.vm.logFilters = { keyword: '  资源A  ', operationType: 'IMPORT', status: 'FAILED' }
+    transferApi.listTransferLogs.mockResolvedValueOnce({ data: { total: 1, records: [{ id: 5 }] } })
+    await wrapper.vm.searchLogs()
+    finishOld({ data: { total: 50, records: [{ id: 7 }] } })
+    await old
+    expect(wrapper.vm.logPageNum).toBe(1)
+    expect(wrapper.vm.logs).toEqual([{ id: 5 }])
+    expect(wrapper.vm.logTotal).toBe(1)
+    wrapper.vm.logFilters.keyword = '尚未查询'
+    await wrapper.vm.loadLogs()
+    expect(transferApi.listTransferLogs).toHaveBeenLastCalledWith({ keyword: '资源A', operationType: 'IMPORT', status: 'FAILED', pageNum: 1, pageSize: 20, summaryOnly: true })
     wrapper.unmount()
   })
 
@@ -528,7 +633,7 @@ describe('OfflineTransfer', () => {
 
     expect(transferApi.previewResourceTransfer).toHaveBeenCalledWith(
       file,
-      expect.objectContaining({ targetScope: 'GLOBAL', targetProjectId: null })
+      expect.objectContaining({ targetScope: 'GLOBAL', targetProjectId: null }), expect.objectContaining({ title: '预览冲突' })
     )
     expect(wrapper.vm.preview.packageDigest).toBe('digest-1')
     wrapper.unmount()

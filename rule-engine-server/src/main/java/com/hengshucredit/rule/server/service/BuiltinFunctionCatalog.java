@@ -19,6 +19,8 @@ public final class BuiltinFunctionCatalog {
     private static final String DIGEST_CLASS = "com.hengshucredit.rule.core.function.DigestBuiltinFunctions";
     private static final String RUNTIME_CONTEXT_CLASS = "com.hengshucredit.rule.core.function.RuntimeContextBuiltinFunctions";
     private static final String RANDOM_CLASS = "com.hengshucredit.rule.core.function.RandomBuiltinFunctions";
+    private static final String EXAMPLE_IMAGE = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGPkEpFjYGBgYgADAALmAEAUQs4PAAAAAElFTkSuQmCC";
+    private static final String GEOMETRY_CLASS = "com.hengshucredit.rule.core.function.ImageGeometryFunctions";
     private static final String IMAGE_CLASS = "com.hengshucredit.rule.core.function.ImageInputFunctions";
 
     private BuiltinFunctionCatalog() {
@@ -94,6 +96,18 @@ public final class BuiltinFunctionCatalog {
         list.add(fn("facenoxLivenessList", "Facenox 活体结果列表", "逐人脸计算活体结果并保留每张人脸的原始 logits", params(
                 p("results", "LIST", "模型人脸结果", sampleFacenoxResults()),
                 p("threshold", "NUMBER", "差值阈值", 0.5)), "LIST", DECISION_CLASS, "facenoxLivenessList"));
+        list.add(fn("imageDimensions", "图像原始尺寸", "读取解码后的宽高", params(
+                p("image", "STRING", "图片 Base64", EXAMPLE_IMAGE)), "MAP", GEOMETRY_CLASS, "imageDimensions"));
+        list.add(fn("pointSimilarityAffine", "对应点相似变换", "根据两组二维点求解六项行优先的仿射矩阵", params(
+                p("sourcePoints", "LIST", "源点", List.of(List.of(0, 0), List.of(1, 0))), p("targetPoints", "LIST", "目标点", List.of(List.of(1, 0), List.of(2, 0)))), "LIST", GEOMETRY_CLASS, "pointSimilarityAffine"));
+        list.add(fn("imageAffineCoverage", "仿射采样覆盖率", "返回输出图像中来自原图的有效像素比例", params(
+                p("sourceSize", "MAP", "原图宽高", Map.of("width", 2, "height", 2)), p("affine", "LIST", "六项仿射矩阵", List.of(1, 0, 0, 0, 1, 0)), p("targetSize", "MAP", "输出宽高", Map.of("width", 2, "height", 2))), "NUMBER", GEOMETRY_CLASS, "imageAffineCoverage"));
+        list.add(fn("imageTensorChw", "图像转通道张量", "按指定尺寸、通道顺序、归一化及裁剪或仿射参数生成 CHW 张量", params(
+                p("image", "STRING", "图片 Base64", EXAMPLE_IMAGE), p("options", "MAP", "张量选项", Map.of("width", 80, "height", 80, "order", "RGB", "offset", 0, "divisor", 255))), "LIST", GEOMETRY_CLASS, "imageTensorChw"));
+        list.add(fn("requireCondition", "校验脚本条件", "条件不成立时终止执行并返回指定说明", params(
+                p("predicate", "BOOLEAN", "条件", true), p("message", "STRING", "错误说明", "输入无效")), "BOOLEAN", DECISION_CLASS, "requireCondition"));
+        list.add(fn("isFiniteNumber", "是否为有限数值", "检查值为数值且非无穷或 NaN", params(
+                p("value", "OBJECT", "待检查值", 1)), "BOOLEAN", DECISION_CLASS, "isFiniteNumber"));
         list.add(fn("imageToBase64", "图片转 Base64", "自动识别 Base64、Data URI 或 HTTP(S) URL；URL 下载最多 10 MB，超时由参数明确配置", params(
                 p("image", "STRING", "图片 Base64 或 URL", "dGVzdC1pbWFnZS1jb250ZW50"),
                 p("timeoutMs", "NUMBER", "URL 下载超时（毫秒）", 10000)), "STRING", IMAGE_CLASS, "imageToBase64"));

@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.transfer;
 
+import com.hengshucredit.rule.server.service.ExternalApiExecutionConfig;
+
 import com.alibaba.fastjson.JSON;
 import java.util.*;
 
@@ -65,7 +67,11 @@ final class TransferVersionReferences {
             for (var entry : map.entrySet()) {
                 String key = String.valueOf(entry.getKey());
                 if (("script".equals(key) || "implScript".equals(key) && "SCRIPT".equals(map.get("implType"))) && entry.getValue() instanceof String script && !script.isBlank()) scanScript(script, TransferJsonPath.child(path, key), result);
-                if (!VALUES.contains(key)) visit(entry.getValue(), TransferJsonPath.child(path, key), map, path, key, result);
+                String child = TransferJsonPath.child(path, key);
+                if (ExternalApiExecutionConfig.isRequestFieldDefault(key, path, map))
+                    ExternalApiExecutionConfig.visitDefaultOperands(entry.getValue(), child, TransferJsonPath::child,
+                            (at, operand) -> visit(operand, at, null, "", "", result));
+                else if (!VALUES.contains(key)) visit(entry.getValue(), child, map, path, key, result);
             }
         } else if (node instanceof List<?> list) {
             for (int i = 0; i < list.size(); i++) visit(list.get(i), path + "/" + i, null, "", "", result);

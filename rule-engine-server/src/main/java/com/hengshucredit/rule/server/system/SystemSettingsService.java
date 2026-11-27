@@ -20,6 +20,7 @@ import java.util.Set;
 /** 全局配置在数据库中按组原子保存；只有明确允许公开的品牌字段对匿名请求可见。 */
 @Service
 public class SystemSettingsService {
+    public static final String SINGLE_SESSION = "singleSessionEnabled";
     public static final String RESOURCE_TYPE = "SYSTEM_SETTING";
     public static final Map<Long, String> GROUPS = Map.of(1L, "brand", 2L, "mail", 3L, "access", 4L, "codes");
     private static final Map<String, Object> WATERMARK_DEFAULTS = Map.of(
@@ -66,7 +67,9 @@ public class SystemSettingsService {
     private ResourceSnapshot snapshot(long id, String group, Map<String, Object> row) {
         Map<String, Object> value = new LinkedHashMap<>(defaults(group));
         boolean managed = deploymentManaged(group);
-        if (!managed) value.putAll(CanonicalJson.readMap((String) row.get("config_json")));
+        Map<String, Object> stored = CanonicalJson.readMap((String) row.get("config_json"));
+        if (!managed) value.putAll(stored);
+        else if ("access".equals(group)) value.put(SINGLE_SESSION, stored.getOrDefault(SINGLE_SESSION, false));
         value.put("id", id); value.put("scope", "GLOBAL"); value.put("projectId", 0L);
         value.put("settingName", label(group)); value.put("group", group);
         value.put("configVersion", ((Number) row.get("version")).longValue());
@@ -95,6 +98,25 @@ public class SystemSettingsService {
     public ExternalCodeMapping mapping() {
         Map<String, Object> config = get("codes");
         return ExternalCodeMapping.from(((Number) config.get("configVersion")).longValue(), config);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.hengshucredit.rule.server.consolelogin.ConsoleThemePreferenceService themePreferences;
+
+    public MailTheme mailTheme() {
+        if (org.springframework.web.context.request.RequestContextHolder.getRequestAttributes() instanceof
+                org.springframework.web.context.request.ServletRequestAttributes attrs) {
+            var session = attrs.getRequest().getSession(false);
+            if (session != null && session.getAttribute(login.getSessionUserIdAttribute()) instanceof Number id)
+                return MailTheme.from(themePreferences.load(id.longValue()));
+        }
+        return MailTheme.DEFAULT;
+    }
+
+    public EngineMailFont mailFont(Map<String, Object> brand) {
+        Object value = brand.get("font");
+        return value == null || SystemFontService.DEFAULT.equals(value)
+                ? EngineMailFont.engineDefault() : fonts.mailFont(value);
     }
 
     public Map<String, Object> publicBrand() {
@@ -127,6 +149,9 @@ public class SystemSettingsService {
                 Map<String, Object> current = get("brand");
                 for (String key : WATERMARK_DEFAULTS.keySet()) if (!value.containsKey(key)) value.put(key, current.get(key));
             }
+        }
+        if ("access".equals(group) && !value.containsKey(SINGLE_SESSION)) {
+            value.put(SINGLE_SESSION, access().get(SINGLE_SESSION));
         }
         Set<String> allowed = new java.util.HashSet<>(defaults(group).keySet());
         allowed.addAll(Set.of("id", "scope", "projectId", "settingName", "group", "configVersion", GovernanceSecretCodec.SECRET_STATE_KEY));
@@ -175,7 +200,16 @@ public class SystemSettingsService {
                 ensureEditable(group);
             }
             case "access" -> {
+                Map<String, Object> effective = access();
+                // 升级前已提交的审批快照也可能缺少新字段。
+                if (!value.containsKey(SINGLE_SESSION)) value.put(SINGLE_SESSION, effective.get(SINGLE_SESSION));
+                bool(value, SINGLE_SESSION);
                 bool(value, "registrationEnabled"); bool(value, "passwordRecoveryEnabled");
+                // 单独修改会话策略时不要求同时配置邮件；部署覆盖的其他字段仍然只读。
+                boolean onlySessionChanged = !effective.get(SINGLE_SESSION).equals(value.get(SINGLE_SESSION))
+                        && defaults(group).keySet().stream().filter(key -> !SINGLE_SESSION.equals(key))
+                        .allMatch(key -> java.util.Objects.equals(effective.get(key), value.get(key)));
+                if (onlySessionChanged) break;
                 String base = text(value, "baseUrl", 2048, false);
                 if (!base.isEmpty()) validateBaseUrl(base);
                 for (String key : List.of("verificationTtlMinutes", "passwordResetTtlMinutes")) {
@@ -204,14 +238,36 @@ public class SystemSettingsService {
         validate(snapshot); persist(snapshot, actor); return publicBrand();
     }
 
+    @Transactional
     public void persist(ResourceSnapshot snapshot, String actor) {
         Map<String, Object> value = CanonicalJson.readMap(snapshot.snapshotJson());
         long id = number(value.get("id"), "配置 ID"), version = number(value.get("configVersion"), "配置版本");
+        String configJson = id == 3 ? applyAccessPolicy(value) : snapshot.snapshotJson();
         if (jdbc.update("UPDATE rule_system_setting SET config_json = ?, secret_ciphertext = ?, secret_digest = ?, version = version + 1, update_by = ?, update_time = CURRENT_TIMESTAMP WHERE id = ? AND version = ?",
-                snapshot.snapshotJson(), snapshot.secretPayloadCiphertext(), snapshot.secretDigest(), actor, id, version) != 1) {
+                configJson, snapshot.secretPayloadCiphertext(), snapshot.secretDigest(), actor, id, version) != 1) {
             throw new IllegalArgumentException("系统配置已被更新，请重新加载后再保存");
         }
         if (events != null) events.publishEvent(new SystemNotification("系统配置变更通知", label(group(id)) + "已更新并生效，请登录控制台查看变更记录。"));
+    }
+
+    private String applyAccessPolicy(Map<String, Object> value) {
+        String json = jdbc.queryForObject("SELECT config_json FROM rule_system_setting WHERE id=3 FOR UPDATE", String.class);
+        var stored = CanonicalJson.readMap(json);
+        Object previous = stored.getOrDefault(SINGLE_SESSION, false);
+        Object enabled = value.getOrDefault(SINGLE_SESSION, previous);
+        if (Boolean.TRUE.equals(enabled) && !Boolean.TRUE.equals(previous)) {
+            // 与成功登录按同一把锁排序。保留每个账户最新的会话，未编号的升级前会话需重新登录。
+            jdbc.queryForObject("SELECT id FROM console_security_lock WHERE id=1 FOR UPDATE", Integer.class);
+            jdbc.update("""
+                    INSERT INTO console_user_session_state(user_id, latest_sequence, minimum_sequence)
+                    SELECT id, 0, 1 FROM console_user WHERE merged_into_user_id IS NULL
+                    ON DUPLICATE KEY UPDATE minimum_sequence=GREATEST(latest_sequence, 1)
+                    """);
+        }
+        // 部署覆盖其他字段时保留它们原先的数据库值，撤销覆盖后仍可恢复。
+        Map<String, Object> updated = deploymentManaged("access") ? stored : value;
+        updated.put(SINGLE_SESSION, enabled);
+        return CanonicalJson.write(updated);
     }
 
     public boolean deploymentManaged(String group) {
@@ -245,7 +301,7 @@ public class SystemSettingsService {
             }
             case "mail" -> Map.of("email", login.getMail().getFrom(), "host", environment.getProperty("spring.mail.host", ""),
                     "port", environment.getProperty("spring.mail.port", Integer.class, 587), "encryption", environment.getProperty("spring.mail.properties.mail.smtp.ssl.enable", Boolean.class, false) ? "TLS" : "STARTTLS", "password", "");
-            case "access" -> Map.of("registrationEnabled", login.isRegistrationEnabled(), "passwordRecoveryEnabled", login.isPasswordRecoveryEnabled(),
+            case "access" -> Map.of(SINGLE_SESSION, false, "registrationEnabled", login.isRegistrationEnabled(), "passwordRecoveryEnabled", login.isPasswordRecoveryEnabled(),
                     "baseUrl", login.getMail().getBaseUrl(), "verificationTtlMinutes", login.getMail().getVerificationTtlMinutes(), "passwordResetTtlMinutes", login.getMail().getPasswordResetTtlMinutes());
             case "codes" -> Map.of("enabled", false, "mappings", Map.of());
             default -> throw new IllegalArgumentException("配置分组不存在");

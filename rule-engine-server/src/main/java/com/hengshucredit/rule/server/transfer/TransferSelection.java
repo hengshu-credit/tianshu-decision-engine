@@ -30,9 +30,14 @@ final class TransferSelection {
                             ? reference : reference.asExternal())
                     .toList();
             result.add(new TransferBundle.Resource(resource.key(), resource.configuration(), references,
-                    resource.requiredEnvironmentFields(), resource.versionReferences()));
+                    resource.requiredEnvironmentFields(), resource.versionReferences(), resource.pageSettings()));
         }
         return result;
+    }
+
+    static int ruleCaseCount(List<TransferBundle.Resource> selected) {
+        return selected.stream().filter(resource -> resource.key().startsWith("RULE:"))
+                .mapToInt(resource -> resource.pageSettings().size()).sum();
     }
 
     static String referenceKey(String sourceKey, TransferBundle.Reference reference) {

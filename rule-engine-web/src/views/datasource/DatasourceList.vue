@@ -569,6 +569,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
@@ -593,10 +594,11 @@ import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
-import { routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, routeProjectId } from '@/utils/projectContext'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
+  mixins: [pageTabState('activeTab', ['datasource', 'api', 'monitor', 'logs'])],
   data() {
     return {
       tableColumnOrders: { datasourceColumns: null, apiColumns: null },
@@ -719,7 +721,7 @@ export default {
     ProjectFilterSelect,
   },
   async created() {
-    const requestedTab = this.$route && this.$route.query && this.$route.query.tab
+    const requestedTab = this.rememberedPageTab?.() || this.$route?.query?.tab
     if (['datasource', 'api', 'monitor', 'logs'].includes(requestedTab)) {
       this.activeTab = requestedTab
     }
@@ -734,7 +736,7 @@ export default {
         if (!response.data) throw new Error('项目不存在')
         this.applyProjectContext(response.data)
       } catch (e) {
-        this.contextProjectId = Number(contextProjectId)
+        this.contextProjectId = contextProjectId
         contextReady = false
         this.$message.error(e.message || '加载项目范围失败')
       }
@@ -745,7 +747,7 @@ export default {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     applyProjectContext(project) {
       if (!project || !project.id) return
-      this.contextProjectId = Number(project.id)
+      this.contextProjectId = normalizeProjectId(project.id)
       this.datasourceQuery.projectId = this.contextProjectId
       this.apiQuery.projectId = this.contextProjectId
       if (project.projectCode) this.apiQuery.projectCode = project.projectCode

@@ -176,10 +176,12 @@ public class RuleGovernanceSubmissionServiceTest {
         }
 
         @Override
-        public GovernanceApprovalRequest submit(
+        public GovernanceApprovalRequest submitReviewedRule(
                 Long requestId,
                 GovernanceSubmitRequest submit,
-                String actor) {
+                String actor, RuleRevision reviewed) {
+            Assert.assertEquals(Long.valueOf(6L), reviewed.getId());
+            Assert.assertEquals("REVIEW", reviewed.getState());
             submitActor = actor;
             submittedComment =
                     submit == null ? null : submit.getComment();

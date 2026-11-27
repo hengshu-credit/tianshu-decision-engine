@@ -10,6 +10,7 @@ const ACTION_ROUTES = {
   CONFIGURE_SFTP_SOURCES: '/sftp',
   CONFIGURE_MODELS: '/model',
   CONFIGURE_RULES: '/rule',
+  CONFIGURE_TEST_CASES: '/rule',
   TEST_RULES: '/test',
   REVIEW_APPROVALS: '/approval',
   VIEW_LOGS: '/log',

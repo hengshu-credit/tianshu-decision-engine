@@ -32,6 +32,7 @@
             reserve-keyword
             clearable
             :remote-method="loadOptions"
+            @change="resetGraph"
             :loading="optionLoading"
             placeholder="输入编码或名称搜索"
             style="width: 320px"
@@ -43,6 +44,9 @@
               :value="item.id"
             />
           </el-select>
+          <span v-if="optionError" class="option-error" role="alert">
+            {{ optionError }} <el-button link size="small" @click="loadOptions(optionKeyword)">重试搜索</el-button>
+          </span>
         </el-form-item>
         <el-form-item label="方向">
           <el-radio-group v-model="query.direction" @change="onDirectionChange">
@@ -56,6 +60,7 @@
             type="primary"
             :icon="ElIconShare"
             :loading="loading"
+            :disabled="!query.nodeId"
             @click="loadGraph"
             >生成血缘图</el-button
           >
@@ -171,9 +176,10 @@
         :aria-busy="loading || canvasLoading"
         :style="{ height: graphHeight + 'px' }"
       >
-        <async-state v-if="startNode && (canvasLoading || canvasError)" class="canvas-load-state" :loading="canvasLoading" :error="canvasError" loading-text="正在加载血缘图…" @retry="retryCanvas" />
+        <async-state v-if="(!startNode && loading) || graphError" class="canvas-load-state" :loading="loading" :error="graphError" loading-text="正在读取血缘关系…" @retry="loadGraph" />
+        <async-state v-else-if="startNode && (canvasLoading || canvasError)" class="canvas-load-state" :loading="canvasLoading" :error="canvasError" loading-text="正在加载血缘图…" @retry="retryCanvas" />
         <div v-else-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
-        <div ref="graphContainer" class="graph-canvas" :class="{ 'is-hidden': !startNode }" aria-label="血缘关系图" />
+        <div ref="graphContainer" class="graph-canvas" :class="{ 'is-hidden': !startNode, 'dense-relations': visibleGraph.edges.length > 24 }" aria-label="血缘关系图" />
       </div>
     </div>
   </div>
@@ -238,11 +244,17 @@ export default {
         },
       ],
       loading: false,
+      graphRequestId: 0,
+      directionRequestId: 0,
+      graphError: '',
       canvasLoading: false,
       canvasError: '',
       canvasImportFailed: false,
       canvasDisposed: false,
       optionLoading: false,
+      optionRequestId: 0,
+      optionKeyword: '',
+      optionError: '',
       options: [],
       startNode: null,
       upstreamRoots: [],
@@ -266,6 +278,8 @@ export default {
       selectedNodeId: null,
       miniMapVisible: false,
       globalEdgeLineType: 'line',
+      explicitEdgeType: false,
+      minZoom: MIN_SCALE,
       zoomInput: '100%',
       zoomPresets: [50, 75, 100, 125, 150, 200],
       gridVisible: true,
@@ -297,6 +311,7 @@ export default {
         { label: '规则', value: 'RULE' },
         { label: '模型', value: 'MODEL' },
         { label: 'API', value: 'API' },
+        { label: '函数', value: 'FUNCTION' },
         { label: '数据库', value: 'DB' },
         { label: 'SFTP', value: 'SFTP' },
         { label: '名单', value: 'LIST' },
@@ -311,7 +326,8 @@ export default {
     initialGraph: {
       deep: true,
       handler(graph) {
-        if (graph) this.loadInitialGraph(graph)
+        if (graph?.startNode) this.loadInitialGraph(graph)
+        else this.resetGraph()
       },
     },
     startNode: {
@@ -335,12 +351,15 @@ export default {
       },
     },
     selectedNodeId() {
+      this.highlightSelectedRelations()
       this.$nextTick(() => {
         this.resizeCanvas()
       })
     },
   },
   beforeUnmount() {
+    this.graphRequestId++
+    this.optionRequestId++
     this.canvasDisposed = true
     window.removeEventListener('tianshu-theme-change', this.applyCanvasSettings)
     this.$refs.graphWrap?.removeEventListener('wheel', this.onCanvasWheel)
@@ -509,11 +528,12 @@ export default {
       )
       const minRow = Math.min(...points.map(point => point.row))
       const maxRow = Math.max(...points.map(point => point.row))
-      const contentHeight = CARD_H + (maxRow - minRow) * ROW_STEP
+      const rowStep = this.snapGridEnabled ? Math.ceil(ROW_STEP / this.gridSize) * this.gridSize : ROW_STEP
+      const contentHeight = CARD_H + (maxRow - minRow) * rowStep
       const height = Math.max(MIN_CANVAS_H, PADDING_Y * 2 + contentHeight)
       const position = point => ({
         left: (width - contentWidth) / 2 + (point.layer - minLayer) * LEVEL_STEP,
-        top: (height - contentHeight) / 2 + (point.row - minRow) * ROW_STEP,
+        top: (height - contentHeight) / 2 + (point.row - minRow) * rowStep,
       })
       const positions = Object.fromEntries([...layout.positions].map(([id, point]) => [id, position(point)]))
       const routes = Object.fromEntries([...layout.routes].map(([key, route]) => [key, route.map(position)]))
@@ -602,13 +622,14 @@ export default {
           loading: branch.loading,
         })),
       ]
+      const byId = new Map(nodes.map(node => [node.id, node]))
       const edges = this.visibleGraph.edges.map(edge => {
-        const source = this.nodePosition(edge.fromId)
-        const target = this.nodePosition(edge.toId)
-        const forward = source.left < target.left
+        const source = byId.get(edge.fromId)
+        const target = byId.get(edge.toId)
+        const forward = source.x < target.x
         const route = this.mindMapLayout.routes[edge.key] || []
-        const startPoint = { x: source.left + CARD_W, y: source.top + CARD_H / 2 }
-        const endPoint = { x: target.left, y: target.top + CARD_H / 2 }
+        const startPoint = { x: source.x + CARD_W / 2, y: source.y }
+        const endPoint = { x: target.x - CARD_W / 2, y: target.y }
         // 共享依赖的跨层通道仅提供布局点，绘制、拖动后的重算和箭头均交给 LogicFlow。
         const geometry = {}
         if (this.globalEdgeLineType === 'polyline' && forward && route.length && !this.positionOverrides[edge.fromId] && !this.positionOverrides[edge.toId]) {
@@ -691,6 +712,7 @@ export default {
           },
         },
         edgeType: this.globalEdgeLineType,
+        style: { edgeText: { background: { fill: 'var(--tianshu-bg-surface)' } } },
         keyboard: { enabled: false },
         history: false,
         adjustEdge: false,
@@ -757,6 +779,7 @@ export default {
       this.$nextTick(() => this.fitGraph())
     },
     onGlobalEdgeLineTypeChange() {
+      this.explicitEdgeType = true
       this.renderLineageGraph()
     },
     onCanvasSettingsChange(patch) {
@@ -798,6 +821,8 @@ export default {
       if (!node) return
       this.selectedNodeId = node.properties.nodeId
       this.lf?.selectElementById(node.id)
+      if (this.viewport.scale < 0.75) this.lf?.zoom?.(1)
+      this.lf?.focusOn?.(node.id)
     },
     closeNodePanel() {
       this.selectedNodeId = null
@@ -807,6 +832,13 @@ export default {
       if (!this.lf) return
       const container = this.$refs.graphContainer
       if (container?.clientWidth && container.clientHeight) this.lf.resize(container.clientWidth, container.clientHeight)
+    },
+    highlightSelectedRelations() {
+      const current = this.selectedNodeId === this.startNode?.id ? 'CURRENT' : this.selectedNodeId
+      this.lf?.graphModel?.edges?.forEach(edge => {
+        const dim = current && edge.sourceNodeId !== current && edge.targetNodeId !== current
+        edge.setStyle('opacity', dim ? 0.18 : 1)
+      })
     },
     renderLineageGraph() {
       if (!this.lf) {
@@ -822,8 +854,10 @@ export default {
         })
       })
       const selected = data.nodes.find(node => node.properties.nodeId === this.selectedNodeId)
-      if (selected) this.lf.selectElementById(selected.id)
-      else this.selectedNodeId = null
+      if (selected) {
+        this.lf.selectElementById(selected.id)
+        this.highlightSelectedRelations()
+      } else this.selectedNodeId = null
       this.resizeCanvas()
       if (this.preserveGraphViewport) this.preserveGraphViewport = false
       else this.fitGraph()
@@ -881,11 +915,13 @@ export default {
     },
     toGraphNode(id, node, properties) {
       const position = this.nodePosition(id)
+      // LogicFlow 会在 render 时对齐节点；端点和卡片必须使用同一组中心坐标。
+      const snap = value => this.snapGridEnabled ? Math.round(value / this.gridSize) * this.gridSize : value
       return {
         id,
         type: 'lineage-node',
-        x: position.left + CARD_W / 2,
-        y: position.top + CARD_H / 2,
+        x: snap(position.left + CARD_W / 2),
+        y: snap(position.top + CARD_H / 2),
         properties: {
           nodeId: node.id,
           nodeType: node.type,
@@ -934,40 +970,55 @@ export default {
       this.preserveCurrentPosition()
       const node = this.knownNodes[id]
       if (!expanded[id] && !this.fieldChildren.has(id) && !this.loadedHierarchy[id]) {
+        const requestId = this.graphRequestId
         this.hierarchyLoading[id] = true
         try {
           const res = await getLineageGraph({ nodeType: node.type, nodeId: node.refId, direction: 'DOWNSTREAM', maxDepth: 1 })
+          if (requestId !== this.graphRequestId) return
           this.mergeGraph(res?.data || {})
           this.loadedHierarchy[id] = true
         } catch (e) {
-          this.$message.error('字段层级加载失败，请重试')
+          if (requestId === this.graphRequestId) this.$message.error('字段层级加载失败，请重试')
           return
         } finally {
-          this.hierarchyLoading[id] = false
+          if (requestId === this.graphRequestId) this.hierarchyLoading[id] = false
         }
       }
       expanded[id] = !expanded[id]
     },
     async loadOptions(keyword) {
+      const requestId = ++this.optionRequestId
+      this.optionKeyword = keyword
+      this.optionError = ''
       this.optionLoading = true
       try {
         const res = await listLineageOptions({
           nodeType: this.query.nodeType,
           keyword,
         })
+        if (requestId !== this.optionRequestId) return
         this.options = (res && res.data) || []
         const selected = this.options.find(item => String(item.id) === String(this.query.nodeId))
         if (selected) this.query.nodeId = selected.id
+      } catch (error) {
+        if (requestId !== this.optionRequestId) return
+        this.options = []
+        this.optionError = error?.message || '无法读取起点列表'
       } finally {
-        this.optionLoading = false
+        if (requestId === this.optionRequestId) this.optionLoading = false
       }
     },
     onNodeTypeChange() {
       this.query.nodeId = ''
+      this.options = []
       this.resetGraph()
       this.loadOptions('')
     },
     resetGraph() {
+      this.graphRequestId++
+      this.loading = false
+      this.graphError = ''
+      if (!this.explicitEdgeType) this.globalEdgeLineType = 'line'
       this.canvasError = ''
       this.startNode = null
       this.upstreamRoots = []
@@ -999,6 +1050,15 @@ export default {
     },
     fitGraph() {
       if (!this.lf || !this.startNode) return
+      const bounds = this.lf.graphModel?.getVirtualRectSize?.()
+      const container = this.$refs.graphContainer
+      if (bounds && container?.clientWidth && container.clientHeight) {
+        // LogicFlow 会拒绝小于缩放下限的 fitView，导致大图停在 100% 且只看得到中心。
+        const width = this.lf.graphModel.width || container.clientWidth
+        const height = this.lf.graphModel.height || container.clientHeight
+        this.minZoom = Math.min(MIN_SCALE, 1 / Math.max((bounds.width + 80) / width, (bounds.height + 80) / height))
+        this.lf.setZoomMiniSize(this.minZoom)
+      }
       this.lf.fitView(80, 80)
       if (this.lf.getTransform().SCALE_X > 1) {
         this.lf.zoom(1)
@@ -1010,6 +1070,9 @@ export default {
       this.positionOverrides = {}
       this.positionOffset = { left: 0, top: 0 }
       this.preservedCurrentPosition = null
+      if (!this.explicitEdgeType && Object.values(this.mindMapLayout.routes).some(route => route.length)) {
+        this.globalEdgeLineType = 'polyline'
+      }
       this.lf?.resetZoom()
       this.blurToolbarFocus()
       this.$nextTick(() => {
@@ -1042,7 +1105,7 @@ export default {
     onZoomInputChange() {
       const requested = Number.parseFloat(String(this.zoomInput).replace('%', ''))
       const nextPercent = Number.isFinite(requested)
-        ? Math.min(MAX_SCALE * 100, Math.max(MIN_SCALE * 100, requested))
+        ? Math.min(MAX_SCALE * 100, Math.max(this.minZoom * 100, requested))
         : this.zoomPercent
       this.lf?.zoom?.(nextPercent / 100)
       this.updateZoom()
@@ -1050,7 +1113,7 @@ export default {
     setZoom(nextScale, clientPoint) {
       const graphWrap = this.$refs.graphWrap
       if (!graphWrap) return
-      const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale))
+      const scale = Math.max(this.minZoom, Math.min(MAX_SCALE, nextScale))
       const rect = graphWrap.getBoundingClientRect()
       const focusX = clientPoint ? clientPoint.clientX - rect.left : graphWrap.clientWidth / 2
       const focusY = clientPoint ? clientPoint.clientY - rect.top : graphWrap.clientHeight / 2
@@ -1120,36 +1183,50 @@ export default {
         this.$message.warning('请先选择血缘起点')
         return
       }
+      this.resetGraph()
+      const requestId = this.graphRequestId
+      const query = { ...this.query, maxDepth: 2 }
       this.loading = true
       try {
-        const res = await getLineageGraph({ ...this.query, maxDepth: 2 })
+        const res = await getLineageGraph(query)
+        if (requestId !== this.graphRequestId) return
         const data = (res && res.data) || {}
-        this.resetGraph()
-        this.startNode = data.startNode || null
+        if (!data.startNode) {
+          this.graphError = '未找到该起点，请重新选择或重新加载'
+          return
+        }
+        this.startNode = data.startNode
         this.mergeGraph(data)
-        if (this.query.direction !== 'DOWNSTREAM') {
+        if (query.direction !== 'DOWNSTREAM') {
           this.upstreamRoots = this.buildBranches(data, 'UPSTREAM', 2)
           this.loadedDirections.UPSTREAM = true
         }
-        if (this.query.direction !== 'UPSTREAM') {
+        if (query.direction !== 'UPSTREAM') {
           this.downstreamRoots = this.buildBranches(data, 'DOWNSTREAM', 2)
           this.loadedDirections.DOWNSTREAM = true
         }
         this.$nextTick(() => this.fitGraph())
-      } catch (e) {
-        this.resetGraph()
-        this.$message.error('血缘图加载失败，请重试')
+      } catch (error) {
+        if (requestId === this.graphRequestId) this.graphError = error?.message || '血缘关系读取失败，请重新加载'
       } finally {
-        this.loading = false
+        if (requestId === this.graphRequestId) this.loading = false
       }
     },
     async onDirectionChange(direction) {
-      if (!this.query.nodeId || !this.startNode) return
+      if (!this.query.nodeId) return
+      if (!this.startNode) {
+        if (this.loading || this.graphError) return this.loadGraph()
+        return
+      }
+      const graphId = this.graphRequestId
+      const directionId = ++this.directionRequestId
+      const isCurrent = () => graphId === this.graphRequestId && directionId === this.directionRequestId
+      this.graphError = ''
       const required =
         direction === 'ALL' ? ['UPSTREAM', 'DOWNSTREAM'] : [direction]
       const missing = required.filter((item) => !this.loadedDirections[item])
+      this.loading = missing.length > 0
       if (!missing.length) return
-      this.loading = true
       try {
         for (const item of missing) {
           const res = await getLineageGraph({
@@ -1158,19 +1235,23 @@ export default {
             direction: item,
             maxDepth: 2,
           })
+          if (!isCurrent()) return
           const data = (res && res.data) || {}
+          if (data.startNode?.id !== this.startNode.id) {
+            this.graphError = '未找到该起点，请重新选择或重新加载'
+            return
+          }
           this.mergeGraph(data)
-          if (!this.startNode) this.startNode = data.startNode || null
           if (item === 'UPSTREAM')
             this.upstreamRoots = this.buildBranches(data, item, 2)
           if (item === 'DOWNSTREAM')
             this.downstreamRoots = this.buildBranches(data, item, 2)
           this.loadedDirections[item] = true
         }
-      } catch (e) {
-        this.$message.error('血缘方向加载失败，请重试')
+      } catch (error) {
+        if (isCurrent()) this.graphError = error?.message || '所选方向的血缘关系读取失败，请重新加载'
       } finally {
-        this.loading = false
+        if (isCurrent()) this.loading = false
       }
     },
     buildBranches(data, direction, maxDepth) {
@@ -1265,6 +1346,7 @@ export default {
         return
       }
       matching.forEach(item => { item.loading = true })
+      const requestId = this.graphRequestId
       try {
         const res = await getLineageGraph({
           nodeType: branch.node.type,
@@ -1272,6 +1354,7 @@ export default {
           direction: branch.direction,
           maxDepth: 1,
         })
+        if (requestId !== this.graphRequestId) return
         this.mergeGraph((res && res.data) || {})
         matching.forEach(item => {
           item.children = this.buildDirectChildren(item, (res && res.data) || {})
@@ -1280,7 +1363,7 @@ export default {
           item.expanded = item.children.length > 0
         })
       } catch (e) {
-        this.$message.error('血缘分支加载失败，请重试')
+        if (requestId === this.graphRequestId) this.$message.error('血缘分支加载失败，请重试')
       } finally {
         matching.forEach(item => { item.loading = false })
       }
@@ -1354,6 +1437,10 @@ export default {
     padding: 12px 12px 0;
     margin-bottom: 12px;
   }
+  .option-error {
+    width: 100%;
+    color: var(--el-color-danger);
+  }
   .legend-row {
     display: flex;
     flex: 0 1 auto;
@@ -1394,6 +1481,15 @@ export default {
     height: 10px;
     border-radius: 2px;
   }
+  // 密集图保留所有关系线，仅在指向或选中连线时显示其标签。
+  .dense-relations :deep(.lf-edge:not(:hover):not(.lf-edge-selected) .lf-line-text) {
+    visibility: hidden;
+  }
+  .dense-relations :deep(.lf-edge:hover [marker-end]),
+  .dense-relations :deep(.lf-edge-selected [marker-end]) {
+    stroke-width: 3;
+  }
+
   .lineage-graph-layout {
     position: relative;
     min-width: 0;
@@ -1627,6 +1723,19 @@ export default {
       right: 0;
       z-index: 8;
       width: min(380px, 88vw);
+    }
+  }
+
+  @media (max-width: 600px) {
+    .query-panel :deep(.el-form-item) {
+      display: flex;
+      margin-right: 0;
+    }
+    .query-panel :deep(.el-form-item__content) {
+      min-width: 0;
+    }
+    .query-panel .el-select {
+      max-width: 100%;
     }
   }
 

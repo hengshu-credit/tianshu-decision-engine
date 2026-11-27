@@ -1,3 +1,4 @@
+const { openRuleCaseTools, returnToRuleTest } = require('./support/ruleCaseTools.cjs')
 const { test, expect } = require('@playwright/test')
 const fs = require('node:fs')
 const base = process.env.E2E_BASE_URL
@@ -28,19 +29,22 @@ test('真实 UI 修改规则使回归证据失效，重新回归发布后独立�
   await expect(page.getByTestId('rule-test-source')).toContainText(/当前生产|草稿/)
   await page.getByTestId('rule-test-source').click()
   await page.getByRole('option', { name: new RegExp('草稿\\s*' + revision.revisionNo) }).click()
+  await openRuleCaseTools(page)
   const fixed = page.locator('.fixed-case-row').first()
   await fixed.getByRole('button', { name: '载入', exact: true }).click()
   await fixed.locator('.el-checkbox__label').click()
   await page.getByRole('button', { name: '批量执行', exact: true }).click()
   await expect(page.locator('.batch-result-table')).toContainText('预期不符', { timeout: 20000 })
+  await returnToRuleTest(page)
   const execute = page.waitForResponse(response => response.url().endsWith('/execute-validated') && response.request().method() === 'POST')
   await page.getByRole('button', { name: '执行测试', exact: true }).click()
   const actual = await (await execute).json()
   expect(actual.data.execution.success).toBe(true); expect(actual.data.execution.result).toBe(value)
   await page.getByTestId('expectation-use-actual').click()
+  await openRuleCaseTools(page)
   await page.getByRole('button', { name: '保存当前用例', exact: true }).click()
   await expect(page.getByText('测试用例已更新', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '回归报告', exact: true }).click()
+  await page.getByRole('button', { name: '查看回归结果', exact: true }).click()
   const checked = page.waitForResponse(response => response.url().endsWith('/reports/check') && response.request().method() === 'POST')
   await page.getByRole('button', { name: '复核当前修订', exact: true }).click()
   const gate = (await (await checked).json()).data
@@ -60,7 +64,7 @@ test('真实 UI 修改规则使回归证据失效，重新回归发布后独立�
   await expect(page.locator('.header-meta')).toContainText('已通过', { timeout: 30000 })
   if (process.env.E2E_SKIP_RUNTIME_PROBE !== 'true') {
     await expect.poll(async () => {
-      const response = await page.request.post(`http://127.0.0.1:17071/api/rule/execute/${config.ruleCode}`, { headers: { authorization: 'Bearer ' + config.runtimeToken }, data: { params: {} } })
+      const response = await page.request.post(`${process.env.E2E_RUNTIME_BASE_URL || 'http://127.0.0.1:17071'}/api/rule/execute/${config.ruleCode}`, { headers: { authorization: 'Bearer ' + config.runtimeToken }, data: { params: {} } })
       return (await response.json()).data?.result
     }, { timeout: 15000, message: '发布后 SDK 运行时必须收到新版本' }).toBe(value)
   }

@@ -6,11 +6,11 @@ SET collation_connection = utf8mb4_unicode_ci;
 -- 名单/API/数据库的演示来源变量由样例脚本创建，不预置缺少依赖的固定 ID 配置。
 -- 变量写入 GLOBAL + project_id=0，但只要已有任意 GLOBAL 同 var_code 就跳过；对象以 GLOBAL + project_id=0 + object_code 幂等。
 INSERT INTO rule_data_object (project_id, `scope`, object_code, object_label, script_name, object_type, source_type, source_content, parent_object_id, status, create_time, update_time) VALUES
- (0,'GLOBAL','contact','联系人','','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
- (0,'GLOBAL','contact1','联系人1','','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
- (0,'GLOBAL','bankcard','银行卡信息','','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
- (0,'GLOBAL','contact2','联系人2','','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
- (0,'GLOBAL','authorization_for_contracts_execution','合同签署授权','','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+ (0,'GLOBAL','contact','联系人','contact','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+ (0,'GLOBAL','contact1','联系人1','contact1','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+ (0,'GLOBAL','bankcard','银行卡信息','bankcard','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+ (0,'GLOBAL','contact2','联系人2','contact2','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+ (0,'GLOBAL','authorization_for_contracts_execution','合同签署授权','authorization_for_contracts_execution','INPUT','JSON',NULL,NULL,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
 ON DUPLICATE KEY UPDATE id = id;
 
 INSERT INTO rule_variable (project_id,`scope`,var_code,var_label,script_name,var_type,var_source,source_config,default_value,value_range,example_value,description,sort_order,status,create_time,update_time)

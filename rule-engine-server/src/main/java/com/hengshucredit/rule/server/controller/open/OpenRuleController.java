@@ -72,10 +72,10 @@ public class OpenRuleController {
         OpenApiContractService.ResolvedContract resolved = null;
         String traceId = null;
         RuleIdempotencyService.Decision activeIdempotency = null;
+        ProjectAuthContext authContext = ProjectAuthContext.from(request);
         boolean admitted = false;
         ProjectExecutionGuard.Permit permit = null;
         try {
-            ProjectAuthContext authContext = ProjectAuthContext.from(request);
             if (authContext == null) {
                 throw new OpenApiException(OpenApiStatuses.productUnauthorized());
             }
@@ -121,7 +121,7 @@ public class OpenRuleController {
             }
             OpenApiContractService.ResolvedContract executionContract = resolved;
             if (executionQueue != null) {
-                admitted = executionQueue.enter();
+                admitted = executionQueue.enter(authContext);
                 if (!admitted) return deferOpen(resolved, traceId);
                 permit = executionQueue.permit(authContext);
                 idempotency = idempotencyService.resumeAccepted(idempotency.state(), resolved.getPublished(), params);
@@ -177,7 +177,7 @@ public class OpenRuleController {
                     traceId, errorValues("系统执行异常"));
         } finally {
             if (permit != null) permit.close();
-            if (admitted) executionQueue.leave();
+            if (admitted) executionQueue.leave(authContext);
         }
     }
 

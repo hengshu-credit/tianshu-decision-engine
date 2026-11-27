@@ -88,6 +88,12 @@ public class BillingController {
                 authType, authCode, tokenCode, beginTime, endTime, versionQuery));
     }
 
+    @GetMapping("/record/by-trace")
+    public ApiResponse<RuleBillingService.TraceCharges> recordsByTrace(@RequestParam String rootTraceId,
+            @RequestParam(required = false) Long projectId, @RequestParam(defaultValue = "1") int pageNum) {
+        return ApiResponse.ok(billingService.recordsByTrace(rootTraceId, projectId, pageNum));
+    }
+
     @GetMapping("/summary/list")
     public ApiResponse<IPage<RuleBillingSummary>> listSummaries(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
@@ -106,6 +112,17 @@ public class BillingController {
         return ApiResponse.ok(billingService.pageSummaries(pageNum, pageSize, billingTarget, billingCode, projectCode, projectName,
                 authType, authCode, beginDate, endDate));
     }
+
+    @Resource private com.hengshucredit.rule.server.service.BillingStatementService statements;
+
+    @PostMapping("/summary/{id:\\d+}/send")
+    @com.hengshucredit.rule.server.security.RequirePermission("billing:edit")
+    public ApiResponse<Void> sendStatement(@PathVariable long id, @RequestBody(required = false) StatementPeriod period) {
+        statements.send(id, period == null ? null : period.beginDate(), period == null ? null : period.endDate());
+        return ApiResponse.ok();
+    }
+
+    public record StatementPeriod(LocalDate beginDate, LocalDate endDate) {}
 
     @PostMapping("/summary/refresh")
     public ApiResponse<RuleBillingSummaryTask> refreshSummary(@RequestBody(required = false) Map<String, String> body) {

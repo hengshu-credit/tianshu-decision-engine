@@ -229,6 +229,9 @@ public class RuleExecuteService {
                     referencePlan.mergeBindingFields(inputFields), executeParams);
         }
         Map<String, Object> originalInput = snapshotMap(executeParams);
+        String recordedInput =
+                SafeLogJson.output(
+                        params == null ? originalInput : auditValue(params, originalInput));
         String projectCode = null;
         if (executionProjectId != null) {
             RuleProject project = projectService.getById(executionProjectId);
@@ -296,8 +299,8 @@ public class RuleExecuteService {
         log.setStartedAt(historyStartedAt);
         log.setHistoryFields(JSON.toJSONString(resolveOptions.getInvocationCache().historySnapshot(inputFields, originalInput, executeParams),
                 com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
-        log.setInputParams(toJsonSafely(originalInput));
-        log.setOutputResult(toJsonSafely(result.getResult()));
+        log.setInputParams(recordedInput);
+        log.setOutputResult(SafeLogJson.output(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
@@ -458,6 +461,9 @@ public class RuleExecuteService {
                     referencePlan.mergeBindingFields(inputFields), executeParams);
         }
         Map<String, Object> originalInput = snapshotMap(executeParams);
+        String recordedInput =
+                SafeLogJson.output(
+                        params == null ? originalInput : auditValue(params, originalInput));
         String projectCode = published.getProjectCode();
         if (projectCode == null && executionProjectId != null) {
             RuleProject project = projectService.getById(executionProjectId);
@@ -579,8 +585,8 @@ public class RuleExecuteService {
         }
         log.setClientAppName(clientAppName);
         applyAuthAttribution(log, authContext);
-        log.setInputParams(toJsonSafely(originalInput));
-        log.setOutputResult(toJsonSafely(result.getResult()));
+        log.setInputParams(recordedInput);
+        log.setOutputResult(SafeLogJson.output(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
@@ -831,7 +837,29 @@ public class RuleExecuteService {
         return functionRegistrar.prepareFunctions(functions, qlExpressEngine.getRunner());
     }
 
-
+    /**
+     * Log the bound scalar values, restoring caller-supplied empty values normalized for execution.
+     */
+    private Object auditValue(Object submitted, Object bound) {
+        if (bound == null
+                || submitted == null
+                || "".equals(submitted)
+                || submitted instanceof java.util.Collection<?> list && list.isEmpty()
+                || submitted instanceof Map<?, ?> map && map.isEmpty()) return submitted;
+        if (submitted instanceof Map<?, ?> raw && bound instanceof Map<?, ?> values) {
+            if (raw.isEmpty()) return raw;
+            var result = new LinkedHashMap<Object, Object>(values);
+            raw.forEach((key, value) -> result.put(key, auditValue(value, values.get(key))));
+            return result;
+        }
+        if (submitted instanceof List<?> raw && bound instanceof List<?> values) {
+            if (raw.size() != values.size()) return raw;
+            var result = new ArrayList<>(raw.size());
+            for (int i = 0; i < raw.size(); i++) result.add(auditValue(raw.get(i), values.get(i)));
+            return result;
+        }
+        return bound;
+    }
 
     private Map<String, Object> snapshotMap(Map<String, Object> source) {
         Map<String, Object> snapshot = new LinkedHashMap<>();

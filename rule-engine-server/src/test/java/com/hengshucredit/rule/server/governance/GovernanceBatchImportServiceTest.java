@@ -24,6 +24,23 @@ import java.util.Map;
 public class GovernanceBatchImportServiceTest {
 
     @Test
+    public void inputVariableImportPreservesFalseAndRejectsDuplicateKeysBeforeDrafting() {
+        TestService service = new TestService();
+        ReflectionTestUtils.setField(service, "jsonSchemaParser", new JsonSchemaParser());
+        var invalid = service.importInputVariablesFromJson(null,"GLOBAL","{\"flag\":true,\"flag\":false}","tester");
+        Assert.assertEquals(false, invalid.get("success"));
+        Assert.assertTrue(service.drafts.isEmpty());
+        var result = service.importInputVariablesFromJson(null,"GLOBAL","{\"Flag_ID\":false}","tester");
+        Assert.assertEquals(1, result.get("inputVariableCount"));
+        var row = JSON.parseObject(service.drafts.get(0).getSnapshotJson());
+        Assert.assertEquals("Flag_ID", row.getString("varCode"));
+        Assert.assertEquals("INPUT", row.getString("varSource"));
+        Assert.assertEquals("FIXED", row.getString("exampleMode"));
+        Assert.assertEquals("false", row.getString("exampleValue"));
+        Assert.assertNull(row.get("defaultValue"));
+    }
+
+    @Test
     public void allFiveImportEntrypointsCreateReviewableDraftsFromRealParsers() {
         TestService service = new TestService();
         ReflectionTestUtils.setField(service, "jsonSchemaParser", new JsonSchemaParser());
@@ -74,6 +91,8 @@ public class GovernanceBatchImportServiceTest {
         List<Map<String, Object>> fields = (List<Map<String, Object>>) snapshot.get("fields");
         Assert.assertEquals(4, fields.size());
         Assert.assertEquals("Mixed_Request", snapshot.get("objectCode"));
+        Assert.assertEquals("Mixed_Request", snapshot.get("scriptName"));
+        Assert.assertEquals("payload.Apps.app_code", findField(fields, "app_code").get("scriptName"));
         Assert.assertEquals(findField(fields, "payload").get("id"), findField(fields, "Apps").get("parentFieldId"));
         Assert.assertEquals(findField(fields, "Apps").get("id"), findField(fields, "app_code").get("parentFieldId"));
         Assert.assertEquals("OBJECT", findField(fields, "Apps").get("genericType"));
@@ -140,13 +159,13 @@ public class GovernanceBatchImportServiceTest {
         existing.setScope("PROJECT");
         existing.setObjectCode("request");
         existing.setObjectLabel("请求");
-        existing.setScriptName("request");
+        existing.setScriptName("ApprovedAlias");
         existing.setObjectType("INPUT");
         existing.setStatus(1);
         service.objects.put("request", existing);
 
         Map<String, Object> root = field(101L, null,
-                "params", "params", "OBJECT");
+                "params", "SavedParams", "OBJECT");
         Map<String, Object> oldChild = field(102L, 101L,
                 "legacy", "params.legacy", "STRING");
         Map<String, Object> snapshot = new LinkedHashMap<>();
@@ -155,7 +174,7 @@ public class GovernanceBatchImportServiceTest {
         snapshot.put("scope", "PROJECT");
         snapshot.put("objectCode", "request");
         snapshot.put("objectLabel", "请求");
-        snapshot.put("scriptName", "request");
+        snapshot.put("scriptName", "ApprovedAlias");
         snapshot.put("objectType", "INPUT");
         snapshot.put("status", 1);
         snapshot.put("fields", new ArrayList<>(List.of(root, oldChild)));
@@ -185,6 +204,8 @@ public class GovernanceBatchImportServiceTest {
         Map<String, Object> stableRoot = findField(fields, "params");
         Map<String, Object> preserved = findField(fields, "legacy");
         Map<String, Object> added = findField(fields, "name");
+        Assert.assertEquals("ApprovedAlias", aggregate.get("scriptName"));
+        Assert.assertEquals("SavedParams", stableRoot.get("scriptName"));
         Assert.assertEquals(101L,
                 ((Number) stableRoot.get("id")).longValue());
         Assert.assertEquals(102L,

@@ -1,6 +1,6 @@
 <template>
   <div class="uiue-list-page management-list-page">
-    <dismissible-guidance class="variable-intro" guide-id="variable.intro" label="变量管理提示">
+    <dismissible-guidance v-if="activeTab !== 'objects' && activeTab !== 'mock'" class="variable-intro" guide-id="variable.intro" label="变量管理提示">
       <el-icon><el-icon-info /></el-icon> 变量在规则设计时使用，<router-link
         to="/test"
         >规则测试</router-link
@@ -8,6 +8,7 @@
     </dismissible-guidance>
 
     <config-layer-guide
+      v-if="activeTab !== 'objects' && activeTab !== 'mock'"
       guide-id="variable.steps"
       title="变量配置步骤"
       test-id="variable-config-layers"
@@ -254,7 +255,7 @@
                   data-action="edit"
                   size="small"
                   type="warning"
-                  @click="editWorkspace('VARIABLE', row, handleEdit)"
+                  @click="editWorkspace('VARIABLE', row, handleEdit, loadCurrentVariable)"
                   >编辑</el-button
                 >
                 <el-button v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
@@ -378,6 +379,7 @@
           </div>
           <variable-toolbar-actions
             :primary-create-label="primaryCreateLabel"
+            column-settings-storage-key="tianshu:table-columns:data-object-list"
             :column-settings-columns="objectColumns"
             :column-settings-model-value="objectColumnOrder"
             @import="handleImportCmd"
@@ -389,260 +391,88 @@
           v-if="filteredObjectTree.length === 0 && !objLoading"
           class="tab-empty"
         >
-          暂无数据对象，点击「新建对象」或「批量导入」添加
+          暂无数据对象
         </div>
         <div class="management-table-region" v-else :aria-busy="objLoading">
-          <el-table class="management-table data-object-table"
-            data-testid="data-object-table"
-            show-overflow-tooltip
-            :data="paginatedObjectTree"
-            :row-key="objectRowKey"
-            :expand-row-keys="expandedObjectRowKeys"
-            border
-            size="small"
-            style="width: 100%"
-            @expand-change="handleObjectExpandChange"
-            @row-click="handleObjectRowClick"
+          <lazy-field-table ref="objectTable" class="management-table data-object-table" data-testid="data-object-table"
+            :data="objectTableRows" sticky-parents row-key="key" border size="small" show-overflow-tooltip
+            :span-method="objectTableSpan" @row-click="handleObjectRowClick" @row-hover="hoveredObjectGuides = $event?.guides ?? []"
           >
-            <el-table-column type="expand" width="48">
-              <template v-slot="{ row: node }">
-                <div v-if="node && node.object" class="object-field-expansion">
-                  <div class="object-field-expansion__heading">
-                    <div>
-                      <strong>{{ node.object.objectLabel || node.object.objectCode }} · 字段明细</strong>
-                      <span>共 {{ objectFieldTotal(node) }} 个字段；点击字段行展开层级，每页保留完整子树。</span>
-                    </div>
-                    <div class="object-field-expansion__actions">
-                    <el-button size="small" :disabled="!paginatedObjectFields(node).some(field => field.children?.length)" @click="setObjectFieldExpansion(node, true)">展开全部</el-button>
-                    <el-button size="small" :disabled="!objectFieldExpandedKeys(node).length" @click="setObjectFieldExpansion(node, false)">收起全部</el-button>
-                    <el-button
-                      v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
-                      link
-                      size="small"
-                      :icon="ElIconPlus"
-                      @click.stop="handleAddObjectField(node)"
-                      >添加字段</el-button
-                    >
-                    </div>
-                  </div>
-              <lazy-field-table show-overflow-tooltip
-                :data="paginatedObjectFields(node)"
-                :expanded-keys="objectFieldExpandedKeys(node)"
-                max-height="480"
-                @row-click="(item, column, event) => handleObjectFieldRowClick(node, item.field, event)"
-                size="small"
-                border
-                row-key="field.id"
-                style="width: 100%"
-              >
-                <el-table-column
-                  prop="field.varCode"
-                  label="字段编码"
-                  min-width="140"
-                  show-overflow-tooltip
-                >
-                  <template #default="{ row: item }">
-                    <span :style="{ paddingInlineStart: item.depth * 24 + 'px' }">
-                      <button v-if="item.field.children?.length" type="button" class="object-field-toggle"
-                        :aria-expanded="item.expanded"
-                        :aria-label="'展开或收起 ' + item.field.varCode"
-                        @click.stop="handleObjectFieldExpandChange(node, item.field, !item.expanded)"
-                      >{{ item.expanded ? '▾' : '▸' }}</button>
-                      {{ item.field.varCode }}
-                    </span>
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  prop="field.varLabel"
-                  label="名称"
-                  min-width="120"
-                  show-overflow-tooltip
+            <el-table-column v-for="(column, columnIndex) in visibleObjectColumns" :key="column.key"
+              :column-key="column.key" :label="column.label" :min-width="column.minWidth" :width="column.width"
+              :align="column.align || 'left'"
+            >
+              <template #default="{ row: item }">
+                <span v-if="columnIndex === 0 && !item.pager" class="object-tree-prefix" :style="{ '--tree-depth': item.depth }">
+                  <span class="object-tree-guides" aria-hidden="true">
+                    <i v-for="guide in item.guides" :key="guide" class="object-tree-guide"
+                      :class="{ 'is-active': guide === hoveredObjectGuides.at(-1) || guide === hoveredObjectGuides.at(-2) }"
+                    ></i>
+                  </span>
+                  <button v-if="item.expandable" type="button" class="object-field-toggle"
+                    :aria-expanded="item.expanded" :aria-label="'展开或收起 ' + item.code"
+                    @click.stop="toggleObjectTableRow(item)"
+                  >{{ item.expanded ? '▾' : '▸' }}</button>
+                </span>
+                <el-pagination v-if="item.pager" size="small"
+                  :aria-label="item.node.object.objectCode + '的字段分页'"
+                  :current-page="objectFieldPage(item.node)" :page-size="objectFieldPageSize"
+                  :total="objectFieldRootTotal(item.node)" layout="total,prev,pager,next"
+                  @current-change="handleObjectFieldPageChange(item.node, $event)"
                 />
-                <el-table-column label="脚本名称" min-width="140">
-                  <template v-slot="{ row: { field: row } }">
-                    <code class="script-name-code">{{
-                      row.scriptName || '—'
-                    }}</code>
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  prop="field.varType"
-                  label="类型"
-                  min-width="80"
-                  align="center"
-                >
-                  <template v-slot="{ row: { field: row } }"
-                    ><el-tag size="small" :type="typeTagColor(row.varType)">{{
-                      typeLabel(row.varType)
-                    }}</el-tag></template
-                  >
-                </el-table-column>
-                <el-table-column label="引用变量" min-width="220" show-overflow-tooltip>
-                  <template v-slot="{ row: { field: row } }">
-                    <span v-if="row.refVariableId || row.refObjectId || row.refObjectCode" class="reference-variable-cell">
-                      <strong>{{ objectFieldReferenceLabel(row) }}</strong>
-                      <code>{{ objectFieldReferenceScriptName(row) }}</code>
+                <code v-else-if="column.key === 'objectCode'" class="script-name-code" :title="item.code">{{ item.code }}</code>
+                <template v-else-if="column.key === 'objectLabel'">{{ item.field ? item.field.varLabel : item.node.object.objectLabel }}</template>
+                <code v-else-if="column.key === 'scriptName'" class="script-name-code">{{ item.scriptName }}</code>
+                <el-tag v-else-if="column.key === 'scope'" size="small"
+                  :class="item.node.object.scope === 'GLOBAL' ? 'el-tag--scope-global' : 'el-tag--scope-project'"
+                >{{ scopeTagLabel(item.node.object.scope) }}</el-tag>
+                <template v-else-if="column.key === 'projectName'">{{ item.node.object.projectName || getProjectName(item.node.object.projectId) || '—' }}</template>
+                <template v-else-if="column.key === 'objectType'">
+                  <el-tag v-if="item.field" size="small" :type="typeTagColor(item.field.varType)">{{ typeLabel(item.field.varType) }}</el-tag>
+                  <span v-else>{{ objTypeLabel(item.node.object.objectType) }}</span>
+                </template>
+                <template v-else-if="column.key === 'source'">
+                  <template v-if="item.field">
+                    <span v-if="item.field.refVariableId || item.field.refObjectId || item.field.refObjectCode"
+                      class="reference-variable-cell" title="字段引用">
+                      <strong>{{ objectFieldReferenceLabel(item.field) }}</strong>
+                      <code>{{ objectFieldReferenceScriptName(item.field) }}</code>
                     </span>
-                    <span v-else class="text-muted">—</span>
                   </template>
-                </el-table-column>
-                <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '选项', '删除'])" align="center">
-                  <template v-slot="{ row: { field: row } }">
-                    <el-button
-                      v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
-                      link
-                      data-action="edit"
-                      size="small"
-                      type="warning"
-                      @click="handleEditObjectField(row, node)"
-                      >编辑</el-button
-                    >
-                    <el-button
-                      v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
-                      link
-                      data-action="configure"
-                      size="small"
-                      type="info"
-                      @click="handleOptions(row, true)"
-                      v-if="row.varType === 'ENUM'"
-                      >选项</el-button
-                    >
-                    <el-button
-                      v-permission="{ code: 'field:edit', projectId: row.projectId, scope: row.scope }"
-                      link
-                      data-action="delete"
-                      size="small"
-                      type="danger"
-                      class="btn-delete"
-                      @click="handleDeleteObjectField(row)"
-                      >删除</el-button
-                    >
-                  </template>
-                </el-table-column>
-              </lazy-field-table>
-              <el-pagination
-                v-if="objectFieldNeedsPaging(node)"
-                style="margin-top: 8px; text-align: right"
-                :current-page="objectFieldPage(node)"
-                :page-size="objectFieldPageSize"
-                :total="objectFieldRootTotal(node)"
-                layout="total,prev,pager,next"
-                @current-change="(p) => handleObjectFieldPageChange(node, p)"
-              />
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="object.objectCode" label="对象编码" min-width="150" show-overflow-tooltip>
-              <template v-slot="{ row: node }">
-                <code v-if="node && node.object" class="script-name-code">{{
-                  node.object.objectCode
-                }}</code>
-              </template>
-            </el-table-column>
-            <el-table-column prop="object.objectLabel" label="对象名称" min-width="140" show-overflow-tooltip />
-            <el-table-column label="脚本名称" min-width="140" show-overflow-tooltip>
-              <template v-slot="{ row: node }">
-                <code v-if="node && node.object" class="script-name-code">{{
-                  node.object.scriptName || '—'
-                }}</code>
-              </template>
-            </el-table-column>
-            <el-table-column label="作用范围" width="90" align="center">
-              <template v-slot="{ row: node }">
-                <el-tag
-                  v-if="node && node.object"
-                  size="small"
-                  :class="node.object.scope === 'GLOBAL' ? 'el-tag--scope-global' : 'el-tag--scope-project'"
-                  >{{ node.object.scope === 'GLOBAL' ? '全局' : '项目' }}</el-tag
-                >
-              </template>
-            </el-table-column>
-            <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
-              <template v-slot="{ row: node }">
-                <span v-if="node && node.object">{{
-                  getProjectName(node.object.projectId) || '—'
-                }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="对象类型" width="130" align="center">
-              <template v-slot="{ row: node }">
-                <el-select
-                  v-if="node && node.object"
-                  v-model="node.object.objectType"
-                  :disabled="!canEditResource(node.object)"
-                  size="small"
-                  style="width: 108px"
-                  @change="onObjectTypeChange(node.object)"
-                  @click.stop
-                >
-                  <el-option label="输入对象" value="INPUT" />
-                  <el-option label="输出对象" value="OUTPUT" />
-                  <el-option label="输入输出" value="INOUT" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="来源" width="90" align="center">
-              <template v-slot="{ row: node }">
-                <el-tag v-if="node && node.object && node.object.sourceType" size="small" type="info">{{
-                  node.object.sourceType
-                }}</el-tag>
-                <span v-else-if="node && node.object" class="text-muted">—</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="字段数" width="80" align="center">
-              <template v-slot="{ row: node }">
-                <span v-if="node && node.object">{{
-                  objectFieldTotal(node)
-                }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="更新时间" min-width="165" align="center">
-              <template v-slot="{ row: node }">
-                <span v-if="node && node.object">{{
-                  formatUpdateTime(node.object.updateTime)
-                }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" min-width="160" align="center">
-              <template #default="{ row: node }">
-                <governance-resource-status v-if="node && node.object" resource-type="DATA_OBJECT" :resource-id="node.object.id" :status="node.object.status" />
+                  <el-tag v-else-if="item.node.object.sourceType" size="small" type="info">{{ item.node.object.sourceType }}</el-tag>
+                </template>
+                <template v-else-if="column.key === 'fieldCount'">{{ item.field ? item.field.children?.length : objectFieldTotal(item.node) }}</template>
+                <template v-else-if="column.key === 'updateTime'">{{ formatUpdateTime((item.field || item.node.object).updateTime) }}</template>
+                <governance-resource-status v-else-if="column.key === 'status' && !item.field"
+                  resource-type="DATA_OBJECT" :resource-id="item.node.object.id" :status="item.node.object.status" />
               </template>
             </el-table-column>
             <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['编辑', '版本', '发布', '添加字段', '删除'])" align="center" fixed="right">
-              <template v-slot="{ row: node }">
-                <template v-if="node && node.object">
+              <template #default="{ row: { node, field: row, pager } }">
+                <span v-if="!pager" :key="row?.id ?? node.object.id">
                   <el-button
-                    v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
-                    link
-                    data-action="edit"
-                    size="small"
-                    :icon="ElIconEdit"
-                    @click.stop="editWorkspace('DATA_OBJECT', node.object, handleEditObject)"
-                    >编辑</el-button
-                  >
-                  <governance-publish-action v-if="node && node.object" resource-type="DATA_OBJECT" :resource-id="node.object.id" />
+                    v-permission="{ code: 'field:edit', projectId: node.object.projectId, scope: node.object.scope }"
+                    link data-action="edit" size="small" :icon="ElIconEdit"
+                    @click.stop="row ? editObjectFieldWorkspace(row, node) : editWorkspace('DATA_OBJECT', node.object, handleEditObject, loadCurrentObject)"
+                  >编辑</el-button>
+                  <el-button v-if="row?.varType === 'ENUM'"
+                    v-permission="{ code: 'field:edit', projectId: node.object.projectId, scope: node.object.scope }"
+                    link data-action="configure" size="small" @click.stop="handleOptions(row, true)"
+                  >选项</el-button>
+                  <governance-publish-action v-if="!row" resource-type="DATA_OBJECT" :resource-id="node.object.id" />
+                  <el-button v-if="!row"
+                    v-permission="{ code: 'field:edit', projectId: node.object.projectId, scope: node.object.scope }"
+                    link data-action="add" size="small" :icon="ElIconPlus" @click.stop="handleAddObjectField(node)"
+                  >添加字段</el-button>
                   <el-button
-                    v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
-                    link
-                    data-action="add"
-                    size="small"
-                    :icon="ElIconPlus"
-                    @click.stop="handleAddObjectField(node)"
-                    >添加字段</el-button
-                  >
-                  <el-button
-                    v-permission="{ code: 'field:edit', projectId: (node.object || node).projectId, scope: (node.object || node).scope }"
-                    link
-                    data-action="delete"
-                    size="small"
-                    :icon="ElIconDelete"
-                    class="btn-delete"
-                    @click.stop="handleDeleteObject(node.object)"
+                    v-permission="{ code: 'field:edit', projectId: node.object.projectId, scope: node.object.scope }"
+                    link data-action="delete" size="small" :icon="ElIconDelete" class="btn-delete" aria-label="删除"
+                    @click.stop="row ? handleDeleteObjectField(row) : handleDeleteObject(node.object)"
                   />
-                </template>
+                </span>
               </template>
             </el-table-column>
-          </el-table>
+          </lazy-field-table>
           <el-pagination
             style="margin-top: 12px; text-align: right"
             :current-page="objPageNum"
@@ -826,7 +656,7 @@
                 data-action="edit"
                 size="small"
                 type="warning"
-                @click="editWorkspace('VARIABLE', row, handleEdit)"
+                @click="editWorkspace('VARIABLE', row, handleEdit, loadCurrentVariable)"
                 >编辑</el-button
               >
               <governance-publish-action resource-type="VARIABLE" :resource-id="row.id" />
@@ -1065,6 +895,9 @@
           "
         />
       </el-tab-pane>
+      <el-tab-pane label="MOCK 规则" lazy name="mock" class="management-table-region">
+        <mock-rules-panel v-if="activeTab === 'mock'" />
+      </el-tab-pane>
     </el-tabs>
 
     <el-dialog
@@ -1255,8 +1088,15 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="isObjectField || form.varSource === 'INPUT'" label="Mock 生成规则">
-          <mock-rule-select v-if="dialogVisible" v-model="form.mockRuleId" :field-type="form.varType" />
+        <el-form-item label="示例值">
+          <example-value-editor
+            v-model:mode="form.exampleMode"
+            v-model:value="form.exampleValue"
+            v-model:rule-id="form.mockRuleId"
+            v-model:case-binding="form.exampleCaseBinding"
+            :project-id="form.scope === 'GLOBAL' ? 0 : form.projectId"
+            :field-type="form.varType"
+          />
         </el-form-item>
         <el-form-item v-if="isObjectField && objectHasExternalSource && !objectFieldApiId" label="来源路径">
           <el-input
@@ -1391,8 +1231,9 @@
         </template>
         <template v-if="!isObjectField && form.varSource === 'SFTP'">
           <el-form-item label="SFTP 数据源">
-            <resource-picker v-model:value="form.sftpDatasourceId" :resources="sourceCatalog.sftpOptions" category="sftp" placeholder="选择 SFTP 数据源" />
+            <resource-picker v-model:value="form.sftpDatasourceId" :resources="engineSftpOptions" category="sftp" placeholder="选择 SFTP 数据源" />
           </el-form-item>
+          <p v-if="form.sftpDatasourceId === 'ENGINE'" class="field-help">使用当前执行项目中的路径，例如 u42/contracts/report.pdf。第三方上传完成后可将此路径作为进件字段返回。</p>
           <el-form-item label="远端文件路径">
             <el-radio-group v-model="form.sftpPathMode" aria-label="远端路径来源">
               <el-radio-button value="TEMPLATE">路径模板</el-radio-button>
@@ -1406,15 +1247,15 @@
               <div class="field-help">支持 $.field 或 ${field} 引用请求参数；上游外数返回完整文件路径时请选择“引用字段”。</div>
             </template>
           </el-form-item>
-          <el-form-item label="业务文件地址">
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="业务文件地址">
             <el-input v-model="form.sftpFileAddress" placeholder="$.contractFileUrl" />
             <div class="field-help">业务系统只需传入 HTTP(S) 文件地址；规则执行前会下载并上传到下面的 SFTP 目标路径，不需要把 SFTP 凭据交给业务系统。</div>
           </el-form-item>
-          <el-form-item label="上传目标路径">
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="上传目标路径">
             <el-input v-model="form.sftpUploadRemotePath" placeholder="/contracts/${customerId}/contract.pdf" />
             <div class="field-help">填写业务文件地址时必填；上传完成后引擎从该路径读取。目标目录需提前在 SFTP 创建。</div>
           </el-form-item>
-          <el-form-item label="上传超时(ms)"><el-input-number v-model="form.sftpUploadTimeoutMs" :min="100" :max="300000" controls-position="right" style="width: 180px" /></el-form-item>
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="上传超时(ms)"><el-input-number v-model="form.sftpUploadTimeoutMs" :min="100" :max="300000" controls-position="right" style="width: 180px" /></el-form-item>
           <el-form-item label="输出格式">
             <el-select v-model="form.sftpOutputFormat" style="width: 180px"><el-option label="文本（TEXT）" value="TEXT" /><el-option label="Base64（BASE64）" value="BASE64" /><el-option label="JSON 对象（JSON）" value="JSON" /></el-select>
             <span class="field-help">API 接口需要同一文件时，建议引用此变量并选择 BASE64；同一规则会复用已获取的文件字节。</span>
@@ -1423,9 +1264,9 @@
           <el-form-item label="读取失败时"><el-select v-model="form.sftpExceptionStrategy" style="width: 180px"><el-option label="抛出异常" value="ERROR" /><el-option label="返回默认值" value="RETURN_DEFAULT" /><el-option label="跳过补值" value="SKIP" /></el-select></el-form-item>
           <el-form-item v-if="form.sftpExceptionStrategy === 'RETURN_DEFAULT'" label="兜底值"><el-input v-model="form.sftpFallbackValue" /></el-form-item>
           <el-form-item label="跨规则缓存"><el-input-number v-model="form.sftpCacheSeconds" :min="0" :max="86400" controls-position="right" style="width: 180px" /><span class="field-help">秒；0 表示不缓存。缓存只保存成功读取的文件内容。</span></el-form-item>
-          <el-form-item label="失败重试次数"><el-input-number v-model="form.sftpRetryCount" :min="0" :max="5" controls-position="right" style="width: 180px" /><span class="field-help">只对连接、Socket 和临时 SFTP 错误重试。</span></el-form-item>
-          <el-form-item label="重试退避(ms)"><el-input-number v-model="form.sftpRetryBackoffMs" :min="0" :max="60000" controls-position="right" style="width: 180px" /><span class="field-help">每次失败后的初始等待时间。</span></el-form-item>
-          <el-form-item label="退避倍数"><el-input-number v-model="form.sftpRetryBackoffMultiplier" :min="1" :max="5" :step="0.1" controls-position="right" style="width: 180px" /></el-form-item>
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="失败重试次数"><el-input-number v-model="form.sftpRetryCount" :min="0" :max="5" controls-position="right" style="width: 180px" /><span class="field-help">只对连接、Socket 和临时 SFTP 错误重试。</span></el-form-item>
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="重试退避(ms)"><el-input-number v-model="form.sftpRetryBackoffMs" :min="0" :max="60000" controls-position="right" style="width: 180px" /><span class="field-help">每次失败后的初始等待时间。</span></el-form-item>
+          <el-form-item v-if="form.sftpDatasourceId !== 'ENGINE'" label="退避倍数"><el-input-number v-model="form.sftpRetryBackoffMultiplier" :min="1" :max="5" :step="0.1" controls-position="right" style="width: 180px" /></el-form-item>
         </template>
         <template v-if="!isObjectField && form.varSource === 'LIST'">
           <el-form-item label="名单库（多选）">
@@ -1541,41 +1382,30 @@
             <span v-if="objectFieldReferenceBlockedReason">{{ objectFieldReferenceBlockedReason }}</span>
           </div>
         </el-form-item>
-        <el-collapse
-          v-if="!isObjectField"
-          v-model="variableAdvancedSections"
-          class="variable-advanced-collapse"
-        >
-          <el-collapse-item name="advanced">
-            <template #title>
-              <div class="variable-advanced-title">
-                <strong>更多说明与发布设置</strong>
-                <span>取值范围、示例、排序、状态和备注</span>
-              </div>
-            </template>
-            <el-form-item label="取值范围">
-              <el-input v-model="form.valueRange" placeholder="如：0~100、A/B/C" />
-            </el-form-item>
-            <el-form-item label="示例值">
-              <el-input v-model="form.exampleValue" placeholder="如：15000.50" />
-            </el-form-item>
-            <el-form-item label="排序">
-              <el-input-number v-model="form.sortOrder" :min="0" :max="9999" />
-            </el-form-item>
-            <el-form-item label="状态">
-              <el-switch
-                v-model="form.status"
-                :active-value="1"
-                :inactive-value="0"
-                active-text="启用"
-                inactive-text="停用"
-              />
-            </el-form-item>
-            <el-form-item label="说明">
-              <el-input v-model="form.description" type="textarea" :rows="2" />
-            </el-form-item>
-          </el-collapse-item>
-        </el-collapse>
+        <section v-if="!isObjectField" class="variable-advanced-section" aria-label="更多说明与发布设置">
+          <div class="variable-advanced-title">
+            <strong>更多说明与发布设置</strong>
+            <span>取值范围、排序、状态和备注</span>
+          </div>
+          <el-form-item label="取值范围">
+            <el-input v-model="form.valueRange" placeholder="如：0~100、A/B/C" />
+          </el-form-item>
+          <el-form-item label="排序">
+            <el-input-number v-model="form.sortOrder" :min="0" :max="9999" />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-switch
+              v-model="form.status"
+              :active-value="1"
+              :inactive-value="0"
+              active-text="启用"
+              inactive-text="停用"
+            />
+          </el-form-item>
+          <el-form-item label="说明">
+            <el-input v-model="form.description" type="textarea" :rows="2" />
+          </el-form-item>
+        </section>
         <template v-else>
           <el-form-item label="排序">
             <el-input-number v-model="form.sortOrder" :min="0" :max="9999" />
@@ -1723,11 +1553,11 @@
         <el-form-item label="脚本名称" prop="scriptName">
           <el-input
             v-model="objectForm.scriptName"
-            placeholder="QLExpress 脚本中的引用名，如 taxRequest"
+            :placeholder="objectForm.objectCode || '留空时使用对象编码'"
           />
         </el-form-item>
-        <el-form-item label="整体 Mock 规则">
-          <mock-rule-select v-if="objectDialogVisible" v-model="objectForm.mockRuleId" field-type="OBJECT" />
+        <el-form-item label="整体示例值">
+          <example-value-editor :project-id="objectForm.scope === 'GLOBAL' ? 0 : objectForm.projectId" v-model:case-binding="objectForm.exampleCaseBinding" v-model:mode="objectForm.exampleMode" v-model:value="objectForm.exampleValue" v-model:rule-id="objectForm.mockRuleId" field-type="OBJECT" />
         </el-form-item>
         <el-form-item label="对象类型" prop="objectType">
           <el-radio-group v-model="objectForm.objectType">
@@ -1736,81 +1566,77 @@
             <el-radio value="INOUT">输入输出</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-collapse v-model="objectAdvancedSections" class="variable-advanced-collapse">
-          <el-collapse-item name="advanced">
-            <template #title>
-              <div class="variable-advanced-title">
-                <strong>来源与加载设置</strong>
-                <span>来源类型、懒加载和对象说明</span>
-              </div>
-            </template>
-            <el-form-item label="来源类型">
-              <el-select v-model="objectForm.sourceType" style="width: 100%" @change="onObjectSourceTypeChange">
-                <el-option label="Java 实体" value="JAVA" />
-                <el-option label="JSON" value="JSON" />
-                <el-option label="DDL" value="DDL" />
-                <el-option label="API 外数" value="API" />
-                <el-option label="数据库查询" value="DB" />
-                <el-option label="手动" value="MANUAL" />
-              </el-select>
+        <section class="variable-advanced-section" aria-label="来源与加载设置">
+          <div class="variable-advanced-title">
+            <strong>来源与加载设置</strong>
+            <span>来源类型、懒加载和对象说明</span>
+          </div>
+          <el-form-item label="来源类型">
+            <el-select v-model="objectForm.sourceType" style="width: 100%" @change="onObjectSourceTypeChange">
+              <el-option label="Java 实体" value="JAVA" />
+              <el-option label="JSON" value="JSON" />
+              <el-option label="DDL" value="DDL" />
+              <el-option label="API 外数" value="API" />
+              <el-option label="数据库查询" value="DB" />
+              <el-option label="手动" value="MANUAL" />
+            </el-select>
+          </el-form-item>
+          <template v-if="objectForm.sourceType === 'API'">
+            <el-form-item label="API 配置">
+              <resource-picker :value="objectForm.apiConfigId" :resources="apiConfigOptions" placeholder="选择 API 配置" @update:value="changeObjectApi" />
             </el-form-item>
-            <template v-if="objectForm.sourceType === 'API'">
-              <el-form-item label="API 配置">
-                <resource-picker :value="objectForm.apiConfigId" :resources="apiConfigOptions" placeholder="选择 API 配置" @update:value="changeObjectApi" />
-              </el-form-item>
-              <el-form-item label="绑定方式">
-                <el-radio-group v-model="objectForm.bindingMode">
-                  <el-radio value="OBJECT">整体结果</el-radio>
-                  <el-radio value="FIELDS">按字段路径</el-radio>
-                </el-radio-group>
-              </el-form-item>
-              <el-form-item class="api-source-form-item" label="API 取值配置">
-                <api-source-binding :api-id="objectForm.apiConfigId" v-model:value="objectForm.apiRequestOverrides" :result-path="objectForm.resultPath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="objectForm.resultPath = $event" />
-                <div class="field-help">整体结果模式从结果路径绑定对象；字段模式下各字段路径相对于此结果填写。</div>
-              </el-form-item>
-            </template>
-            <template v-if="objectForm.sourceType === 'DB'">
-              <el-form-item label="数据库源">
-                <resource-picker v-model:value="objectForm.dbDatasourceId" :resources="dbDatasourceOptions" category="database" placeholder="选择数据库源" />
-              </el-form-item>
-              <el-form-item label="查询 SQL">
-                <monaco-editor
-                  v-model:value="objectForm.sql"
-                  language="sql"
-                  height="130px"
-                  :options="{ minimap: { enabled: false }, wordWrap: 'on' }"
-                />
-                <div class="field-help">仅支持只读查询，例如 SELECT * FROM customer WHERE id = ?</div>
-              </el-form-item>
-              <el-form-item label="SQL 参数">
-                <sql-parameter-editor
-                  v-model:value="objectForm.params"
-                  :sql="objectForm.sql"
-                  :variables="listReferenceOptions"
-                />
-                <div class="field-help">按 SQL 中 ? 的顺序选择业务字段或填写固定值。</div>
-              </el-form-item>
-              <el-form-item label="绑定方式">
-                <el-radio-group v-model="objectForm.bindingMode">
-                  <el-radio value="OBJECT">整行结果</el-radio>
-                  <el-radio value="FIELDS">按字段列名/路径</el-radio>
-                </el-radio-group>
-              </el-form-item>
-            </template>
-            <el-form-item label="懒加载引用字段">
-              <el-switch v-model="objectForm.lazyLoadReferences" aria-label="懒加载引用字段" />
-              <div class="field-help">默认关闭：对象参与取值时补齐所需的缺失引用字段。开启后仅在读取引用型叶子时补取；普通字段、仅复用结构和已有值不触发调用。发布规则需重新发布以更新此配置。</div>
+            <el-form-item label="绑定方式">
+              <el-radio-group v-model="objectForm.bindingMode">
+                <el-radio value="OBJECT">整体结果</el-radio>
+                <el-radio value="FIELDS">按字段路径</el-radio>
+              </el-radio-group>
             </el-form-item>
-            <el-form-item label="说明">
-              <el-input
-                v-model="objectForm.description"
-                type="textarea"
-                :rows="2"
-                placeholder="对象说明"
+            <el-form-item class="api-source-form-item" label="API 取值配置">
+              <api-source-binding :api-id="objectForm.apiConfigId" v-model:value="objectForm.apiRequestOverrides" :result-path="objectForm.resultPath" :vars="listReferenceOptions" :functions="listFunctionOptions" @select-path="objectForm.resultPath = $event" />
+              <div class="field-help">整体结果模式从结果路径绑定对象；字段模式下各字段路径相对于此结果填写。</div>
+            </el-form-item>
+          </template>
+          <template v-if="objectForm.sourceType === 'DB'">
+            <el-form-item label="数据库源">
+              <resource-picker v-model:value="objectForm.dbDatasourceId" :resources="dbDatasourceOptions" category="database" placeholder="选择数据库源" />
+            </el-form-item>
+            <el-form-item label="查询 SQL">
+              <monaco-editor
+                v-model:value="objectForm.sql"
+                language="sql"
+                height="130px"
+                :options="{ minimap: { enabled: false }, wordWrap: 'on' }"
               />
+              <div class="field-help">仅支持只读查询，例如 SELECT * FROM customer WHERE id = ?</div>
             </el-form-item>
-          </el-collapse-item>
-        </el-collapse>
+            <el-form-item label="SQL 参数">
+              <sql-parameter-editor
+                v-model:value="objectForm.params"
+                :sql="objectForm.sql"
+                :variables="listReferenceOptions"
+              />
+              <div class="field-help">按 SQL 中 ? 的顺序选择业务字段或填写固定值。</div>
+            </el-form-item>
+            <el-form-item label="绑定方式">
+              <el-radio-group v-model="objectForm.bindingMode">
+                <el-radio value="OBJECT">整行结果</el-radio>
+                <el-radio value="FIELDS">按字段列名/路径</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </template>
+          <el-form-item label="懒加载引用字段">
+            <el-switch v-model="objectForm.lazyLoadReferences" aria-label="懒加载引用字段" />
+            <div class="field-help">默认关闭：对象参与取值时补齐所需的缺失引用字段。开启后仅在读取引用型叶子时补取；普通字段、仅复用结构和已有值不触发调用。发布规则需重新发布以更新此配置。</div>
+          </el-form-item>
+          <el-form-item label="说明">
+            <el-input
+              v-model="objectForm.description"
+              type="textarea"
+              :rows="2"
+              placeholder="对象说明"
+            />
+          </el-form-item>
+        </section>
       </el-form>
       <template v-slot:footer>
         <managed-dialog-footer
@@ -1908,18 +1734,29 @@
         <span>{{ testTarget.varLabel || testTarget.varCode }}</span>
         <code>{{ testTarget.scriptName || testTarget.varCode }}</code>
       </div>
-      <resource-test-cases v-if="variableTestVisible && testTarget" :endpoint="'/rule/variable/'+testTarget.id+'/test-cases'" :params="variableTestParamsText" :outcome="variableTestResult" @context="variableTestRoot = $event" @apply="value => { variableTestParamsText = value; variableTestResult = null }" />
+      <resource-test-cases kind="VARIABLE" :owner="testTarget" v-if="variableTestVisible && testTarget" :endpoint="'/rule/variable/'+testTarget.id+'/test-cases'" :params="variableTestParamsText" :outcome="variableTestResult" @context="setVariableTestRoot" @apply="applyVariableTestInput" />
       <dismissible-guidance :guide-id="'variable.test.' + (testTarget?.varSource || 'input')" label="变量测试入参说明">
         {{ testDialogHint }}
       </dismissible-guidance>
       <monaco-editor
+        data-testid="variable-online-input"
         v-model:value="variableTestParamsText"
         language="json"
         height="220px"
       />
       <div v-if="variableTestResult" class="test-result-block">
         <div class="test-result-title">测试结果</div>
-        <pre class="test-result-pre">{{ formatJson(variableTestResult) }}</pre>
+        <source-summary-card :title="sourceLabel(testTarget.varSource)" :rows="sourceSummaryRows(testTarget)" />
+        <p role="status">{{ explainVariableValue(variableTestResult) }}</p>
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="本次请求"><pre>{{ formatJson(variableTestResult.inputParams) || '{}' }}</pre></el-descriptions-item>
+          <el-descriptions-item v-if="testInputMappings.length" label="输入映射">
+            <div v-for="(item, index) in testInputMappings" :key="index">{{ item.field }} → {{ item.usage }}</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="最终值"><pre>{{ variableTestResult.hasOutput ? JSON.stringify(variableTestResult.output, null, 2) : '未取得' }}</pre></el-descriptions-item>
+          <el-descriptions-item v-for="item in sourceEvidenceRows(variableTestResult.sourceEvidence)" :key="item.label" :label="item.label">{{ item.value }}</el-descriptions-item>
+        </el-descriptions>
+        <details><summary>完整测试结果</summary><pre class="test-result-pre">{{ formatJson(variableTestResult) }}</pre></details>
         <external-call-trace v-for="call in variableTestResult?.externalCalls || []" :key="call.callId" :steps="call.traceSteps || call.externalCall?.traceSteps || []" />
       </div>
       <template v-slot:footer>
@@ -1927,6 +1764,7 @@
           <el-button size="small" @click="variableTestVisible = false"
             >关闭</el-button
           >
+          <el-button v-permission="'field:edit'" size="small" @click="saveVariableDefault">保存默认输入</el-button>
           <el-button v-permission="'field:edit'"
             size="small"
             type="primary"
@@ -2282,7 +2120,7 @@
 
     <!-- JSON Constants Import Dialog -->
     <el-dialog
-      title="导入 JSON 常量"
+      :title="importForm.mode === 'json-variable' ? '导入 JSON 输入变量' : '导入 JSON 常量'"
       v-model="importJsonConstVisible"
       :before-close="done => closeConfigurationDialog('importJsonConstVisible', done)"
       width="700px"
@@ -2290,7 +2128,7 @@
       :show-close="!importing"
       :close-on-press-escape="!importing"
     >
-      <variable-import-help mode="json-const" :disabled="importing || !!importForm.jsonContent.trim()" @use-example="importForm.jsonContent = $event" />
+      <variable-import-help :mode="importForm.mode || 'json-const'" :disabled="importing || !!importForm.jsonContent.trim()" @use-example="importForm.jsonContent = $event" />
       <el-form :disabled="importing" size="small" label-width="100px">
         <el-form-item label="作用范围">
           <el-radio-group v-model="importForm.scope">
@@ -2356,6 +2194,7 @@
         <p v-if="importResult.success && importResult.constantCount != null">
           已生成 <b>{{ importResult.constantCount }}</b> 个常量审批草稿
         </p>
+        <p v-if="importResult.success && importResult.inputVariableCount != null">已生成 <b>{{ importResult.inputVariableCount }}</b> 个输入变量审批草稿</p>
         <p v-if="!importResult.success">{{ importResult.error }}</p>
         <p v-if="importResult.success">
           生效数据尚未改变，请前往审批管理完成血缘检查、提交与审批。
@@ -2380,8 +2219,10 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
-import MockRuleSelect from '@/components/test/MockRuleSelect.vue'
+import ExampleValueEditor from '@/components/test/ExampleValueEditor.vue'
+import MockRulesPanel from '@/components/test/MockRulesPanel.vue'
 import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
@@ -2409,6 +2250,7 @@ import {
 } from '@element-plus/icons-vue'
 import {
   listVariables,
+  getVariable,
   listVariablesByProject,
   createVariable,
   updateVariable,
@@ -2420,6 +2262,7 @@ import {
   saveVariableOptions,
   importJavaConstants,
   importJsonConstants,
+  importJsonVariables,
   listFieldValidations,
   createFieldValidationDraft,
   updateFieldValidationDraft,
@@ -2427,15 +2270,16 @@ import {
   deleteFieldValidationDraft,
 } from '@/api/variable'
 import { listProjectOptions as listProjects } from '@/api/project'
+import { saveDefaultInput } from '@/api/testData'
 import { getRuleTestSchema } from '@/api/definition'
 import request from '@/api/request'
 import {
   importJavaEntity,
   listDataObjects,
+  getDataObject,
   validateDataObjectFieldReference,
   importJsonObject,
   importDdlTable,
-  updateObjectType,
   deleteDataObject,
   createDataObjectField,
   updateDataObjectField,
@@ -2481,7 +2325,7 @@ import {
 } from '@/utils/testParamTemplate'
 import { normalizeTestSchema } from '@/utils/testSchema'
 import { normalizeTestResult } from '@/utils/testResult'
-import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   cloneOperand,
@@ -2512,7 +2356,7 @@ function isVariableListTimeout(error) {
 }
 
 export default {
-  mixins: [governanceWorkspaceMixin, configurationDialogsMixin([
+  mixins: [pageTabState('activeTab', ['list', 'objects', 'constants', 'validations', 'mock']), governanceWorkspaceMixin, configurationDialogsMixin([
     { visible: 'dialogVisible', draft: vm => vm.form, busy: vm => vm.variableSubmitting || vm.objectFieldSubmitting || vm.objectFieldReferenceValidating },
     { visible: 'objectDialogVisible', draft: vm => vm.objectForm, busy: vm => vm.objectSubmitting },
     { visible: 'validationDialogVisible', draft: vm => vm.validationForm, busy: vm => vm.validationSaving },
@@ -2587,10 +2431,16 @@ export default {
         'varType', 'varSource', 'defaultValue', 'valueRange',
       ],
       objectColumns: [
-        { key: 'objectCode', label: '对象编码' }, { key: 'objectLabel', label: '对象名称' },
-        { key: 'scriptName', label: '脚本名称' }, { key: 'scope', label: '作用范围' },
-        { key: 'projectName', label: '项目名称' }, { key: 'objectType', label: '对象类型' },
-        { key: 'source', label: '来源' }, { key: 'fieldCount', label: '字段数' }, { key: 'updateTime', label: '更新时间' }, { key: 'status', label: '状态' },
+        { key: 'objectCode', label: '对象编码', minWidth: 280, required: true },
+        { key: 'objectLabel', label: '对象名称', minWidth: 140 },
+        { key: 'scriptName', label: '脚本名称', minWidth: 140 },
+        { key: 'scope', label: '作用范围', width: 90, align: 'center' },
+        { key: 'projectName', label: '项目名称', minWidth: 120 },
+        { key: 'objectType', label: '类型', width: 130, align: 'center' },
+        { key: 'source', label: '来源', minWidth: 100, align: 'center' },
+        { key: 'fieldCount', label: '字段数', width: 80, align: 'center' },
+        { key: 'updateTime', label: '更新时间', minWidth: 165, align: 'center' },
+        { key: 'status', label: '状态', minWidth: 160, align: 'center' },
       ],
       objectColumnOrder: [
         'objectCode', 'objectLabel', 'scriptName', 'scope', 'projectName',
@@ -2641,7 +2491,7 @@ export default {
       draftPreviewError: '',
       draftPreviewing: false,
       draftPreviewRequestId: 0,
-      variableAdvancedSections: [],
+
       listItemTypeOptions: LIST_ITEM_TYPES,
       listCombinationModeOptions: LIST_COMBINATION_MODES,
       listMatchModeOptions: LIST_MATCH_MODES,
@@ -2669,6 +2519,7 @@ export default {
       variableTestVisible: false,
       variableTesting: false,
       testTarget: null,
+      variableTestRequestId: 0,
       variableTestParamsText: '{}',
       variableTestResult: null,
       variableTestRoot: null,
@@ -2721,7 +2572,7 @@ export default {
       // Data Object Dialog
       objectDialogVisible: false,
       objectSubmitting: false,
-      objectAdvancedSections: [],
+
       objectForm: {
         apiRequestOverrides: {},
 
@@ -2759,6 +2610,7 @@ export default {
           { required: true, message: '请选择所属项目', trigger: 'change' },
         ],
       },
+      refreshOnReturn: false,
       // Import
       importing: false,
       importForm: {
@@ -2809,6 +2661,7 @@ export default {
       // 数据对象 tab 分页与展开
       objPageNum: 1,
       objPageSize: 20,
+      hoveredObjectGuides: [],
       objExpanded: {},
       objectFieldPageMap: {},
       objectFieldPageSize: 20,
@@ -2828,7 +2681,7 @@ export default {
       canEditFields: hasPermission('field:edit'),
     }
   },
-  components: { MockRuleSelect, ResourceTestCases, DismissibleGuidance,
+  components: { ExampleValueEditor, MockRulesPanel, ResourceTestCases, DismissibleGuidance,
     SourceSummaryCard, ProjectResourceSelect, GovernancePublishAction,
     GovernanceResourceStatus,
     ApiSourceBinding,
@@ -2856,7 +2709,15 @@ export default {
   },
   name: 'VariableList',
   beforeUnmount() { this.variableListController?.abort(); this.objectTreeRequestId++; this.sourceOptionsRequestId++; this.optionRequestId++ },
-  deactivated() { this.optionRequestId++ },
+  deactivated() { this.optionRequestId++; this.refreshOnReturn = true },
+  activated() {
+    if (!this.refreshOnReturn) return
+    this.refreshOnReturn = false
+    if (this.activeTab === 'objects') this.loadObjectTree()
+    else if (this.activeTab === 'constants') this.loadConstants()
+    else if (this.activeTab === 'validations') this.loadFieldValidations()
+    else if (this.activeTab === 'list') this.loadData()
+  },
   created() {
     this.currentProjectId =
       routeProjectId(
@@ -2894,6 +2755,9 @@ export default {
     },
   },
   computed: {
+    engineSftpOptions() {
+      return [{ id: 'ENGINE', name: '引擎内置 SFTP' }, ...this.sourceCatalog.sftpOptions]
+    },
     preflightConfigSignature() {
       if (!this.form || !this.form.id || this.isObjectField) return ''
       return JSON.stringify({
@@ -2932,18 +2796,39 @@ export default {
     standaloneTotal() {
       return this.total
     },
-    paginatedObjectTree() {
-      const list = this.filteredObjectTree || []
-      const start = (this.objPageNum - 1) * this.objPageSize
-      return list.slice(start, start + this.objPageSize).map((n) => ({
-        ...n,
-        _expanded: this.objExpanded[n.object.id] === true,
-      }))
+    visibleObjectColumns() {
+      return this.objectColumnOrder.map(key => this.objectColumns.find(column => column.key === key))
     },
-    expandedObjectRowKeys() {
-      return Object.keys(this.objExpanded)
-        .filter((id) => this.objExpanded[id] === true)
-        .map((id) => Number(id))
+    objectTableRows() {
+      const start = (this.objPageNum - 1) * this.objPageSize
+      const rows = []
+      for (const node of this.filteredObjectTree.slice(start, start + this.objPageSize)) {
+        const { id, objectCode } = node.object
+        const expanded = this.objExpanded[id] === true
+        const objectKey = `object:${id}`
+        rows.push(markRaw({ key: objectKey, guides: [objectKey], node, code: objectCode, scriptName: node.object.scriptName?.trim() ? node.object.scriptName : objectCode,
+          depth: 0, expandable: !!node.variables?.length, expanded }))
+        if (!expanded) continue
+        const expandedKeys = new Set(this.objectFieldExpandedKeys(node).map(String))
+        // 同一组兄弟字段共享一条竖线，祖先线随子树延续。
+        const fieldGuides = [objectKey, `children:${objectKey}`]
+        const stack = this.paginatedObjectFields(node).map(field => ({ field, guides: fieldGuides })).reverse()
+        while (stack.length) {
+          const { field, guides } = stack.pop()
+          const children = field.children || []
+          const fieldExpanded = expandedKeys.has(String(field.id))
+          const key = `field:${id}:${field.id}`
+          rows.push(markRaw({ key, node, field, guides, depth: guides.length - 1, index: rows.length, code: field.varCode,
+            scriptName: Object.hasOwn(field, 'originalScriptName') ? field.originalScriptName : field.scriptName,
+            expandable: children.length > 0, expanded: fieldExpanded }))
+          if (fieldExpanded && children.length) {
+            const childGuides = [...guides, key]
+            for (let i = children.length - 1; i >= 0; i--) stack.push({ field: children[i], guides: childGuides })
+          }
+        }
+        if (this.objectFieldNeedsPaging(node)) rows.push(markRaw({ key: `pager:${id}`, node, depth: 1, pager: true }))
+      }
+      return rows
     },
     filteredObjectTree() {
       const { scope, projectCode, projectName, sourceType, objectCode } =
@@ -2993,7 +2878,6 @@ export default {
       const defined = scoped && !!(
         this.objectForm.objectCode &&
         this.objectForm.objectLabel &&
-        this.objectForm.scriptName &&
         this.objectForm.objectType
       )
       return [
@@ -3017,7 +2901,7 @@ export default {
         API: this.sourceCatalog.apiOptions.length,
         DB: this.sourceCatalog.databaseOptions.length,
         LIST: this.sourceCatalog.listOptions.length,
-        SFTP: this.sourceCatalog.sftpOptions.length,
+        SFTP: this.engineSftpOptions.length,
       }
     },
     compatibleListOptions() {
@@ -3046,13 +2930,13 @@ export default {
       const available = item => {
         if (!item || item.status !== 1) return false
         if (item.scope === 'GLOBAL') return true
-        return owner.scope === 'PROJECT' && item.scope === 'PROJECT' && Number(item.projectId) === Number(owner.projectId)
+        return owner.scope === 'PROJECT' && item.scope === 'PROJECT' && String(item.projectId) === String(owner.projectId)
       }
       const variables = this.objectFieldReferenceBlockedReason ? [] : this.objectFieldReferenceVariables
         .filter(item => available(item) && this.objectFieldReferenceTypeCompatible(fieldType, item.varType))
         .map(item => ({ ...item, _referenceType: item.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE' }))
       const objects = this.canReferenceObjectType(this.form) ? this.objectFieldReferenceObjects
-        .filter(item => available(item) && Number(item.id) !== Number(owner.id))
+        .filter(item => available(item) && String(item.id) !== String(owner.id))
         .map(item => ({ ...item, _referenceType: 'OBJECT' })) : []
       return [...variables, ...objects]
     },
@@ -3161,6 +3045,7 @@ export default {
     objectDialogTitle() {
       return this.objectForm.id ? '编辑数据对象' : '新建数据对象'
     },
+    testInputMappings() { return this.testTarget ? this.sourceInputFields(this.testTarget) : [] },
     testDialogHint() {
       if (this.testTarget && this.testTarget.varSource === 'API') {
         return '已优先加载外数 API 中保存的测试样例；没有样例时会根据接口请求参数生成完整入参 JSON。'
@@ -3198,7 +3083,6 @@ export default {
   },
   methods: {
     reservedCodeError,
-    canEditResource(resource) { return hasPermission('field:edit', resource) },
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     changeVariableApi(id) {
       if (String(id || '') === String(this.form.apiConfigId || '')) return
@@ -3446,7 +3330,7 @@ export default {
       if (
         this.form.varSource === 'SFTP' &&
         this.form.sftpDatasourceId &&
-        !this.sourceCatalog.sftpOptions.some(
+        !this.engineSftpOptions.some(
           (item) => String(item.id) === String(this.form.sftpDatasourceId)
         )
       ) {
@@ -3608,7 +3492,7 @@ export default {
         this.form.dbFallbackValue =
           config.fallbackValue != null ? String(config.fallbackValue) : ''
       } else if (this.form.varSource === 'SFTP') {
-        this.form.sftpDatasourceId = config.sftpDatasourceId || ''
+        this.form.sftpDatasourceId = config.engineSftp ? 'ENGINE' : config.sftpDatasourceId || ''
         this.form.sftpPathMode = config.remotePath?.kind === 'REFERENCE' ? 'FIELD' : 'TEMPLATE'
         this.form.sftpPathOperand = this.form.sftpPathMode === 'FIELD' ? config.remotePath : null
         this.form.sftpRemotePath = typeof config.remotePath === 'string' ? config.remotePath : ''
@@ -3710,19 +3594,19 @@ export default {
           this.$message.warning('请配置远端文件路径')
           return null
         }
-        if (String(payload.sftpFileAddress || '').trim() && !String(payload.sftpUploadRemotePath || '').trim()) {
+        if (payload.sftpDatasourceId !== 'ENGINE' && String(payload.sftpFileAddress || '').trim() && !String(payload.sftpUploadRemotePath || '').trim()) {
           this.$message.warning('填写业务文件地址后，请配置上传目标路径')
           return null
         }
         payload.sourceConfig = JSON.stringify({
-          sftpDatasourceId: payload.sftpDatasourceId,
+          ...(payload.sftpDatasourceId === 'ENGINE' ? { engineSftp: true } : { sftpDatasourceId: payload.sftpDatasourceId }),
           remotePath: selectedPath,
           outputFormat: payload.sftpOutputFormat || 'TEXT',
           charset: payload.sftpCharset || 'UTF-8',
           exceptionStrategy: payload.sftpExceptionStrategy || 'ERROR',
           fallbackValue: payload.sftpFallbackValue || null,
-          fileAddress: payload.sftpFileAddress || null,
-          uploadRemotePath: payload.sftpUploadRemotePath || null,
+          fileAddress: payload.sftpDatasourceId === 'ENGINE' ? null : payload.sftpFileAddress || null,
+          uploadRemotePath: payload.sftpDatasourceId === 'ENGINE' ? null : payload.sftpUploadRemotePath || null,
           uploadTimeoutMs: payload.sftpUploadTimeoutMs ?? 30000,
           cacheSeconds: payload.sftpCacheSeconds ?? 0,
           retryCount: payload.sftpRetryCount ?? 2,
@@ -3994,45 +3878,30 @@ export default {
       this.objExpanded[node.object.id] = !this.objExpanded[node.object.id]
       this.saveCachedState()
     },
-    objectRowKey(node) {
-      return node && node.object ? node.object.id : null
+    objectTableSpan({ row, columnIndex }) {
+      if (!row.pager) return
+      const count = this.visibleObjectColumns.length
+      if (columnIndex === 0) return [1, count]
+      if (columnIndex < count) return [0, 0]
     },
-    handleObjectExpandChange(node, expandedRows) {
-      if (!node || !node.object) return
-      const expanded = Array.isArray(expandedRows)
-        ? expandedRows.some(
-            (item) => item && item.object && item.object.id === node.object.id
-          )
-        : expandedRows === true
-      this.objExpanded[node.object.id] = expanded
-      this.saveCachedState()
+    toggleObjectTableRow(item) {
+      if (!item.expandable) return
+      if (item.expanded) this.$refs.objectTable?.restorePinnedPosition(item)
+      if (item.field) this.handleObjectFieldExpandChange(item.node, item.field, !item.expanded)
+      else this.toggleObjectExpand(item.node)
     },
-    isObjectRowControl(event) {
-      return !!(event && event.target && event.target.closest('button, a, input, select, textarea, .el-select, .el-input, [role="combobox"], .el-table__expand-icon'))
-    },
-    handleObjectRowClick(node, column, event) {
-      if (!node || !node.object || this.isObjectRowControl(event)) return
-      this.toggleObjectExpand(node)
+    handleObjectRowClick(item, column, event) {
+      if (event.target.closest('button, a, input, select, textarea, .el-select, [role="combobox"]')) return
+      this.toggleObjectTableRow(item)
     },
     objectFieldExpandedKeys(node) {
       return this.objectFieldExpandMap[node.object.id] || []
-    },
-    objectFieldBranchIds(node) {
-      return this.flattenObjectFields(this.paginatedObjectFields(node)).filter(field => field.children && field.children.length).map(field => field.id)
-    },
-    setObjectFieldExpansion(node, expanded) {
-      this.objectFieldExpandMap[node.object.id] = expanded ? this.objectFieldBranchIds(node) : []
-      this.saveCachedState()
     },
     handleObjectFieldExpandChange(node, field, expanded) {
       const keys = this.objectFieldExpandedKeys(node).filter(id => String(id) !== String(field.id))
       if (expanded) keys.push(field.id)
       this.objectFieldExpandMap[node.object.id] = keys
       this.saveCachedState()
-    },
-    handleObjectFieldRowClick(node, field, event) {
-      if (!field.children || !field.children.length || this.isObjectRowControl(event)) return
-      this.handleObjectFieldExpandChange(node, field, !this.objectFieldExpandedKeys(node).some(id => String(id) === String(field.id)))
     },
     handleObjPageChange(p) {
       this.objPageNum = p
@@ -4247,7 +4116,7 @@ export default {
         projectIds.add(
           String(object && object.scope).toUpperCase() === 'GLOBAL'
             ? 0
-            : Number(object && object.projectId) || 0
+            : normalizeProjectId(object && object.projectId) || 0
         )
       })
       try {
@@ -4446,10 +4315,6 @@ export default {
         if (requestId === this.objectTreeRequestId) this.objLoading = false
       }
     },
-    async onObjectTypeChange(obj) {
-      const response = await updateObjectType(obj.id, obj.objectType)
-      this.openApproval(response, '对象类型变更已送审')
-    },
     async handleDeleteObject(obj) {
       await this.$confirm(
         `确定删除对象「${obj.objectCode}」及其字段？如有外部引用，请先删除下游内容。`,
@@ -4482,7 +4347,7 @@ export default {
         description: '',
       }
       this.loadObjectSourceOptions()
-      this.objectAdvancedSections = []
+
       this.objectDialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.objForm) this.$refs.objForm.clearValidate()
@@ -4495,6 +4360,9 @@ export default {
       this.objectForm = {
         apiRequestOverrides: sourceConfig.requestOverrides || {},
         lazyLoadReferences: obj.lazyLoadReferences === true,
+        exampleMode: obj.exampleMode || null,
+        exampleCaseBinding: obj.exampleCaseBinding ?? null,
+        exampleValue: obj.exampleValue ?? null,
         mockRuleId: obj.mockRuleId ?? null,
         id: obj.id,
         objectCode: obj.objectCode,
@@ -4515,7 +4383,7 @@ export default {
       }
       this.loadObjectSourceOptions()
       if (obj.sourceType === 'API') this.loadListExpressionOptions(true, this.objectForm)
-      this.objectAdvancedSections = []
+
       this.objectDialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.objForm) this.$refs.objForm.clearValidate()
@@ -4546,6 +4414,7 @@ export default {
     /** 提交数据对象表单 */
     async handleObjectSubmit() {
       if (this.objectSubmitting) return
+      if (this.finishUnchangedEdit('objectDialogVisible', this.objectForm.id)) return
       this.objectSubmitting = true
       try {
         const valid = await new Promise(resolve => this.$refs.objForm.validate(resolve))
@@ -4599,6 +4468,7 @@ export default {
         }
           const payload = {
             ...this.objectForm,
+            scriptName: this.objectForm.scriptName?.trim() ? this.objectForm.scriptName : this.objectForm.objectCode,
             sourceType,
             sourceContent: sourceType === 'API' || sourceType === 'DB'
               ? sourceContent
@@ -4655,6 +4525,22 @@ export default {
     /**
      * 编辑数据对象下的字段行。
      */
+    async loadCurrentVariable(id) {
+      const { data } = await getVariable(id)
+      if (!data) throw new Error('变量已移除')
+      return data
+    },
+    async loadCurrentObject(id) {
+      const { data } = await getDataObject(id)
+      return { ...data.object, fields: data.variables }
+    },
+    editObjectFieldWorkspace(row, node) {
+      return this.editWorkspace('DATA_OBJECT', node.object, draft => {
+        const field = draft.fields.find(item => String(item.id) === String(row.id))
+        if (!field) return this.$message.warning('该字段已从对象草稿中移除')
+        this.handleEditObjectField({ ...field, projectId: draft.projectId }, { ...node, object: draft })
+      }, this.loadCurrentObject)
+    },
     handleEditObjectField(row, node) {
       this.repairVarCode = Boolean(reservedCodeError(row.varCode))
       this.isObjectField = true
@@ -4669,6 +4555,9 @@ export default {
         varCode: row.varCode,
         varLabel: row.varLabel,
         scriptName: Object.prototype.hasOwnProperty.call(row, 'originalScriptName') ? row.originalScriptName : row.scriptName,
+        exampleMode: row.exampleMode || null,
+        exampleCaseBinding: row.exampleCaseBinding ?? null,
+        exampleValue: row.exampleValue ?? null,
         mockRuleId: row.mockRuleId ?? null,
         varType: row.varType || 'STRING',
         sourcePath: row.sourcePath || '',
@@ -4693,11 +4582,16 @@ export default {
      * 删除数据对象字段。
      */
     async handleDeleteObjectField(row) {
-      await this.$confirm(
-        `确定删除字段「${row.varLabel || row.varCode}」？`,
-        '确认删除',
-        { type: 'warning' }
-      )
+      try {
+        await this.$confirm(
+          `确定删除字段「${row.varLabel || row.varCode}」？`,
+          '确认删除',
+          { type: 'warning' }
+        )
+      } catch (error) {
+        if (error === 'cancel' || error === 'close') return
+        throw error
+      }
       const response = await deleteDataObjectField(row.id, row.objectId)
       this.openApproval(response, '对象字段删除已送审')
     },
@@ -4900,6 +4794,7 @@ export default {
     },
     async saveFieldValidation() {
       if (this.validationSaving) return
+      if (this.finishUnchangedEdit('validationDialogVisible', this.validationForm.id)) return
       const form = this.validationForm
       const codeError = reservedCodeError(form.validationCode)
       if (codeError) { this.$message.warning(codeError); return }
@@ -4983,7 +4878,7 @@ export default {
       this.isObjectField = false
       this.objectFieldParentId = null
       this.form = this.initForm()
-      this.variableAdvancedSections = []
+
       if (this.currentProjectId) {
         this.form.scope = 'PROJECT'
         this.form.projectId = this.currentProjectId
@@ -5006,7 +4901,7 @@ export default {
         ...row,
         projectId: row.scope === 'GLOBAL' ? '' : this.normalizeProjectId(row.projectId),
       }
-      this.variableAdvancedSections = []
+
       this.form.scope = this.form.scope || 'PROJECT'
       this.applySourceConfigToForm()
       this.resetDraftPreview()
@@ -5031,6 +4926,7 @@ export default {
     },
     async handleSubmit() {
       if (this.variableSubmitting) return
+      if (this.finishUnchangedEdit('dialogVisible', this.form.id)) return
       this.variableSubmitting = true
       try {
       const valid = await new Promise(resolve => this.$refs.form.validate(resolve))
@@ -5045,6 +4941,9 @@ export default {
             varCode: this.form.varCode,
             varLabel: this.form.varLabel,
             scriptName: this.form.scriptName,
+            exampleMode: this.form.exampleMode || null,
+            exampleCaseBinding: this.form.exampleCaseBinding ?? null,
+            exampleValue: this.form.exampleValue ?? null,
             mockRuleId: this.form.mockRuleId || null,
             varType: this.form.varType,
             sourcePath: this.form.sourcePath || null,
@@ -5127,7 +5026,7 @@ export default {
         .catch(() => {})
     },
     isTestableSource(row) {
-      return row && ['API', 'DB', 'SFTP', 'LIST', 'DERIVED'].indexOf(row.varSource) >= 0
+      return row && ['INPUT', 'API', 'DB', 'SFTP', 'LIST', 'DERIVED'].includes(row.varSource)
     },
     async handleViewSourceDetail(row) {
       this.sourceDetailTarget = null
@@ -5190,6 +5089,10 @@ export default {
       }
       return rows
     },
+    async saveVariableDefault() {
+      await saveDefaultInput('VARIABLE',this.testTarget.id,this.variableTestParamsText)
+      this.$message.success('变量默认测试输入已保存')
+    },
     async handleTestVariable(row) {
       this.variableTestVisible = false
       if (!(await this.loadVariableSourceOptions(row && row.varSource, row))) return
@@ -5203,12 +5106,14 @@ export default {
         if (requestId === this.sourceOptionsRequestId) this.$message.warning('测试字段结构加载失败，请核对当前配置生成的样例')
       }
       if (requestId !== this.sourceOptionsRequestId) return
-      const hasSchema = schema && (schema.inputs.length || Object.keys(schema.sampleParams).length)
+      const hasSchema = schema && (schema.generatedExamples || schema.inputs.length || Object.keys(schema.sampleParams).length)
       if (!hasSchema) await this.prepareSampleTree(row)
       if (requestId !== this.sourceOptionsRequestId) return
       this.variableTestRoot = null
+      this.variableTestRequestId++
+      this.variableTesting = false
       this.testTarget = row
-      this.variableTestParamsText = hasSchema ? this.formatJson(schema.sampleParams) : this.buildTestParamTemplate(row)
+      this.variableTestParamsText = hasSchema ? (schema.sampleParamsJson || this.formatJson(schema.sampleParams)) : this.buildTestParamTemplate(row)
       this.variableTestResult = null
       this.variableTestVisible = true
     },
@@ -5339,7 +5244,7 @@ export default {
         return '执行规则时按配置的查询条件读取数据库结果，再将结果写入当前变量。'
       }
       if (row && row.varSource === 'SFTP') {
-        return '执行规则时从 SFTP 连接池读取远端文件，并按指定格式写入当前变量。'
+        return '执行规则时从选定的 SFTP 数据源读取文件，并按指定格式写入当前变量。'
       }
       if (row && row.varSource === 'LIST') {
         return '执行规则时获取待匹配内容的字段值或表达式结果，再按所选组合模式到名单库中匹配。'
@@ -5348,6 +5253,9 @@ export default {
     },
     sourceSummaryRows(row) {
       const config = this.parseJson(row && row.sourceConfig, {})
+      if (row?.varSource === 'INPUT') return [{ label: '请求字段', value: row.scriptName || row.varCode }]
+      if (row?.varSource === 'DERIVED') return [{ label: '计算方式', value: config.mode === 'HISTORY' ? '历史进件统计' : '上游字段计算' },
+        { label: '聚合或表达式', value: config.aggregate || operandDisplay(config.expression) || '—' }]
       if (row && row.varSource === 'API') {
         const api = this.apiOption(config.apiConfigId)
         return [
@@ -5373,19 +5281,20 @@ export default {
         ]
       }
       if (row && row.varSource === 'DB') {
+        const datasourceId = config.dbDatasourceId || config.datasourceId
         const db = (this.dbDatasourceOptions || []).find(
-          (item) => String(item.id) === String(config.datasourceId)
+          (item) => String(item.id) === String(datasourceId)
         )
         return [
           {
             label: '数据库源',
             value: db
               ? db.datasourceName || db.datasourceCode
-              : config.datasourceId
-              ? '数据库ID ' + config.datasourceId
+              : datasourceId
+              ? '数据库ID ' + datasourceId
               : '未配置',
           },
-          { label: '返回位置', value: config.resultPath || '第一列/首行结果' },
+          { label: '返回位置', value: config.resultPath || '单行单列取值，单行多列取对象，多行取列表' },
           { label: '最多返回', value: (config.maxRows ?? 1000) + ' 行' },
           {
             label: '失败处理',
@@ -5396,7 +5305,7 @@ export default {
       if (row && row.varSource === 'SFTP') {
         const sftp = [...(this.sourceCatalog.sftpOptions || []), ...(this.sftpDatasourceOptions || [])].find(item => String(item.id) === String(config.sftpDatasourceId))
         return [
-          { label: 'SFTP 数据源', value: sftp ? (sftp.name || sftp.datasourceName || sftp.code || sftp.datasourceCode) : (config.sftpDatasourceId ? '数据源ID ' + config.sftpDatasourceId : '未配置') },
+          { label: 'SFTP 数据源', value: config.engineSftp ? '引擎内置 SFTP' : sftp ? (sftp.name || sftp.datasourceName || sftp.code || sftp.datasourceCode) : (config.sftpDatasourceId ? '数据源ID ' + config.sftpDatasourceId : '未配置') },
           { label: '远端路径', value: config.remotePath || '未配置' },
           { label: '输出格式', value: config.outputFormat || 'TEXT' },
           { label: '失败处理', value: this.exceptionStrategyLabel(config.exceptionStrategy) },
@@ -5471,6 +5380,33 @@ export default {
     listTypeLabel(value) {
       return { BLACK: '黑名单', GREY: '灰名单', WHITE: '白名单', OTHER: '其他' }[value] || value || ''
     },
+    setVariableTestRoot(root) {
+      this.variableTestRoot = root
+      this.variableTestRequestId++
+      this.variableTesting = false
+      this.variableTestResult = null
+    },
+    applyVariableTestInput(value) {
+      this.setVariableTestRoot(this.variableTestRoot)
+      this.variableTestParamsText = value
+    },
+    explainVariableValue(result) {
+      const state = result.sourceEvidence || {}
+      if (result.errorMessage) return result.errorMessage
+      if (state.FILE_STATE === 'NOT_FOUND') return '远端未找到配置的文件，请核对到达时间与路径'
+      if (state.FALLBACK_USED === 'TRUE') return '来源调用异常，最终值按失败策略处理'
+      if (state.DATA_STATE === 'NO_DATA') return '查询完成，返回零行'
+      if (state.MATCH_STATE === 'MISS') return '名单匹配完成，本次未命中'
+      if (state.SOURCE_VALUE === 'ABSENT') return '请求中缺少此字段'
+      if (state.SOURCE_VALUE === 'EMPTY') return result.output != null
+        ? '来源取值为空，已使用字段默认值' : '取值位置为空，或返回内容中缺少映射字段'
+      if (state.OUTCOME === 'ERROR' || state.OUTCOME === 'TIMEOUT') return '来源执行失败，请核对调用状态和失败处理策略'
+      return result.output == null ? '本次未取得值，请核对来源状态和取值配置' : '已取得最终值'
+    },
+    sourceEvidenceRows(state = {}) {
+      const labels = { OUTCOME: '调用状态', CACHE_STATE: '缓存状态', ROW_COUNT: '查询行数', MATCH_STATE: '名单匹配', FILE_SIZE: '文件字节数', SCOPE: '历史范围', FROM: '窗口开始', BEFORE: '窗口截止', INCLUDECURRENT: '包含本单', CANDIDATECOUNT: '候选样本数' }
+      return Object.entries(labels).filter(([key]) => state && state[key] != null).map(([key, label]) => ({ label, value: String(state[key]) }))
+    },
     async doTestVariable() {
       if (!this.testTarget) return
       let params
@@ -5482,20 +5418,23 @@ export default {
         this.$message.error('测试入参不是合法 JSON')
         return
       }
+      const target = this.testTarget
+      const requestId = ++this.variableTestRequestId
       this.variableTesting = true
       this.variableTestResult = null
       try {
         const res = this.variableTestRoot
           ? await testVariable(this.testTarget.id, params, this.variableTestRoot)
           : await testVariable(this.testTarget.id, params)
-        this.variableTestResult = normalizeTestResult(res)
+        if (requestId === this.variableTestRequestId && this.testTarget === target) this.variableTestResult = normalizeTestResult(res)
       } catch (e) {
+        if (requestId !== this.variableTestRequestId || this.testTarget !== target) return
         this.variableTestResult = {
-          success: false,
+          inputParams: params, success: false,
           errorMessage: e.message || '测试失败',
         }
       } finally {
-        this.variableTesting = false
+        if (requestId === this.variableTestRequestId) this.variableTesting = false
       }
     },
     parseJson(text, fallback) {
@@ -5546,6 +5485,7 @@ export default {
     },
     async handleSaveOptions() {
       if (this.optionSaving) return
+      if (this.finishUnchangedEdit('optionDialogVisible', this.currentVar?.id)) return
       this.optionSaving = true
       try {
       const invalid = this.optionList.some(
@@ -5584,6 +5524,7 @@ export default {
     // ── Import ──
     handleImportCmd(cmd) {
       this.importForm = {
+        mode: cmd,
         objectType: 'INPUT',
         javaSource: '',
         jsonContent: '',
@@ -5596,7 +5537,7 @@ export default {
       else if (cmd === 'json-object') this.importJsonObjectVisible = true
       else if (cmd === 'ddl-table') this.importDdlVisible = true
       else if (cmd === 'java-const') this.importJavaConstVisible = true
-      else if (cmd === 'json-const') this.importJsonConstVisible = true
+      else if (cmd === 'json-const' || cmd === 'json-variable') this.importJsonConstVisible = true
     },
     handleJavaFileSelect(file) {
       const reader = new FileReader()
@@ -5744,7 +5685,8 @@ export default {
       try {
         const projectId =
           this.importForm.scope === 'GLOBAL' ? null : this.importForm.projectId
-        const res = await importJsonConstants(
+        const importValues = this.importForm.mode === 'json-variable' ? importJsonVariables : importJsonConstants
+        const res = await importValues(
           this.importForm.jsonContent,
           this.importForm.scope,
           projectId
@@ -5921,55 +5863,43 @@ export default {
   padding-bottom: 6px;
   border-bottom: 1px solid var(--tianshu-border-subtle);
 }
-.object-field-expansion__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-}
 .reference-validation-success {
   display: block;
   color: var(--el-color-success);
 }
-.object-field-expansion {
-  position: sticky;
-  left: 0;
-  width: calc(100cqw - 2px);
-  box-sizing: border-box;
-  padding: 12px 16px 16px;
-  background: var(--tianshu-bg-soft);
+.data-object-table :deep(.el-table__body .el-table__row > td.el-table__cell) {
+  background: var(--tianshu-bg-surface) !important;
 }
-.data-object-table {
-  container-type: inline-size;
+.object-tree-prefix {
+  --tree-step: 24px;
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  justify-content: flex-end;
+  width: calc(var(--tree-depth) * var(--tree-step) + 18px);
+  margin-inline-end: 4px;
 }
-.data-object-table :deep(.el-table__expanded-cell) {
-  padding: 0;
-}
-.object-field-expansion__heading {
+.object-tree-guides {
+  position: absolute;
+  inset-block: 0 -1px;
+  inset-inline-start: 4px;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
+  column-gap: calc(var(--tree-step) - 3px);
+  pointer-events: none;
 }
-.object-field-expansion__heading strong,
-.object-field-expansion__heading span {
-  display: block;
+.object-tree-guide {
+  width: 3px;
+  background-color: var(--tianshu-designer-accent-border);
 }
-.object-field-expansion__heading strong {
-  color: var(--tianshu-text-primary);
-  font-size: 13px;
-  font-weight: 600;
-}
-.object-field-expansion__heading span {
-  margin-top: 4px;
-  color: var(--tianshu-text-tertiary);
-  font-size: 12px;
+.object-tree-guide.is-active {
+  background-color: var(--el-color-primary);
 }
 .reference-variable-cell {
   display: inline-flex;
   min-width: 0;
   flex-direction: column;
+  line-height: 16px;
+  vertical-align: middle;
   gap: 2px;
 }
 .reference-variable-cell strong {
@@ -6145,7 +6075,9 @@ export default {
 .source-catalog-help {
   margin-top: 7px;
 }
-.variable-advanced-collapse {
+.variable-advanced-section {
+  padding: 12px;
+  background: var(--tianshu-info-bg);
   width: 100%;
   margin: 2px 0 16px;
   box-sizing: border-box;
@@ -6155,21 +6087,7 @@ export default {
 .api-source-form-item :deep(.el-form-item__content) {
   min-width: 0;
 }
-.variable-advanced-collapse :deep(.el-collapse-item__header) {
-  height: auto;
-  min-height: 48px;
-  padding: 0 12px;
-  border-bottom: 0;
-  border-radius: 7px;
-  background: var(--tianshu-info-bg) !important;
-}
-.variable-advanced-collapse :deep(.el-collapse-item__wrap) {
-  border-bottom: 0;
-  background: var(--tianshu-info-bg) !important;
-}
-.variable-advanced-collapse :deep(.el-collapse-item__content) {
-  padding: 4px 12px 4px 0;
-}
+.variable-advanced-title { margin-bottom: 12px; }
 .variable-advanced-title strong,
 .variable-advanced-title span {
   display: block;

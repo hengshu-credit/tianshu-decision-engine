@@ -27,15 +27,50 @@ public class RuleTestSchemaService {
     @Resource
     private RuleTestTargetResolver testTargetResolver;
 
+    @Resource @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.testdata.TestMockService mockService;
+
+    public RuleTestSchema withExamples(RuleTestSchema schema, com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot, Long projectId) {
+        if (mockService != null && !schema.getInputs().isEmpty()) {
+            schema.setGeneratedExamples(true);
+            var values = mockService.examples(schema.getInputs(),snapshot,projectId);
+            schema.setSampleParams(JSON.parseObject(values.toString(), new com.alibaba.fastjson.TypeReference<LinkedHashMap<String,Object>>() {},
+                    Feature.DisableSpecialKeyDetect, Feature.UseBigDecimal));
+        }
+        return schema;
+    }
+
     public RuleTestSchema build(RuleTestSchemaRequest request) {
         if (request != null && "RULE".equalsIgnoreCase(request.getTargetType()) && request.getExecutionSource() != null) {
             RuleTestTargetResolver.Target target = testTargetResolver.resolve(request.getTargetId(), request.getExecutionSource(),
                     request.getModelJson(), request.getModelType(), request.getProjectId());
             RuleTestSchema schema = build(target);
             if (request.isIncludeDesign()) schema.setModelJson(target.modelJson());
+            return withDefaultOrExamples(schema,request,target.snapshot(),target.projectId());
+        }
+        RuleTestSchema schema = build(fieldDependencyResolver.resolve(request));
+        Long projectId = request.getProjectId();
+        if (defaults != null && request.getTargetId() != null)
+            projectId = defaults.ownerProject(request.getTargetType(),request.getTargetId());
+        return withDefaultOrExamples(schema,request,null,projectId);
+    }
+
+    @Resource private com.hengshucredit.rule.server.testdata.TestInputDefaults defaults;
+
+    private RuleTestSchema withDefaultOrExamples(RuleTestSchema schema, RuleTestSchemaRequest request,
+            com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot, Long projectId) {
+        boolean rulePreview = "RULE".equalsIgnoreCase(request.getTargetType());
+        String json = defaults == null || request.getTargetId() == null || request.getTargetId() <= 0
+                || (request.getModelJson() != null && !rulePreview)
+                ? null : defaults.read(request.getTargetType(),request.getTargetId());
+        if (json != null) {
+            schema.setSavedDefault(true);
+            schema.setGeneratedExamples(true);
+            schema.setSampleParams(JSON.parseObject(json, new com.alibaba.fastjson.TypeReference<LinkedHashMap<String,Object>>() {},
+                    Feature.DisableSpecialKeyDetect, Feature.UseBigDecimal));
             return schema;
         }
-        return build(fieldDependencyResolver.resolve(request));
+        return withExamples(schema,snapshot,projectId);
     }
 
     public RuleTestSchema buildModelSnapshot(com.hengshucredit.rule.model.entity.RuleModel model,
@@ -57,7 +92,7 @@ public class RuleTestSchemaService {
     }
 
     public RuleTestSchema buildDerivedDraft(com.hengshucredit.rule.model.entity.RuleVariable variable) {
-        return build(fieldDependencyResolver.resolveDerivedDraft(variable));
+        return withExamples(build(fieldDependencyResolver.resolveDerivedDraft(variable)),null,variable.getProjectId());
     }
 
     public RuleTestSchema build(ResolutionPlan plan) {
@@ -95,7 +130,7 @@ public class RuleTestSchemaService {
         return "";
     }
 
-    private Object parseConfiguredValue(String value, String type) {
+    public static Object parseConfiguredValue(String value, String type) {
         String raw = value == null ? "" : value.trim();
         if ("null".equalsIgnoreCase(raw)) return null;
         if ("\"\"".equals(raw) || "''".equals(raw)) return "";
@@ -123,7 +158,7 @@ public class RuleTestSchemaService {
         return stripQuotedString(raw);
     }
 
-    private String stripQuotedString(String raw) {
+    private static String stripQuotedString(String raw) {
         if (raw == null) return "";
         if ((raw.startsWith("\"") && raw.endsWith("\"")) || (raw.startsWith("'") && raw.endsWith("'"))) {
             return raw.substring(1, raw.length() - 1);

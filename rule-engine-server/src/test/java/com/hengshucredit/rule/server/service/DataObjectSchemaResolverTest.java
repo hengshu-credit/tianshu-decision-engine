@@ -48,6 +48,18 @@ public class DataObjectSchemaResolverTest {
     }
 
     @Test
+    public void rootSchemaUsesLocalPropertyNamesForImportedArrayMembers() {
+        fixture.object(10L, activeObject(10L, 4L));
+        var items = rootField(42L, 10L, "items", "LIST");
+        var name = child(43L, 42L, "User_ID", "STRING");
+        name.setScriptName("items.User_ID");
+        fixture.fields(items, name);
+        var result = fixture.resolver.resolveRoot(10L, 4L);
+        assertTrue(result.getDiagnostics().isEmpty());
+        assertEquals(Map.of("items[].User_ID", "STRING"), result.getLeafTypesByPath());
+    }
+
+    @Test
     public void listOfObjectWithoutGenericObjectUsesInlineChildren() {
         RuleDataObjectField list = field(142L, "app_list", "LIST", null, null);
         fixture.fields(list, child(143L, 142L, "app_name", "STRING"));

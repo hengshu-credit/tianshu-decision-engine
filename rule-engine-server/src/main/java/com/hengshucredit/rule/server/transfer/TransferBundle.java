@@ -21,13 +21,19 @@ public record TransferBundle(List<String> roots, List<Resource> resources, List<
     }
 
     public record Resource(String key, Map<String, Object> configuration, List<Reference> references,
-                           List<String> requiredEnvironmentFields, List<Map<String, Object>> versionReferences) {
+                           List<String> requiredEnvironmentFields, List<Map<String, Object>> versionReferences,
+                           List<Map<String,Object>> pageSettings) {
+        public Resource(String key, Map<String,Object> configuration, List<Reference> references,
+                        List<String> requiredEnvironmentFields, List<Map<String,Object>> versionReferences) {
+            this(key, configuration, references, requiredEnvironmentFields, versionReferences, List.of());
+        }
         public Resource(String key, Map<String, Object> configuration, List<Reference> references, List<String> requiredEnvironmentFields) {
             this(key, configuration, references, requiredEnvironmentFields, List.of());
         }
         public Resource {
             TransferKey.parse(key);
             configuration = copyConfiguration(configuration);
+            pageSettings = pageSettings == null ? List.of() : List.copyOf(pageSettings);
             references = List.copyOf(references);
             requiredEnvironmentFields = List.copyOf(requiredEnvironmentFields);
             versionReferences = versionReferences == null ? List.of() : versionReferences.stream()

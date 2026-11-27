@@ -44,9 +44,90 @@ public class SystemBrandAssetService {
         if (!id.equals(brand.get("logoId")) && !id.equals(brand.get("faviconId"))) throw new IllegalArgumentException("品牌图片不存在");
         return load(id);
     }
+    public record StatementBrand(String name, String subtitle, byte[] logo, EngineMailFont font, MailTheme theme) {
+        public StatementBrand {
+            if (name == null || name.isBlank()) throw new IllegalArgumentException("请在系统基本信息中填写系统名称");
+            if (logo == null || logo.length == 0) throw new IllegalArgumentException("系统 Logo 不能为空");
+        }
+    }
+
+    public StatementBrand statementBrand() {
+        Map<String, Object> brand = settings.get("brand");
+        String url = (String) brand.get("logoUrl");
+        String id = (String) brand.get("logoId");
+        byte[] image = id != null && !id.isBlank() ? load(id)
+                : url != null && !url.isBlank() ? configuredLogo(url) : defaultLogo();
+        return new StatementBrand((String) brand.get("systemName"), (String) brand.get("subtitle"), image, settings.mailFont(brand), settings.mailTheme());
+    }
+
+    // 地址来自已审批的系统品牌配置。发送接口不接受图片地址或附件内容。
+    private byte[] configuredLogo(String url) {
+        SystemSettingsService.validateImageUrl(url);
+        java.net.URI uri = java.net.URI.create(url);
+        if (!uri.isAbsolute()) {
+            String base = (String) settings.access().get("baseUrl");
+            if (base == null || base.isBlank()) throw new IllegalArgumentException("使用本站 Logo 路径时，请先配置控制台访问地址");
+            uri = java.net.URI.create(base).resolve(uri);
+        }
+        try {
+            var http = (java.net.HttpURLConnection) uri.toURL().openConnection();
+            http.setInstanceFollowRedirects(false);
+            http.setConnectTimeout(5000);
+            http.setReadTimeout(5000);
+            try {
+                if (http.getResponseCode() != 200) throw new IOException("HTTP " + http.getResponseCode());
+                try (var input = http.getInputStream()) {
+                    return imagePng(input.readNBytes(4 * 1024 * 1024 + 1));
+                }
+            } finally {
+                http.disconnect();
+            }
+        } catch (IOException error) {
+            throw new IllegalArgumentException("无法读取系统 Logo，请检查已生效的图片地址或上传 Logo", error);
+        }
+    }
+
+    static byte[] imagePng(byte[] bytes) throws IOException {
+        if (bytes.length == 0 || bytes.length > 4 * 1024 * 1024) throw new IOException("Logo 文件为空或过大");
+        java.awt.image.BufferedImage image;
+        try (var input = new MemoryCacheImageInputStream(new ByteArrayInputStream(bytes))) {
+            var readers = ImageIO.getImageReaders(input);
+            if (readers.hasNext()) {
+                ImageReader reader = readers.next();
+                try {
+                    reader.setInput(input);
+                    if (reader.getWidth(0) > 2048 || reader.getHeight(0) > 2048) throw new IOException("Logo 超过 2048 像素");
+                    image = reader.read(0);
+                } finally { reader.dispose(); }
+            } else {
+                var loader = new com.github.weisj.jsvg.parser.SVGLoader();
+                var context = com.github.weisj.jsvg.parser.LoaderContext.builder()
+                        .externalResourcePolicy(com.github.weisj.jsvg.parser.resources.ResourcePolicy.DENY_ALL).build();
+                var svg = loader.load(new ByteArrayInputStream(bytes), null, context);
+                if (svg == null) throw new IOException("无法解码 Logo");
+                var size = svg.size();
+                if (!(size.width > 0 && size.height > 0)) throw new IOException("Logo 缺少有效尺寸");
+                float scale = 256 / Math.max(size.width, size.height);
+                int width = Math.max(1, Math.round(size.width * scale));
+                int height = Math.max(1, Math.round(size.height * scale));
+                image = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                var graphics = image.createGraphics();
+                try {
+                    svg.render(null, graphics, new com.github.weisj.jsvg.view.ViewBox(0, 0, width, height));
+                } finally { graphics.dispose(); }
+            }
+        }
+        var output = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", output);
+        return output.toByteArray();
+    }
+
     public byte[] logo() {
         Object id = settings.get("brand").get("logoId");
         if (id != null && !id.toString().isEmpty()) return load(id.toString());
+        return defaultLogo();
+    }
+    private byte[] defaultLogo() {
         try (var stream = getClass().getResourceAsStream("/brand/tianshu-logo.png")) {
             if (stream == null) throw new IllegalStateException("内置品牌图片缺失");
             return stream.readAllBytes();

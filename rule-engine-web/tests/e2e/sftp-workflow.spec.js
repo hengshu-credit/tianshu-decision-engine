@@ -182,3 +182,57 @@ for (const width of [1440, 560]) test(`SFTP ${width}px 查询、连接测试与�
   expect(warnings).toEqual([])
   harness.assertClean()
 })
+
+test('引擎 SFTP 服务配置只修改选中的账户、策略版本与封禁记录', async ({ page }) => {
+  const permissions = ['database:view', 'account:manage', 'account:password-reset', 'system:edit']
+  let account = { id: 24, username: 'supplier', displayName: '上传方', active: true, mode: 'READ_WRITE', revision: 7 }
+  let policy = { ipAttemptsPerMinute: 120, fileRequestsPerSecond: 256, failureThreshold: 8, failureWindowSeconds: 300, banSeconds: 900, revision: 2 }
+  const ban = { subject: 'USER:24', reason: 'FAILURE', failures: 8, blockedUntil: Date.now() + 600000 }
+  let blocks = [ban]
+  const apiData = new Map([
+    ['/api/auth/console/config', { loginEnabled: true }],
+    ['/api/auth/console/me', { userId: 1, username: 'operator', permissions, defaultPermissions: permissions, globalEditable: true }],
+    ['/api/rule/sftp/list', { records: [], total: 0 }],
+    ['/api/rule/sftp/engine/accounts', () => ({ records: [account], total: 1 })],
+    ['PUT /api/rule/sftp/engine/accounts/24', ({ request }) => {
+      expect(request.postDataJSON()).toEqual({ mode: 'READ_ONLY', publicKey: '', revoke: false, revision: 7 })
+      account = { ...account, mode: 'READ_ONLY', revision: 8 }
+      return null
+    }],
+    ['/api/rule/sftp/engine/policy', () => policy],
+    ['PUT /api/rule/sftp/engine/policy', ({ request }) => {
+      expect(request.postDataJSON()).toEqual({ ...policy, failureThreshold: 4 })
+      policy = { ...request.postDataJSON(), revision: 3 }
+      return policy
+    }],
+    ['/api/rule/sftp/engine/bans', () => ({ records: blocks, total: blocks.length })],
+    ['POST /api/rule/sftp/engine/unblock', ({ request }) => {
+      expect(request.postDataJSON()).toEqual({ subject: ban.subject, blockedUntil: ban.blockedUntil })
+      blocks = []
+      return null
+    }],
+  ])
+  await installDistRoutes(page, { apiData })
+  await page.setViewportSize({ width: 560, height: 850 })
+  await page.goto('http://tianshu.local/index.html#/sftp')
+  await page.getByRole('button', { name: '引擎 SFTP 服务配置' }).click()
+  const settings = page.getByRole('dialog', { name: '引擎 SFTP 服务配置' })
+  const row = settings.getByRole('row').filter({ hasText: 'supplier' })
+  await row.getByRole('button', { name: '管理' }).click()
+  const edit = page.getByRole('dialog', { name: '管理 SFTP 上传账户' })
+  await edit.locator('.el-form-item').filter({ hasText: '账户权限' }).locator('.el-select').click()
+  await page.getByRole('option', { name: '只读', exact: true }).click()
+  await edit.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(row).toContainText('只读')
+  await settings.getByRole('tab', { name: '限流与熔断' }).click()
+  const limit = settings.getByRole('spinbutton', { name: '封禁前允许尝试的失败次数' })
+  await limit.fill('4')
+  await limit.press('Tab')
+  await settings.getByRole('button', { name: '保存策略' }).click()
+  await expect(settings.getByRole('button', { name: '保存策略' })).toBeDisabled()
+  await settings.getByRole('tab', { name: '封禁记录' }).click()
+  await settings.getByRole('button', { name: '解封', exact: true }).click()
+  await page.locator('.el-message-box:visible').getByRole('button', { name: '确定' }).click()
+  await expect(settings.getByText('当前没有生效的封禁')).toBeVisible()
+  expect(await settings.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+})

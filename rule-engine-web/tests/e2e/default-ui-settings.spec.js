@@ -266,6 +266,17 @@ test('默认主题与截图一致，预览取消、恢复默认、保存刷新�
   for (const selector of ['[data-theme-scheme="LIGHT"]', '[data-accent="PEACH_PINK_GRADIENT"]', '[data-navigation-layout="LEFT"]', '[data-sidebar-theme="DARK"]', '[data-content-width="FLUID"]', '[data-table-scroll-mode="FIXED"]']) {
     await expect(drawer.locator(selector)).toHaveAttribute('aria-pressed', 'true')
   }
+  for (const label of ['内容区宽度','列表表格滚动方式']) {
+    const segments = drawer.getByRole('group', { name: label, exact: true }).getByRole('button')
+    const [left, right] = await segments.all()
+    await expect(left).toHaveCSS('border-top-right-radius', '0px')
+    await expect(right).toHaveCSS('border-top-left-radius', '0px')
+    const a = await left.boundingBox(), b = await right.boundingBox()
+    expect(Math.abs(a.x + a.width - b.x)).toBeLessThanOrEqual(1)
+    await right.click()
+    await expect(right).toHaveAttribute('aria-pressed', 'true')
+    await expect(left).toHaveAttribute('aria-pressed', 'false')
+  }
   await drawer.locator('[data-theme-scheme="DARK"]').click()
   await drawer.locator('[data-action="cancel"]').click()
   await expect(root).toHaveAttribute('data-theme', 'light')

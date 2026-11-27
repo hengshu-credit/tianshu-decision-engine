@@ -100,7 +100,7 @@ test('生成鉴权、开放接口、外数、分流和账单关键业务状态�
   await expect(authDialog).toBeVisible()
   await screenshot(page, 'project-usage-02-project-auth.png')
   const authRow = authDialog.getByRole('row').filter({ hasText: 'FACE_API_MAIN' })
-  await authRow.getByRole('button', { name: 'Token', exact: true }).click()
+  await authRow.getByRole('button', { name: 'Token 记录', exact: true }).click()
   await expect(authDialog.getByText('TOKEN_FACE_20260724', { exact: true })).toBeVisible()
   await screenshot(page, 'project-usage-02-project-auth-token.png')
   await authDialog.getByRole('tab', { name: '访问审计', exact: true }).click()
@@ -162,7 +162,7 @@ test('生成字段管理、规则字段、模型字段和调用详情截图', as
   let routing = await openPage(page, '/variable')
   await page.getByRole('tab', { name: '数据对象', exact: true }).click()
   await expect(page.getByText('FaceVerifyRequest', { exact: true }).first()).toBeVisible()
-  await page.locator('.data-object-table .el-table__expand-icon').first().click()
+  await page.getByRole('button', { name: '展开或收起 FaceVerifyRequest' }).click()
   await expect(page.getByText('deviceId', { exact: true }).first()).toBeVisible()
   await screenshot(page, 'project-usage-03-data-object.png')
   await page.getByRole('tab', { name: '字段校验', exact: true }).click()
@@ -194,13 +194,13 @@ test('生成字段管理、规则字段、模型字段和调用详情截图', as
 
   routing = await openPage(page, '/datasource')
   await page.getByRole('tab', { name: '调用日志', exact: true }).click()
-  await expect(page.getByText('外数调用日志', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '外数调用日志', exact: true })).toBeVisible()
   await screenshot(page, 'project-usage-10-datasource-log.png')
   routing.assertClean()
 
   routing = await openPage(page, '/database')
   await page.getByRole('tab', { name: '调用日志', exact: true }).click()
-  await expect(page.getByText('数据库调用日志', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: '数据库调用日志', exact: true })).toBeVisible()
   await screenshot(page, 'project-usage-12-database-log.png')
   routing.assertClean()
 

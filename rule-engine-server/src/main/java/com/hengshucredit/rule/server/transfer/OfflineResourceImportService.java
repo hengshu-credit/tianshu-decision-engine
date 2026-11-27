@@ -64,15 +64,31 @@ public class OfflineResourceImportService {
     @jakarta.annotation.Resource private TransferFunctionLibraries functionLibraries;
     private final TransferBundleCodec codec = new TransferBundleCodec();
     @Resource private TransferVersionService versionTransfers;
+    @Resource private TransferPageSettings pageSettings;
+    @Resource private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleBillingConfigMapper billingMapper;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleFunctionMapper functionMapper;
 
     @Transactional
     public Map<String, Object> apply(byte[] bytes, TransferImportOptions options, String actor) {
+        return apply(codec.decodeDeferred(bytes), options, actor, TransferInstallationBindings.Profile.EMPTY, false);
+    }
+
+    Map<String,Object> apply(TransferBundleCodec.Decoded decoded, TransferImportOptions options, String actor, TransferInstallationBindings.Profile bindings, boolean preserveSourceScope) {
+        return apply(decoded, options, actor, bindings, preserveSourceScope, false, TransferProgress.NONE);
+    }
+
+    Map<String,Object> apply(TransferBundleCodec.Decoded decoded, TransferImportOptions options, String actor,
+                             TransferInstallationBindings.Profile bindings, boolean preserveSourceScope, boolean verifyAfterImport, TransferProgress progress) {
+        progress.report(1, "校验导入权限、目标范围和资源依赖");
         if (options == null) throw new IllegalArgumentException("请选择导入作用范围及目标项目");
         if (actor == null || actor.isBlank()) actor = ConsoleOperatorResolver.SYSTEM_CONSOLE;
-        var decoded = codec.decode(bytes);
         TransferBundle decodedBundle = decoded.bundle();
         List<TransferBundle.Resource> selectedResources = TransferSelection.select(decodedBundle, options);
         selectedResources.forEach(TransferVersionReferences::descriptors);
+        boolean publishImmediately = Boolean.TRUE.equals(options.publishRules()) && !verifyAfterImport;
+        if (publishImmediately && TransferSelection.ruleCaseCount(selectedResources) > 0)
+            throw new IllegalArgumentException("随包携带固定用例的规则请先导入草稿，运行回归检查后再发布");
         if (accessGuard != null) {
             accessGuard.require("transfer:import");
             for (TransferBundle.Resource resource : selectedResources) accessGuard.requireResource(TransferKey.parse(resource.key()).type().name(), "view");
@@ -111,6 +127,8 @@ public class OfflineResourceImportService {
         List<TransferBundle.Resource> ordered = topologicalOrder(bundle.resources());
         validateProjectTargets(ordered, options, createProject);
         Map<String, Long> idMap = new LinkedHashMap<>();
+        Set<Long> newApis = new HashSet<>();
+        Set<Long> newRuleDrafts = new HashSet<>();
         Map<String, Object> versionMapping = new LinkedHashMap<>();
         if (options.projectBindings() != null) {
             options.projectBindings().forEach((sourceId, targetId) -> {
@@ -145,12 +163,15 @@ public class OfflineResourceImportService {
             if (template != null && "SUFFIX".equals(options.normalizedResourcePolicy())) {
                 addSuffix(projectConfig, TransferResourceType.PROJECT, options.normalizedSuffix());
             }
+            progress.report(5, "创建目标项目 · " + options.projectCode());
             effectiveTargetProjectId = importProject(projectConfig, options, actor);
             if (template != null) idMap.put(template.key(), effectiveTargetProjectId);
             createdProject = true;
         }
         for (TransferBundle.Resource resource : ordered) {
             TransferKey sourceKey = TransferKey.parse(resource.key());
+            progress.report(10 + 80 * result.size() / ordered.size(), "导入配置 " + (result.size() + 1) + "/"
+                    + ordered.size() + " · " + resource.key() + " · " + resource.configuration().get(sourceKey.type().codeField));
             if (sourceKey.type() == TransferResourceType.RULE_VERSION) {
                 Long targetBinding = versionTransfers.bindLegacyRule(resource, options, idMap, effectiveTargetProjectId);
                 idMap.put(resource.key(), targetBinding);
@@ -174,20 +195,54 @@ public class OfflineResourceImportService {
                 result.add(row(resource, effectiveTargetProjectId, "CREATED", null));
                 continue;
             }
-            applyTargetScope(configuration, sourceKey.type(), options, effectiveTargetProjectId);
+            Long platformFunction = platformFunction(sourceKey.type(), configuration);
+            if (platformFunction != null) {
+                idMap.put(resource.key(), platformFunction);
+                result.add(row(resource, platformFunction, "REUSED", "绑定目标环境已注册的内置函数"));
+                continue;
+            }
+            var originalModel = decoded.modelFiles().get(resource.key());
+            bindings.bind(resource, configuration);
+            if (originalModel != null && modelFiles == null)
+                configuration.put("modelContent", java.util.Base64.getEncoder().encodeToString(originalModel.getContent()));
+            configuration.remove("_transferSourceModelVersion");
+            configuration.remove("_transferSourceGovernedSnapshot");
+            if (preserveSourceScope && "GLOBAL".equals(configuration.get("scope"))) {
+                configuration.put("projectId", 0L);
+                bootstrapShared(sourceKey.type(), configuration);
+            } else applyTargetScope(configuration, sourceKey.type(), options, effectiveTargetProjectId);
             Long resourceTargetProjectId = number(configuration.get("projectId"));
             if (sourceKey.type() == TransferResourceType.MODEL
                     && (configuration.containsKey("_modelContentVersionId") || ModelFileStore.isReference((String)configuration.get("modelContent")))) {
                 throw new IllegalArgumentException("迁移模型必须携带原始文件，不能指定本机存储标识或本机文件版本");
             }
+            rewriteReferences(configuration, resource, byKey, idMap, childMap, options.normalizedFieldBindings());
+            boolean generatedHere = false;
+            if (sourceKey.type() == TransferResourceType.BILLING_CONFIG && "API".equals(configuration.get("billingTarget"))
+                    && ("API_" + resource.configuration().get("targetRefId")).equals(configuration.get("billingCode"))) {
+                Long targetApi = idMap.get("EXTERNAL_API:" + resource.configuration().get("targetRefId"));
+                if (targetApi == null || !targetApi.equals(number(configuration.get("targetRefId"))))
+                    throw new IllegalArgumentException("接口专属计费项缺少关联目标接口");
+                String billingCode = "API_" + targetApi;
+                configuration.put("billingCode", billingCode);
+                var auto = billingMapper.selectOne(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleBillingConfig>()
+                        .eq(com.hengshucredit.rule.model.entity.RuleBillingConfig::getProjectId, resourceTargetProjectId)
+                        .eq(com.hengshucredit.rule.model.entity.RuleBillingConfig::getBillingCode, billingCode)
+                        .eq(com.hengshucredit.rule.model.entity.RuleBillingConfig::getTargetRefId, targetApi)
+                        .eq(com.hengshucredit.rule.model.entity.RuleBillingConfig::getBillingTarget, "API"));
+                if (auto != null) {
+                    governanceBootstrapService.ensure("BILLING_CONFIG", auto.getId());
+                    generatedHere = newApis.contains(targetApi);
+                }
+            }
             ExistingResource existing = findExisting(sourceKey.type(), configuration, resourceTargetProjectId);
             Long existingId = existing == null ? null : existing.id();
-            rewriteReferences(configuration, resource, byKey, idMap, childMap, options.normalizedFieldBindings());
             if (!TransferVersionReferences.scan(resource.configuration()).isEmpty())
-                versionMapping.putAll(versionTransfers.rewrite(configuration, resource, options, idMap, resourceTargetProjectId));
+                versionMapping.putAll(versionTransfers.rewrite(configuration, resource, options, idMap, resourceTargetProjectId, byKey, childMap));
             String defaultPolicy = sourceKey.type() == TransferResourceType.VARIABLE
                     ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
             String policy = options.normalizedResourceActions().getOrDefault(resource.key(), defaultPolicy);
+            if (generatedHere) policy = "OVERWRITE";
             if (sourceKey.type() == TransferResourceType.RULE && ruleDefinitionMapper != null) {
                 RuleDefinition occupied = ruleDefinitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
                         .eq(RuleDefinition::getRuleCode, configuration.get("ruleCode")));
@@ -198,6 +253,8 @@ public class OfflineResourceImportService {
                 }
             }
             if (existingId != null && "REUSE".equals(policy)) {
+                if (originalModel != null && !configuration.containsKey("modelContent"))
+                    configuration.put("modelContent", java.util.Base64.getEncoder().encodeToString(originalModel.getContent()));
                 if (!TransferResourceComparison.reusable(sourceKey.type(), configuration, existing.configuration(), existing.status())) {
                     throw new IllegalArgumentException("资源不能复用（类型、配置、启用状态或环境凭据未匹配）: " + resource.key()
                             + "；请选择覆盖已有配置或新建并追加后缀，变量类型冲突只能新建并追加后缀");
@@ -218,7 +275,8 @@ public class OfflineResourceImportService {
             }
             Map<Long, Long> importedFieldIds = sourceKey.type() == TransferResourceType.DATA_OBJECT && existingId != null
                     ? prepareObjectOverwrite(configuration, existing.configuration()) : Map.of();
-            if (sourceKey.type() == TransferResourceType.DATA_OBJECT && existingId != null) configuration.put("id", existingId);
+            if (existingId == null) configuration.remove("id");
+            else configuration.put("id", existingId);
             if (accessGuard != null) {
                 accessGuard.requireResource(sourceKey.type().name(), "edit");
                 if (sourceKey.type() != TransferResourceType.RULE) {
@@ -237,29 +295,65 @@ public class OfflineResourceImportService {
                 }
             }
             if (sourceKey.type() == TransferResourceType.MODEL && modelFiles != null) {
-                modelFiles.ingestConfiguration(configuration, resourceTargetProjectId);
+                if (originalModel == null) modelFiles.ingestConfiguration(configuration, resourceTargetProjectId);
+                else modelFiles.ingestConfiguration(configuration, resourceTargetProjectId, originalModel.getContent());
             }
             if (sourceKey.type() == TransferResourceType.MODEL) {
                 TransferModelFields.prepare(configuration, existingId == null ? null : existing.configuration());
             }
             ResourceSnapshot snapshot = ResourceSnapshot.ofJson(CanonicalJson.write(configuration));
+            if ((preserveSourceScope || verifyAfterImport) && sourceKey.type() == TransferResourceType.EXPERIMENT && existingId == null
+                    && resource.references().stream().anyMatch(ref -> ref.targetKey().startsWith("RULE:") && newRuleDrafts.contains(idMap.get(ref.targetKey())))) {
+                var draft = new GovernanceDraftRequest();
+                draft.setResourceType("EXPERIMENT"); draft.setProjectId(resourceTargetProjectId); draft.setAction("CREATE");
+                draft.setSnapshotJson(snapshot.snapshotJson()); draft.setEffectiveStatus("ACTIVE");
+                draft.setChangeSummary("离线迁移实验，组内规则发布后提交审批");
+                var workspace = approvalService.createImportedExperimentWorkspace(draft, actor, newRuleDrafts);
+                if (workspace == null || workspace.getResourceId() == null) throw new IllegalStateException("实验草稿未创建");
+                idMap.put(resource.key(), workspace.getResourceId());
+                var pending = row(resource, workspace.getResourceId(), "DRAFT", "发布组内规则后提交实验审批");
+                pending.put("approvalRequestId", workspace.getId());
+                pending.put("snapshotDigest", workspace.getSnapshotDigest());
+                result.add(pending);
+                continue;
+            }
             Long targetId;
             if (sourceKey.type() == TransferResourceType.RULE) {
                 if (existingId == null && ruleDefinitionMapper != null && ruleDefinitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
                         .eq(RuleDefinition::getRuleCode, configuration.get("ruleCode"))) != null) {
                     throw new IllegalArgumentException("目标规则编码已被占用，请修改新建后缀: " + configuration.get("ruleCode"));
                 }
-                targetId = importRuleDraft(configuration, existingId, options, resourceTargetProjectId, actor);
+                targetId = importRuleDraft(configuration, existingId, options, resourceTargetProjectId, actor, newRuleDrafts, publishImmediately);
+                if (!publishImmediately) newRuleDrafts.add(targetId);
             } else {
                 Map<Long, Long> appliedFields = new HashMap<>();
                 targetId = approveResource(sourceKey.type(), existingId, options, resourceTargetProjectId, snapshot, actor, appliedFields);
+                if (targetId == null) {
+                    idMap.put(resource.key(), existingId);
+                    if (sourceKey.type() == TransferResourceType.DATA_OBJECT) childMap.put(resource.key(), importedFieldIds);
+                    if (sourceKey.type() == TransferResourceType.MODEL) childMap.put(resource.key(),
+                            TransferModelFields.outputMapping(resource.configuration(), existing.configuration()));
+                    result.add(row(resource, existingId, "REUSED", null));
+                    continue;
+                }
                 if (sourceKey.type() == TransferResourceType.MODEL) {
                     var applied = adapterRegistry.require("MODEL").loadEffective(targetId);
                     childMap.put(resource.key(), TransferModelFields.outputMapping(resource.configuration(),
                             CanonicalJson.readMap(applied.snapshotJson())));
                 }
                 if (sourceKey.type() == TransferResourceType.DATA_OBJECT) {
-                    if (importedFieldIds.isEmpty()) childMap.put(resource.key(), appliedFields);
+                    if (importedFieldIds.isEmpty()) {
+                        // 草稿物化与最终审批可能分别分配子字段，按实际生效层级补齐源 ID 映射。
+                        Map<Long,Long> finalIds = appliedFields;
+                        if (existingId == null && adapterRegistry != null && !list(resource.configuration().get("fields")).isEmpty()) {
+                            var applied = adapterRegistry.require("DATA_OBJECT").loadEffective(targetId);
+                            Map<String,Object> actual = applied == null ? null : CanonicalJson.readMap(applied.snapshotJson());
+                            // 最终审批的映射以草稿字段为键。不同库恰好使用相同数字时也必须核对完整字段层级。
+                            if (actual != null && actual.get("fields") instanceof List<?>)
+                                finalIds = reusedFieldMap(resource.configuration(), actual);
+                        }
+                        childMap.put(resource.key(), finalIds);
+                    }
                     else {
                         Map<Long, Long> sourceToApplied = new HashMap<>();
                         importedFieldIds.forEach((sourceId, draftId) -> {
@@ -272,7 +366,18 @@ public class OfflineResourceImportService {
                 }
             }
             idMap.put(resource.key(), targetId);
+            if (sourceKey.type() == TransferResourceType.EXTERNAL_API && existingId == null) newApis.add(targetId);
             result.add(row(resource, targetId, existingId == null ? "CREATED" : "OVERWRITTEN", null));
+        }
+        for (var resource : ordered) {
+            if (resource.pageSettings().isEmpty()) continue;
+            var type = TransferKey.parse(resource.key()).type();
+            if (type == TransferResourceType.PROJECT && global)
+                throw new IllegalArgumentException("带项目鉴权的配置包必须选择项目范围");
+            var policy = options.normalizedResourceActions().getOrDefault(resource.key(),
+                    type == TransferResourceType.VARIABLE ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy());
+            progress.report(92, "写入附属配置 · " + resource.key());
+            pageSettings.apply(resource, idMap, "OVERWRITE".equals(policy), bindings);
         }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", "APPLIED");
@@ -319,7 +424,9 @@ public class OfflineResourceImportService {
         draft.setSnapshotJson(snapshot.snapshotJson());
         draft.setEffectiveStatus("ACTIVE");
         draft.setChangeSummary("离线配置迁移");
-        var request = approvalService.createDraft(draft, actor);
+        var imported = approvalService.createImportDraft(draft, actor);
+        if (imported.isEmpty()) return null;
+        var request = imported.orElseThrow();
         approvalService.submit(request.getId(), new GovernanceSubmitRequest() {{ setComment("离线配置迁移自动提交"); }}, actor);
         var approved = approvalService.approve(request.getId(), new GovernanceReviewRequest() {{ setComment("离线配置迁移自动审批"); }}, actor,
                 applied -> appliedFields.putAll(applied.fieldIdMapping()));
@@ -331,12 +438,12 @@ public class OfflineResourceImportService {
     }
 
     private Long importRuleDraft(Map<String, Object> configuration, Long existingId,
-                                 TransferImportOptions options, Long targetProjectId, String actor) {
+                                 TransferImportOptions options, Long targetProjectId, String actor, Set<Long> newRuleDrafts, boolean publishImmediately) {
         if (existingId != null) throw new IllegalArgumentException("规则覆盖必须通过规则审批流程选择目标修订");
         RuleDefinition definition = JSON.parseObject(CanonicalJson.write(configuration), RuleDefinition.class);
         definition.setId(null);
         definition.setProjectId(projectId(TransferResourceType.RULE, options, targetProjectId));
-        definition.setScope("GLOBAL".equals(options.normalizedScope()) ? "GLOBAL" : "PROJECT");
+        definition.setScope("GLOBAL".equals(configuration.get("scope")) || "GLOBAL".equals(options.normalizedScope()) ? "GLOBAL" : "PROJECT");
         RuleDefinition created = definitionService.createWithContent(definition);
         RuleRevision revision = lifecycleService.createDraft(created.getId(), null);
         Map<String, Object> content = object(configuration.get("content"));
@@ -347,8 +454,8 @@ public class OfflineResourceImportService {
         save.setModelJson(String.valueOf(content.getOrDefault("modelJson", "{}")));
         save.setOpenApiConfigJson(content.get("openApiConfigJson") == null ? null : String.valueOf(content.get("openApiConfigJson")));
         save.setUpdateOpenApiConfig(true);
-        var saved = draftService.save(save);
-        if (Boolean.TRUE.equals(options.publishRules())) {
+        var saved = newRuleDrafts.isEmpty() ? draftService.save(save) : draftService.saveImportedDraft(save, newRuleDrafts);
+        if (publishImmediately) {
             RuleRevision savedRevision = saved.getRevision();
             RuleLifecycleActionRequest action = new RuleLifecycleActionRequest();
             action.setComment("离线配置迁移按显式选项发布规则");
@@ -372,6 +479,9 @@ public class OfflineResourceImportService {
                 boolean ready = resource.references().stream().allMatch(reference ->
                         reference.external() || !byKey.containsKey(reference.targetKey())
                                 || done.contains(reference.targetKey()));
+                if (ready) ready = resource.versionReferences().stream()
+                        .map(ref -> TransferVersionService.includedModel(ref, byKey))
+                        .allMatch(key -> key == null || done.contains(key));
                 if (ready) { ordered.add(resource); done.add(resource.key()); progressed = true; }
             }
             if (!progressed) throw new IllegalArgumentException("离线资源依赖形成循环，无法安全导入");
@@ -383,11 +493,16 @@ public class OfflineResourceImportService {
                                    Map<String, TransferBundle.Resource> byKey, Map<String, Long> idMap,
                                    Map<String, Map<Long, Long>> childMap,
                                    Map<String, Long> fieldBindings) {
+        Map<Long, String> variableTypes = new HashMap<>();
+        Set<String> versionPaths = new HashSet<>();
+        for (var version : TransferVersionReferences.scan(resource.configuration())) {
+            versionPaths.add(version.path());
+            versionPaths.addAll(version.ownedPaths());
+        }
         for (TransferBundle.Reference reference : resource.references()) {
             // Old format-1 manifests sometimes recorded the operand itself as the binding path.
             // The version mapper owns that node and all of its resource/version identity fields.
-            if (TransferVersionReferences.scan(resource.configuration()).stream().anyMatch(version ->
-                    version.path().equals(reference.path()) || version.ownedPaths().contains(reference.path()))) continue;
+            if (versionPaths.contains(reference.path())) continue;
             Long target = idMap.get(reference.targetKey());
             if (target == null) throw new IllegalArgumentException("上游资源尚未导入: " + reference.targetKey());
             if (reference.childPath() != null) {
@@ -400,7 +515,36 @@ public class OfflineResourceImportService {
                 if (mapped == null) throw new IllegalArgumentException("源资源子字段无法映射: " + reference.targetKey());
                 target = mapped;
             }
-            TransferJsonPath.replace(configuration, reference.path(), target);
+            if (resource.key().startsWith("RULE:") && reference.childPath() == null && reference.targetKey().startsWith("VARIABLE:")) {
+                Long variableId = target;
+                TransferJsonPath.replace(configuration, reference.path(), target, owner ->
+                        completeVariableType(owner, reference.path(), () -> variableTypes.computeIfAbsent(variableId, this::targetVariableType)));
+            } else {
+                TransferJsonPath.replace(configuration, reference.path(), target);
+            }
+        }
+    }
+
+    private String targetVariableType(Long variableId) {
+        ResourceSnapshot snapshot = adapterRegistry.require("VARIABLE").loadEffective(variableId);
+        if (snapshot != null && CanonicalJson.readMap(snapshot.snapshotJson()).get("varType") instanceof String type) return type;
+        return "";
+    }
+
+    static void completeVariableType(Map<String, Object> owner, String path, java.util.function.Supplier<String> declaration) {
+        if ("FIXED".equals(owner.get("versionMode"))) return;
+        String key;
+        if (path.endsWith("/varId") && (path.startsWith("/inputFieldsJson/") || path.startsWith("/outputFieldsJson/"))) {
+            key = "fieldType";
+        } else if (path.startsWith("/content/modelJson/") && path.endsWith("/refId") && "REFERENCE".equals(owner.get("kind"))) {
+            key = "valueType";
+        } else if (path.startsWith("/content/modelJson/") && path.endsWith("/_varId")) {
+            key = "varType";
+        } else return;
+        Object type = owner.get(key);
+        if (type == null || type instanceof String text && (text.isBlank() || "?".equals(text.trim()))) {
+            String resolved = declaration.get();
+            if (resolved != null && !resolved.isBlank() && !"?".equals(resolved.trim())) owner.put(key, resolved);
         }
     }
 
@@ -498,6 +642,35 @@ public class OfflineResourceImportService {
             return new ExistingResource(row.getResourceId(), current, row.getEffectiveStatus());
         }
         return null;
+    }
+
+    private void bootstrapShared(TransferResourceType type, Map<String,Object> config) {
+        if (!Set.of(TransferResourceType.VARIABLE, TransferResourceType.DATA_OBJECT, TransferResourceType.FUNCTION,
+                TransferResourceType.MODEL, TransferResourceType.LIST_LIBRARY, TransferResourceType.EXTERNAL_DATASOURCE,
+                TransferResourceType.DATABASE, TransferResourceType.SFTP, TransferResourceType.BILLING_CONFIG,
+                TransferResourceType.FIELD_VALIDATION).contains(type)) return;
+        consoleProjects.requirePermission(type.permissionModule + ":view", 0L);
+        String column = com.baomidou.mybatisplus.core.toolkit.StringUtils.camelToUnderline(type.codeField);
+        var ids = jdbc.queryForList("SELECT id FROM " + type.table + " WHERE scope='GLOBAL' AND project_id=0 AND "
+                + column + "=? AND status<>-1", Long.class, config.get(type.codeField));
+        if (ids.size() > 1) throw new IllegalArgumentException("目标环境全局资源编码不唯一");
+        if (!ids.isEmpty()) governanceBootstrapService.ensure(type.name(), ids.get(0));
+    }
+
+    private Long platformFunction(TransferResourceType type, Map<String,Object> config) {
+        if (type != TransferResourceType.FUNCTION || !"GLOBAL".equals(config.get("scope"))) return null;
+        var source = JSON.parseObject(CanonicalJson.write(config), com.hengshucredit.rule.model.entity.RuleFunction.class);
+        if (!com.hengshucredit.rule.server.service.FunctionMethodCatalogService.isPlatformBinding(source)) return null;
+        var target = functionMapper.selectOne(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleFunction>()
+                .eq(com.hengshucredit.rule.model.entity.RuleFunction::getScope, "GLOBAL")
+                .eq(com.hengshucredit.rule.model.entity.RuleFunction::getProjectId, 0L)
+                .eq(com.hengshucredit.rule.model.entity.RuleFunction::getFuncCode, source.getFuncCode()));
+        if (target == null || !Integer.valueOf(1).equals(target.getStatus())
+                || !com.hengshucredit.rule.server.service.FunctionMethodCatalogService.isPlatformBinding(target)
+                || !java.util.Objects.equals(target.getReturnType(), source.getReturnType()))
+            throw new IllegalArgumentException("目标环境内置函数与配置包不兼容：" + source.getFuncCode());
+        if (consoleProjects != null) consoleProjects.requirePermission("function:view", 0L);
+        return target.getId();
     }
 
     private record ExistingResource(Long id, Map<String, Object> configuration, String status) { }

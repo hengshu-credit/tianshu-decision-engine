@@ -139,6 +139,14 @@ CREATE TABLE IF NOT EXISTS `console_user_login_activity` (
   CONSTRAINT `fk_console_login_activity_user` FOREIGN KEY (`user_id`) REFERENCES `console_user` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户登录活动表';
 
+CREATE TABLE IF NOT EXISTS `console_user_session_state` (
+  `user_id` BIGINT NOT NULL COMMENT '会话所属控制台账户的稳定标识',
+  `latest_sequence` BIGINT NOT NULL COMMENT '该账户最近一次成功登录的会话序号，零表示尚未签发',
+  `minimum_sequence` BIGINT NOT NULL COMMENT '仍允许访问控制台的最小会话序号，零兼容升级前的登录',
+  PRIMARY KEY (`user_id`),
+  CONSTRAINT `fk_console_session_state_user` FOREIGN KEY (`user_id`) REFERENCES `console_user` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台账户登录会话有效范围';
+
 CREATE TABLE IF NOT EXISTS `console_user_project` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键标识',
   `user_id` BIGINT NOT NULL COMMENT '控制台账户标识，关联 console_user.id',
@@ -414,6 +422,7 @@ CREATE TABLE IF NOT EXISTS `governance_dependency_snapshot` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一生命周期审批依赖快照';
 
 CREATE TABLE IF NOT EXISTS `rule_definition` (
+  `test_input_json` JSON DEFAULT NULL COMMENT '规则测试的默认输入参数，空值表示按字段生成',
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
   `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
@@ -835,6 +844,7 @@ CREATE TABLE IF NOT EXISTS `rule_publish_outbox` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则发布通知可靠投递事务发件箱';
 
 CREATE TABLE IF NOT EXISTS `rule_mock_rule` (
+  `project_id` BIGINT DEFAULT NULL COMMENT '生成规则所属项目主键，空值表示全局可用',
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '可复用的测试数据生成规则主键',
   `seed_key` VARCHAR(32) DEFAULT NULL COMMENT '内置规则的稳定初始化标识，自定义规则为空',
   `name` VARCHAR(128) NOT NULL COMMENT '业务人员选择生成方式时看到的名称',
@@ -861,6 +871,9 @@ CREATE TABLE IF NOT EXISTS `rule_data_object` (
   `status`           TINYINT      NOT NULL DEFAULT 1       COMMENT '资源状态：-1=已逻辑删除，0=停用，1=启用',
   `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `example_case_binding` JSON DEFAULT NULL COMMENT '绑定测试用例的资源类型、用例主键与输入值 JSON Pointer 路径',
+  `example_mode` VARCHAR(12) DEFAULT NULL COMMENT '测试输入的示例方式：AUTO 自动、FIXED 固定、RULE 指定 Mock、CASE 绑定测试用例、NONE 不生成',
+  `example_value` LONGTEXT DEFAULT NULL COMMENT '测试输入使用的固定示例值，保留配置文本和数字精度',
   `mock_rule_id` BIGINT DEFAULT NULL COMMENT '数据对象整体绑定的测试生成规则主键，空值使用自动匹配',
   CONSTRAINT `fk_object_mock_rule` FOREIGN KEY (`mock_rule_id`) REFERENCES `rule_mock_rule` (`id`) ON DELETE RESTRICT,
   PRIMARY KEY (`id`),
@@ -871,6 +884,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象定义表（Java实体类/JSON对象）';
 
 CREATE TABLE IF NOT EXISTS `rule_variable` (
+  `test_input_json` JSON DEFAULT NULL COMMENT '变量在线测试的默认输入参数，空值表示按字段生成',
   `system_constant` TINYINT NOT NULL DEFAULT 0 COMMENT '系统只读标记：系统常量与引擎内部字段为1，禁止业务修改和删除',
   `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '是否显式记录字段结果供历史统计：0=否，1=是',
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -885,12 +899,14 @@ CREATE TABLE IF NOT EXISTS `rule_variable` (
   `source_config`     JSON         DEFAULT NULL             COMMENT '外部来源配置JSON：API/DB/LIST变量绑定接口、SQL、入参映射、结果路径等',
   `default_value`     TEXT         DEFAULT NULL             COMMENT '默认值（常量必填，可为较长 JSON）',
   `value_range`       VARCHAR(512) DEFAULT NULL             COMMENT '取值范围描述',
-  `example_value`     VARCHAR(256) DEFAULT NULL             COMMENT '示例值',
+  `example_value` LONGTEXT DEFAULT NULL COMMENT '测试输入的固定示例值，支持结构化对象和数组',
   `description`       VARCHAR(512) DEFAULT NULL             COMMENT '变量说明',
   `sort_order`        INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
   `status`            TINYINT      NOT NULL DEFAULT 1       COMMENT '资源状态：-1=已逻辑删除，0=停用，1=启用',
   `create_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `example_case_binding` JSON DEFAULT NULL COMMENT '绑定测试用例的资源类型、用例主键与输入值 JSON Pointer 路径',
+  `example_mode` VARCHAR(12) DEFAULT NULL COMMENT '测试输入的示例方式：AUTO 自动、FIXED 固定、RULE 指定 Mock、CASE 绑定测试用例、NONE 不生成',
   `mock_rule_id` BIGINT DEFAULT NULL COMMENT '变量绑定的测试生成规则主键，空值使用自动匹配',
   CONSTRAINT `fk_variable_mock_rule` FOREIGN KEY (`mock_rule_id`) REFERENCES `rule_mock_rule` (`id`) ON DELETE RESTRICT,
   PRIMARY KEY (`id`),
@@ -922,6 +938,9 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   `status`           TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
   `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `example_case_binding` JSON DEFAULT NULL COMMENT '绑定测试用例的资源类型、用例主键与输入值 JSON Pointer 路径',
+  `example_mode` VARCHAR(12) DEFAULT NULL COMMENT '测试输入的示例方式：AUTO 自动、FIXED 固定、RULE 指定 Mock、CASE 绑定测试用例、NONE 不生成',
+  `example_value` LONGTEXT DEFAULT NULL COMMENT '测试输入使用的固定示例值，保留配置文本和数字精度',
   `mock_rule_id` BIGINT DEFAULT NULL COMMENT '对象子字段绑定的测试生成规则主键，空值使用自动匹配',
   CONSTRAINT `fk_field_mock_rule` FOREIGN KEY (`mock_rule_id`) REFERENCES `rule_mock_rule` (`id`) ON DELETE RESTRICT,
   PRIMARY KEY (`id`),
@@ -934,6 +953,22 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   CONSTRAINT `fk_data_object_field_ref_object` FOREIGN KEY (`ref_object_id`) REFERENCES `rule_data_object` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_data_object_field_ref_variable` FOREIGN KEY (`ref_variable_id`) REFERENCES `rule_variable` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象字段表';
+
+CREATE TABLE IF NOT EXISTS `rule_mock_field_binding` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '生成方法主动关联字段的记录主键',
+  `rule_id` BIGINT NOT NULL COMMENT '字段自动匹配时使用的生成方法主键',
+  `variable_id` BIGINT DEFAULT NULL COMMENT '关联的输入变量主键',
+  `object_id` BIGINT DEFAULT NULL COMMENT '关联的整体数据对象主键',
+  `field_id` BIGINT DEFAULT NULL COMMENT '关联的数据对象子字段主键',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_mock_bind_var` (`variable_id`),
+  UNIQUE KEY `uk_mock_bind_obj` (`object_id`),
+  UNIQUE KEY `uk_mock_bind_field` (`field_id`),
+  CONSTRAINT `fk_mock_bind_method` FOREIGN KEY (`rule_id`) REFERENCES `rule_mock_rule` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mock_bind_var` FOREIGN KEY (`variable_id`) REFERENCES `rule_variable` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mock_bind_obj` FOREIGN KEY (`object_id`) REFERENCES `rule_data_object` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mock_bind_field` FOREIGN KEY (`field_id`) REFERENCES `rule_data_object_field` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Mock 方法主动绑定的输入变量、对象和子字段';
 
 CREATE TABLE IF NOT EXISTS `rule_data_object_field_option` (
   `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1151,6 +1186,10 @@ CREATE TABLE IF NOT EXISTS `rule_function_version` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='函数版本历史表';
 
 CREATE TABLE IF NOT EXISTS `rule_execution_log` (
+  `es_trace_archive` LONGBLOB DEFAULT NULL COMMENT '检索确认后无损压缩的执行追踪正文，供重建索引和数据库回退读取',
+  `es_revision` BIGINT NOT NULL DEFAULT 1 COMMENT '当前日志内容的检索修订号，同一次执行被覆盖时递增',
+  `es_due_at` DATETIME(6) DEFAULT '2000-01-01 00:00:00' COMMENT '下次可领取检索投递的数据库时间，空表示本修订已写入全部索引',
+  `es_attempts` INT NOT NULL DEFAULT 0 COMMENT '当前修订的检索投递领取次数，用于租约校验和失败退避',
   `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `root_rule_id` BIGINT DEFAULT NULL COMMENT '根规则ID快照',
   `execution_project_id` BIGINT DEFAULT NULL COMMENT '执行项目ID快照',
@@ -1184,6 +1223,9 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
    `execute_time_ms` BIGINT        DEFAULT NULL             COMMENT '执行耗时（毫秒）',
    `create_time`     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '执行时间',
    PRIMARY KEY (`id`, `create_time`),
+   KEY `idx_es_due` (`es_due_at`, `id`),
+   KEY `idx_execution_history_project` (`execution_project_id`, `started_at`, `root_rule_id`, `id`),
+   KEY `idx_execution_history_window` (`started_at`, `id`),
    KEY `idx_rule_code` (`rule_code`, `create_time`),
    KEY `idx_project_code` (`project_code`, `create_time`),
    KEY `idx_source` (`source`, `create_time`),
@@ -1612,6 +1654,10 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API接口配置表';
 
 CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
+  `es_body_aliases` TINYINT NOT NULL DEFAULT 0 COMMENT '相同大报文共用原文的标志，位一表示请求、位二表示响应与相应原始留存副本相同',
+  `es_revision` BIGINT NOT NULL DEFAULT 1 COMMENT '当前日志内容的检索修订号，同一次执行被覆盖时递增',
+  `es_due_at` DATETIME(6) DEFAULT '2000-01-01 00:00:00' COMMENT '下次可领取检索投递的数据库时间，空表示本修订已写入全部索引',
+  `es_attempts` INT NOT NULL DEFAULT 0 COMMENT '当前修订的检索投递领取次数，用于租约校验和失败退避',
   `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `root_trace_id` CHAR(36) DEFAULT NULL COMMENT '根请求追踪 ID',
   `history_fields` LONGTEXT DEFAULT NULL COMMENT '逻辑外数调用的受管字段ID结果快照',
@@ -1662,6 +1708,7 @@ CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   `cost_time_ms`    BIGINT       DEFAULT NULL            COMMENT '耗时毫秒',
   `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',
   PRIMARY KEY (`id`),
+  KEY `idx_es_due` (`es_due_at`, `id`),
   KEY `idx_runtime_log_module_time` (`module_type`, `create_time`),
   KEY `idx_dashboard_runtime_project_module_action_time` (`module_type`, `action_type`, `provider_request`, `create_time`, `project_code`),
   KEY `idx_runtime_log_target_time` (`target_ref_id`, `create_time`),
@@ -1898,6 +1945,8 @@ CREATE TABLE IF NOT EXISTS `rule_billing_config` (
   `project_id`      BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
   `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT '所属项目外键，全局资源为空',
   `scope`           VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL=全局，PROJECT=项目级',
+  `bill_company_name` VARCHAR(128) DEFAULT NULL COMMENT '账单公司抬头，空值表示发送时使用已生效的系统名称',
+  `bill_email` VARCHAR(254) DEFAULT NULL COMMENT '审批生效的月度账单收件邮箱，空值表示关闭发送',
   `billing_code`    VARCHAR(128) NOT NULL                COMMENT '计费项编码',
   `billing_name`    VARCHAR(128) NOT NULL                COMMENT '计费项名称',
   `billing_target`  VARCHAR(32)  NOT NULL DEFAULT 'ENGINE' COMMENT '计费对象：ENGINE=规则引擎，API=外数接口，DB=数据库查询',
@@ -1997,6 +2046,12 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   `auth_id`         BIGINT       DEFAULT NULL            COMMENT '鉴权配置ID',
   `auth_code`       VARCHAR(128) DEFAULT NULL            COMMENT '鉴权配置编码快照',
   `auth_type`       VARCHAR(32)  DEFAULT NULL            COMMENT '鉴权类型快照：LEGACY_TOKEN=项目访问令牌，API_KEY=接口密钥，BASIC=账号密码，HMAC_SHA256=摘要签名，BEARER_TOKEN=临时访问令牌，GLOBAL_KEY=全局公私钥签名',
+  `billing_config_id` BIGINT DEFAULT NULL COMMENT '汇总明细共同引用的计费配置主键，历史或混合来源可为空',
+  `request_count` BIGINT DEFAULT NULL COMMENT '当日按请求标识去重的请求数，缺少标识时为空',
+  `charged_count` BIGINT DEFAULT NULL COMMENT '当日计费数量大于零的明细条数',
+  `min_unit_price` DECIMAL(18,6) DEFAULT NULL COMMENT '该日汇总所含计费明细的最低实际单价',
+  `max_unit_price` DECIMAL(18,6) DEFAULT NULL COMMENT '该日汇总所含计费明细的最高实际单价',
+  `billed_unit_price` DECIMAL(18,6) DEFAULT NULL COMMENT '计费明细的共同单价，存在多种单价时为空',
   `billing_code`    VARCHAR(128) NOT NULL                COMMENT '计费项编码',
   `billing_target`  VARCHAR(32)  NOT NULL                COMMENT '计费对象：ENGINE=规则引擎，API=外数接口，DB=数据库查询',
   `target_ref_id`   BIGINT       DEFAULT NULL            COMMENT '具体计费对象ID',
@@ -2249,6 +2304,37 @@ CREATE TABLE IF NOT EXISTS `console_operation_log` (
   KEY `idx_console_operation_user_time` (`username`, `create_time`),
   KEY `idx_console_operation_module_time` (`module`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='控制台账户操作记录';
+
+CREATE TABLE IF NOT EXISTS `offline_transfer_task` (
+  `task_id` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '后台迁移任务或临时上传文件的唯一标识',
+  `session_digest` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '发起迁移的控制台会话摘要，用于隔离任务和临时文件',
+  `operation_type` VARCHAR(24) NOT NULL COMMENT '迁移操作类型，包括上传、导出、普通包或项目合集预检和导入',
+  `status` VARCHAR(16) NOT NULL COMMENT '任务状态，包括待上传、运行中、已成功和已失败',
+  `file_size` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '上传或导出的配置包总字节数',
+  `result_json` LONGTEXT COMMENT '任务完成后的预检、导入结果或失败说明',
+  `update_time` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '最近上传、执行或完成时间，用于回收临时数据',
+  PRIMARY KEY (`task_id`),
+  KEY `idx_transfer_task_expiry` (`update_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='控制台后台迁移任务和临时文件登记';
+
+CREATE TABLE IF NOT EXISTS `offline_transfer_part` (
+  `task_id` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '所属上传文件或导出任务标识',
+  `part_index` INT UNSIGNED NOT NULL COMMENT '文件分块序号，从零开始连续排列',
+  `content` MEDIUMBLOB NOT NULL COMMENT '该序号对应的原始配置包字节',
+  PRIMARY KEY (`task_id`, `part_index`),
+  CONSTRAINT `fk_transfer_part_task` FOREIGN KEY (`task_id`) REFERENCES `offline_transfer_task` (`task_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='跨服务节点共享的临时迁移文件分块';
+
+CREATE TABLE IF NOT EXISTS `offline_transfer_action` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '执行动作的顺序标识，用于按游标读取新增日志',
+  `task_id` CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '执行此动作的迁移任务标识',
+  `progress` TINYINT UNSIGNED NOT NULL COMMENT '进入该执行步骤时的服务端进度百分比',
+  `message` TEXT NOT NULL COMMENT '当前正在处理的项目、资源或迁移步骤说明',
+  `create_time` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '服务端记录该执行动作的时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_transfer_action_task` (`task_id`, `id`),
+  CONSTRAINT `fk_transfer_action_task` FOREIGN KEY (`task_id`) REFERENCES `offline_transfer_task` (`task_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='迁移任务按执行顺序记录的进度明细';
 
 CREATE TABLE IF NOT EXISTS `offline_transfer_log` (
   `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
@@ -2660,3 +2746,43 @@ CREATE TABLE IF NOT EXISTS `rule_ledger_draft_reference` (
   KEY `idx_ledger_draft_ref` (`ref_type`,`ref_id`,`article_id`),
   CONSTRAINT `fk_ledger_draft_reference_article` FOREIGN KEY (`article_id`) REFERENCES `rule_ledger_article` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文章当前草稿引用的事件、图片素材和台账类型';
+
+CREATE TABLE IF NOT EXISTS `engine_sftp_account` (
+  `account_id` BIGINT NOT NULL COMMENT '已开通内置 SFTP 的控制台账户 ID',
+  `key_fingerprint` VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '获准登录该账户的 SSH 公钥 SHA-256 指纹',
+  `access_mode` VARCHAR(16) NOT NULL DEFAULT 'READ_WRITE' COMMENT '上传账户文件权限，READ_WRITE 可读写、READ_ONLY 只读、SUSPENDED 暂停登录',
+  PRIMARY KEY (`account_id`),
+  CONSTRAINT `fk_engine_sftp_account_user` FOREIGN KEY (`account_id`) REFERENCES `console_user` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='内置 SFTP 上传账户公钥授权';
+
+CREATE TABLE IF NOT EXISTS `rule_ledger_asset_file` (
+  `asset_id` BIGINT NOT NULL COMMENT '通过扫描并重新编码的台账素材 ID',
+  `png_digest` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '共享文件仓中规范化 PNG 内容的 SHA-256 摘要',
+  PRIMARY KEY (`asset_id`),
+  CONSTRAINT `fk_ledger_asset_file_asset` FOREIGN KEY (`asset_id`) REFERENCES `rule_ledger_asset` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='台账素材与共享文件仓中不可变图片的关联';
+
+CREATE TABLE IF NOT EXISTS `engine_sftp_policy` (
+  `policy_id` INT NOT NULL COMMENT '引擎 SFTP 全局策略标识，固定为 1',
+  `ip_attempts_per_minute` INT NOT NULL DEFAULT 120 COMMENT '同一来源 IP 每分钟允许的 SSH 认证请求数',
+  `file_requests_per_second` INT NOT NULL DEFAULT 256 COMMENT '每个上传账户每秒允许的文件数据读写请求合计数',
+  `failure_threshold` INT NOT NULL DEFAULT 8 COMMENT '认证失败窗口内触发临时封禁的次数',
+  `failure_window_seconds` INT NOT NULL DEFAULT 300 COMMENT '统计认证失败的窗口时长，单位秒',
+  `ban_seconds` INT NOT NULL DEFAULT 900 COMMENT '达到认证失败阈值后的封禁时长，单位秒',
+  `revision` BIGINT NOT NULL DEFAULT 0 COMMENT '并发修改策略时校验的版本号',
+  PRIMARY KEY (`policy_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='独立引擎 SFTP 的认证和文件请求限流策略';
+
+CREATE TABLE IF NOT EXISTS `engine_sftp_auth_state` (
+  `subject_key` VARCHAR(96) NOT NULL COMMENT '防护对象键，区分来源 IP、上传账户 ID、引擎服务身份及短期 SSH 会话封禁回执',
+  `attempt_start_ms` BIGINT NOT NULL DEFAULT 0 COMMENT '来源认证请求计数窗口的开始时间戳，毫秒',
+  `attempts` INT NOT NULL DEFAULT 0 COMMENT '当前来源窗口内的认证请求数',
+  `failure_start_ms` BIGINT NOT NULL DEFAULT 0 COMMENT '失败统计窗口的开始时间戳，毫秒',
+  `failures` INT NOT NULL DEFAULT 0 COMMENT '当前窗口累计的认证失败次数，账户完整登录成功后清零',
+  `blocked_until_ms` BIGINT NOT NULL DEFAULT 0 COMMENT '允许再次认证的时间戳，毫秒，零表示未封禁',
+  `block_reason` VARCHAR(16) NOT NULL DEFAULT '' COMMENT '封禁原因，RATE 为来源频率超限，FAILURE 为认证失败超限',
+  `last_seen_ms` BIGINT NOT NULL DEFAULT 0 COMMENT '最近一次更新防护状态的时间戳，毫秒',
+  PRIMARY KEY (`subject_key`),
+  KEY `idx_sftp_block_expiry` (`blocked_until_ms`),
+  KEY `idx_sftp_auth_seen` (`last_seen_ms`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='跨 SSH 连接持久化的 SFTP 认证计数与临时封禁状态';

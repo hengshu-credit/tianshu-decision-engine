@@ -11,6 +11,28 @@ public final class ExecutionAdmission {
     private final Semaphore executing;
     private final Semaphore waiting;
     private final long waitMillis;
+    private java.util.Set<Long> callbackProjects = java.util.Set.of();
+    private ExecutionAdmission callbacks;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureCallbacks(
+            @Value("${rule-engine.execution-admission.callback-project-ids:}") String ids,
+            @Value("${rule-engine.execution-admission.callback-parallelism:4}") int parallelism) {
+        if (ids.isBlank()) return;
+        var projects = new java.util.HashSet<Long>();
+        for (String id : ids.split(",")) {
+            long value = Long.parseLong(id.trim());
+            if (value <= 0) throw new IllegalArgumentException("回调项目必须是有效项目 ID");
+            projects.add(value);
+        }
+        if (parallelism <= 0) throw new IllegalArgumentException("回调执行并发数必须大于零");
+        callbacks = new ExecutionAdmission(parallelism, waiting.availablePermits(), waitMillis);
+        callbackProjects = java.util.Set.copyOf(projects);
+    }
+
+    public ExecutionAdmission forProject(Long projectId) {
+        return projectId != null && callbackProjects.contains(projectId) ? callbacks : this;
+    }
 
     ExecutionAdmission(@Value("${rule-engine.execution-admission.parallelism:0}") int parallelism,
                        @Value("${rule-engine.execution-admission.queue-capacity:256}") int queueCapacity,

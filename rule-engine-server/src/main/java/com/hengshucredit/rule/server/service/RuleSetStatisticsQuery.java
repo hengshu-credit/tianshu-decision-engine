@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.server.search.ElasticLogClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -18,12 +20,14 @@ import java.util.Map;
 /** 查询只读取已提取的计数素材；完整追踪不会进入控制台查询的Java堆。 */
 @Service
 public class RuleSetStatisticsQuery {
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @Autowired(required = false)
     private com.hengshucredit.rule.server.security.ConsoleDataPermissionHandler consoleDataScope;
 
     private String secured(String sql) { return consoleDataScope == null ? sql : consoleDataScope.filterSql(sql); }
 
     private final JdbcTemplate jdbc;
+    @Autowired(required = false)
+    private ElasticLogClient search;
     public RuleSetStatisticsQuery(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     @Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW, isolation = Isolation.REPEATABLE_READ)
@@ -44,6 +48,10 @@ public class RuleSetStatisticsQuery {
         scopedQuery("SELECT COUNT(*) AS amount FROM rule_execution_log_current" + where + " AND (rule_set_stats_version IS NULL OR rule_set_stats_version<2)", rs -> {
             long pending = rs.getLong("amount"); coverage.put("pendingCount",pending); coverage.put("totalCount",pending);
         }, parameters.toArray());
+        if (search != null) {
+            var projected = projectedRows(where.toString(),parameters,ruleCode);
+            if (projected != null) return render(coverage,projected);
+        }
         String eventWhere = " WHERE 1=1";
         List<Object> eventParameters = new ArrayList<>(parameters);
         if (ruleCode != null && !ruleCode.isBlank()) { eventWhere += " AND CAST(e.parent_code AS BINARY)=CAST(? AS BINARY)"; eventParameters.add(ruleCode); }
@@ -68,6 +76,31 @@ public class RuleSetStatisticsQuery {
             result.put("kind",rs.getString("kind")); result.put("key",rs.getString("rule_key")); result.put("ruleId",rs.getObject("ruleId"));
             result.put("ruleCode",rs.getString("ruleCode")); result.put("ruleName",rs.getString("ruleName")); return result;
         }, eventParameters.toArray());
+        return render(coverage,rows);
+    }
+
+    private List<Map<String,Object>> projectedRows(String where,List<Object> args,String ruleCode) {
+        var refs = scopedQuery("SELECT l.id,l.create_time,l.es_revision FROM (SELECT id,create_time FROM rule_execution_statistics_current"
+                        + where + " AND format_version=2) h JOIN rule_execution_log l ON l.id=h.id AND l.create_time=h.create_time"
+                        + " ORDER BY l.create_time,l.id LIMIT 50001",
+                (rs,i) -> new ElasticLogClient.Ref(rs.getLong(1),
+                        rs.getObject(2,LocalDateTime.class),rs.getLong(3)),args.toArray());
+        if (refs.size()>50000) return null;
+        var stats = new RuleFrameStatistics();
+        for (int offset=0;offset<refs.size();offset+=256) {
+            var batch = refs.subList(offset,Math.min(refs.size(),offset+256));
+            var sources = search.fields(ElasticLogClient.STEPS,batch,"frames,eligible,stats_status");
+            for (var ref : batch) {
+                var doc = sources.get(ref);
+                if (doc==null || !doc.path("eligible").asBoolean() || !doc.path("frames").isArray()
+                        || !doc.path("stats_status").isTextual()) return null;
+                stats.add(doc.get("stats_status").textValue(),doc.get("frames"),ruleCode);
+            }
+        }
+        return stats.rows();
+    }
+
+    private Map<String,Object> render(Map<String,Object> coverage,List<Map<String,Object>> rows) {
         Map<String, Object> overview = new LinkedHashMap<>(Map.of("evaluationCount",0L,"hitCount",0L,"failureCount",0L,
                 "hitRate",0D,"failureRate",0D,"avgCostTimeMs",0D,"p95CostTimeMs",0L,"p99CostTimeMs",0L));
         List<Map<String, Object>> sets = new ArrayList<>();

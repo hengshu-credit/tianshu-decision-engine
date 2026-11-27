@@ -150,3 +150,14 @@ export function sampleValueForVarType(type) {
   if (['MAP', 'OBJECT'].indexOf(normalized) >= 0) return {}
   return ''
 }
+
+export function apiDefaultInput(row, fields) {
+  const execution = JSON.parse(row.executionConfig)
+  const auth = typeof row.authApiConfig === 'string' ? JSON.parse(row.authApiConfig || '{}') : row.authApiConfig
+  const sample = {}
+  for (const path of collectOperandInputPaths([execution.requestFields, execution.requestBranches, execution.steps, auth])) {
+    const field = fields.find(item => item.varCode === path)
+    setPathValue(sample, path, sampleValueForVarType(field?.varType))
+  }
+  return sample
+}

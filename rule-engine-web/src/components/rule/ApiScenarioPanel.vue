@@ -4,7 +4,7 @@
       <div>
         <div class="scenario-title">API 测试用例</div>
         <div class="scenario-hint">
-          配置真实业务场景的请求与响应；仅勾选且版本匹配的场景会进入 API 文档。
+          为每个场景填写示例请求和预期响应。启用后可在规则测试页执行固定用例。勾选收录且版本匹配的场景会进入 API 文档。
           调用生成响应会按规则配置访问真实来源或执行名单动作，并应用计费规则。
         </div>
       </div>
@@ -347,6 +347,7 @@ export default {
       draftVisible: false,
       requestMode: 'FORM',
       scenarios: [],
+      scenariosSuspended: false,
       scenariosRequestId: 0,
       draftSessionId: 0,
       schemaRequestId: 0,
@@ -422,6 +423,13 @@ export default {
     draftVisible(visible) {
       if (!visible) this.invalidateDraft()
     },
+  },
+  deactivated() { this.scenariosSuspended = true },
+  activated() {
+    if (this.scenariosSuspended) {
+      this.scenariosSuspended = false
+      this.loadScenarios()
+    }
   },
   beforeUnmount() {
     this.invalidateDraft()

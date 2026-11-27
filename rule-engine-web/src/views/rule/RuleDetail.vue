@@ -321,7 +321,7 @@
           >
             <template v-slot="{ row }">
               <el-tag size="small" type="info">{{
-                typeLabel(row.fieldType)
+                typeLabel(fieldHierarchyDisplay(row).valueType)
               }}</el-tag>
             </template>
           </el-table-column>
@@ -341,13 +341,12 @@
               <span v-else style="color: var(--tianshu-text-tertiary)">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="字段校验" min-width="240">
+          <el-table-column label="字段校验" min-width="240" class-name="field-validation-cell">
             <template v-slot="{ row }">
               <template v-if="row._editing">
                 <el-select
                   v-model="row.validationRuleIdList"
                   multiple
-                  collapse-tags
                   clearable
                   placeholder="选择一个或多个校验规则"
                   style="width: 100%"
@@ -367,32 +366,13 @@
                   >恢复子规则配置</el-button
                 >
               </template>
-              <template v-else>
-                <span
-                  v-if="!(row.validationRuleIdList || []).length"
-                  style="color: var(--tianshu-text-tertiary)"
-                  >未配置</span
-                >
-                <template v-else>
-                  <el-tag
-                    v-for="item in selectedFieldValidations(row)"
-                    :key="item.id"
-                    size="small"
-                    type="info"
-                    style="margin-right: 4px"
-                    >{{ item.validationName }}</el-tag
-                  >
-                </template>
-                <el-tag
-                  v-if="
-                    row.validationOverride !== 1 &&
-                    (row.validationRuleIdList || []).length
-                  "
-                  size="small"
-                  type="success"
-                  >继承子规则</el-tag
-                >
-              </template>
+              <span v-else-if="!(row.validationRuleIdList || []).length" style="color: var(--tianshu-text-tertiary)">未配置</span>
+              <div v-else class="field-validation-tags">
+                <el-tag v-for="item in selectedFieldValidations(row)" :key="item.id" size="small" type="info">
+                  {{ item.validationName }}
+                </el-tag>
+                <el-tag v-if="row.validationOverride !== 1" size="small" type="success">继承子规则</el-tag>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="修改时间" width="140" align="center">
@@ -525,7 +505,7 @@
           >
             <template v-slot="{ row }">
               <el-tag size="small" type="info">{{
-                typeLabel(row.fieldType)
+                typeLabel(fieldHierarchyDisplay(row).valueType)
               }}</el-tag>
             </template>
           </el-table-column>
@@ -1247,25 +1227,24 @@
 
       <template v-slot:footer>
         <div>
+          <save-rule-test-input :definition-id="rule.id" :project-id="rule.projectId" :disabled="!testReady || testExecuting"
+            :read-input="() => testMode === 'json' ? testJsonStr : JSON.stringify(buildNestedTestParams(testFields, testParams))" />
           <el-button size="small" @click="testVisible = false">关闭</el-button>
         </div>
       </template>
     </el-dialog>
 
-    <el-dialog
+    <resource-workspace-drawer
       title="版本历史"
       v-model="versionVisible"
-      width="96%"
-      top="4vh"
-      custom-class="version-history-dialog"
+      size="96vw"
       :close-on-click-modal="false"
     >
-      <el-table show-overflow-tooltip
+      <el-table class="workspace-history-table" show-overflow-tooltip
         :data="versions"
         border
         size="small"
         :aria-busy="versionLoading"
-        max-height="240"
       >
         <el-table-column prop="version" label="版本" width="140" align="center">
           <template v-slot="{ row }">{{ versionDisplayLabel(row) }}</template>
@@ -1367,7 +1346,7 @@
           resource-type="RULE" :model-type="rule.modelType" :snapshot="versionCompare.right" :original="versionCompare.left"
           :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)">
           <template #detail>
-            <rule-version-diff :model-type="rule.modelType" :left-version="versionCompare.left" :right-version="versionCompare.right"
+            <rule-version-diff script-height="auto" :model-type="rule.modelType" :left-version="versionCompare.left" :right-version="versionCompare.right"
               :references="ruleVersionReferences" :functions="idempotencyFunctions" />
           </template>
           <template #technical>
@@ -1393,7 +1372,7 @@
           >
         </div>
       </template>
-    </el-dialog>
+    </resource-workspace-drawer>
     <artifact-deployment-dialog
       v-if="importedArtifact.artifactId"
       v-model="deploymentVisible"
@@ -1406,6 +1385,9 @@
 </template>
 
 <script>
+import ResourceWorkspaceDrawer from '@/components/common/ResourceWorkspaceDrawer.vue'
+import { pageTabState } from '@/mixins/pageTabState'
+import { declaredContentType } from '@/constants/varTypes'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import VersionSnapshotPanel from '@/components/common/VersionSnapshotPanel.vue'
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
@@ -1452,6 +1434,7 @@ import {
   schemaFieldsToTestFields,
   flattenSchemaSample,
 } from '@/utils/testSchema'
+import SaveRuleTestInput from '@/components/test/SaveRuleTestInput.vue'
 import ApiScenarioPanel from '@/components/rule/ApiScenarioPanel'
 import RuleVersionDiff from '@/components/rule/versionDiff/RuleVersionDiff.vue'
 import RuleLifecyclePanel from '@/components/rule/RuleLifecyclePanel.vue'
@@ -1675,8 +1658,8 @@ export default {
       ElIconSetting: markRaw(ElIconSetting),
     }
   },
-  components: { DismissibleGuidance, VersionSnapshotPanel,
-    ApiScenarioPanel,
+  components: { ResourceWorkspaceDrawer, DismissibleGuidance, VersionSnapshotPanel,
+    SaveRuleTestInput, ApiScenarioPanel,
     RuleVersionDiff,
     RuleLifecyclePanel,
     RegressionReportDrawer,
@@ -1698,7 +1681,7 @@ export default {
     ElIconDocumentChecked,
   },
   name: 'RuleDetail',
-  mixins: [workspaceTabTitleMixin(vm => vm.rule.ruleName)],
+  mixins: [pageTabState('activeDetailTab', ['lifecycle', 'inputs', 'outputs', 'execution', 'open-api', 'api-scenarios']), workspaceTabTitleMixin(vm => vm.rule.ruleName)],
   activated() {
     const resuming = !this.detailActive
     this.detailActive = true
@@ -1998,7 +1981,7 @@ export default {
     },
     syncDetailTabFromRoute() {
       const focus = this.$route && this.$route.query && this.$route.query.focus
-      if (focus === 'lifecycle') this.activeDetailTab = 'lifecycle'
+      if (focus === 'lifecycle' || focus === 'api-scenarios') this.activeDetailTab = focus
     },
     openApiFieldDisplay(field) {
       return {
@@ -2020,6 +2003,7 @@ export default {
             CONSTANT: 'constant',
             DATA_OBJECT: 'object',
             DATA_OBJECT_FIELD: 'object',
+            DATA_OBJECT_ROOT: 'object',
             MODEL: 'model',
             MODEL_OUTPUT: 'model',
             EXTERNAL_API: 'external',
@@ -2027,6 +2011,9 @@ export default {
           const display = this.openApiFieldDisplay(field)
           return {
             ...field,
+            ...(refType === 'DATA_OBJECT_ROOT' && {
+              rootReference: true, objectId: field.varId, objectCode: display.fieldCode, objectLabel: display.fieldName,
+            }),
             id: field.varId,
             _varId: field.varId,
             _refType: refType,
@@ -3035,7 +3022,7 @@ export default {
       )
     },
     fieldHierarchyDisplay(row) {
-      const item = this.getFieldVarMap(row)
+      const item = row.versionMode === 'FIXED' ? null : this.getFieldVarMap(row)
       const refType = row.refType || row._refType || ''
       const isDataObject = refType === 'DATA_OBJECT'
       const objectLabel = isDataObject
@@ -3049,6 +3036,14 @@ export default {
           : mappedLabel || row.fieldLabel || '—'
       return {
         isDataObject,
+        refType,
+        refId: row.varId ?? row._varId,
+        valueType: declaredContentType(item) || declaredContentType(row),
+        versionMode: row.versionMode,
+        versionId: row.versionId,
+        version: row.version,
+        objectId: item?._ref?.objectId,
+        objectVersion: item?._ref?.objectVersion,
         objectLabel,
         objectCode: isDataObject
           ? (item && (item.objectCode || item.sourceCode)) || '—'
@@ -3057,6 +3052,7 @@ export default {
         fieldPath:
           (item && (item.varCodeText || item.scriptName)) ||
           row.scriptName ||
+          row.fieldName ||
           '—',
       }
     },
@@ -3345,13 +3341,8 @@ export default {
     },
     selectedFieldValidations(row) {
       const ids = (row && row.validationRuleIdList) || []
-      return ids
-        .map((id) =>
-          this.fieldValidationOptions.find(
-            (item) => Number(item.id) === Number(id)
-          )
-        )
-        .filter(Boolean)
+      return ids.map(id => this.fieldValidationOptions.find(item => String(item.id) === String(id))
+        || { id, validationName: `校验 #${id}` })
     },
     fieldValidationTypeLabel(type) {
       return (
@@ -3466,6 +3457,10 @@ export default {
           this.testSourceError = e.message || '所选版本的测试字段读取失败'
           return
         }
+        // 未编译的旧工作区仍可维护规则输入，执行时继续使用选定的来源。
+        try {
+          schema = normalizeTestSchema(await api.getRuleTestSchema({ targetType: 'RULE', targetId: definitionId }))
+        } catch { schema = null }
       }
       if (!current()) return
       const hasSchema = Boolean(schema)
@@ -3491,7 +3486,8 @@ export default {
       const nestedParams = hasSchema
         ? schema.sampleParams
         : this.buildNestedTestParams(testFields, testParams)
-      const testJsonStr = JSON.stringify(nestedParams, null, 2)
+      const testJsonStr = schema?.sampleParamsJson || JSON.stringify(nestedParams, null, 2)
+      if (schema?.savedDefault) this.testMode = 'json'
 
       this.testFields = testFields
       this.testParams = testParams
@@ -3850,14 +3846,6 @@ export default {
 .btn-delete {
   color: var(--tianshu-danger-text);
 }
-:deep(.version-history-dialog) {
-  min-width: 1040px;
-}
-:deep(.version-history-dialog .el-dialog__body) {
-  max-height: 82vh;
-  overflow: auto;
-  padding-top: 16px;
-}
 .version-compare-toolbar {
   position: sticky;
   top: -16px;
@@ -3950,7 +3938,7 @@ export default {
 }
 .version-compare-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -3963,8 +3951,8 @@ export default {
 .version-compare-grid pre {
   margin: 0;
   padding: 10px;
-  height: 220px;
-  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   background: var(--tianshu-bg-muted);
   border: 1px solid var(--tianshu-border-subtle);
   border-radius: 4px;

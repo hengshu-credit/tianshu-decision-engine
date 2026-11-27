@@ -15,11 +15,8 @@ async function installTransferRoutes(page) {
   const lineages = []
   let delayNextPreview = null
   let failNextSearch = false
-  const parseOptions = request => {
-    const match = /name="options"\r\n\r\n([\s\S]*?)\r\n--/.exec(request.postData())
-    if (!match) throw new Error('导入请求缺少 options multipart 字段')
-    return JSON.parse(match[1])
-  }
+  const tasks = new Map()
+  const uploads = new Map()
   // 开发服务器验证也使用相同的 API 契约夹具；页面和交互运行真实 Vue/Element Plus。
   await page.route('**/api/**', async route => {
     const request = route.request()
@@ -61,19 +58,46 @@ async function installTransferRoutes(page) {
         label: params.nodeType === 'MODEL' ? '授信评分' : '授信判断' }
       data = { startNode, nodes: [startNode], edges: [] }
     }
-    else if (pathname === '/api/rule/transfer/export/options' && request.method() === 'POST') {
-      exports.push(request.postDataJSON())
-      await route.fulfill({ contentType: 'application/zip', body: Buffer.from('transfer-test-package') })
-      return
-    } else if (pathname === '/api/rule/transfer/preview/options') {
-      previews.push(parseOptions(request))
-      const wait = delayNextPreview
-      delayNextPreview = null
-      if (wait) await wait
-      data = { packageDigest: 'fixture-digest', conflictCount: 0, roots: ['RULE:101'], resources: [], warnings: [] }
-    } else if (pathname === '/api/rule/transfer/import') {
-      imports.push(parseOptions(request))
-      data = { status: 'APPLIED', resources: [{ resourceType: 'RULE', action: 'CREATED', targetId: 201 }] }
+    else if (pathname === '/api/rule/transfer/uploads') {
+      const id = String(uploads.size + 1)
+      uploads.set(id, { size: Number(new URL(request.url()).searchParams.get('size')), chunks: [] })
+      data = { uploadId: id, partSize: 1024 * 1024 }
+    } else if (pathname.startsWith('/api/rule/transfer/uploads/')) {
+      const [, id, index] = /uploads\/(\d+)\/(\d+)$/.exec(pathname)
+      uploads.get(id).chunks[Number(index)] = request.postDataBuffer()
+      data = null
+    } else if (pathname === '/api/rule/transfer/tasks') {
+      const task = request.postDataJSON()
+      if (task.operation === 'EXPORT') exports.push(task.selection)
+      else {
+        const upload = uploads.get(task.uploadId)
+        expect(Buffer.concat(upload.chunks).length).toBe(upload.size)
+        if (task.operation === 'PREVIEW') {
+          previews.push(task.options)
+          task.wait = delayNextPreview
+          delayNextPreview = null
+        } else imports.push(task.options)
+      }
+      tasks.set(task.taskId, task)
+      data = task.taskId
+    } else if (pathname.startsWith('/api/rule/transfer/tasks/')) {
+      const task = tasks.get(pathname.split('/')[5])
+      if (pathname.endsWith('/download')) {
+        expect(task.operation).toBe('EXPORT')
+        await route.fulfill({ contentType: 'application/zip', body: Buffer.from('transfer-test-package') })
+        return
+      }
+      if (task.wait && new URL(request.url()).searchParams.get('after') !== '0') await task.wait
+      const first = new URL(request.url()).searchParams.get('after') === '0'
+      const running = first && Boolean(task.wait)
+      data = {
+        status: running ? 'RUNNING' : 'SUCCESS',
+        actions: [{ id: first ? '1' : '2', progress: first ? 35 : 97, time: Date.now(),
+          message: first ? '核对冲突和引用 · ' + '授信资源'.repeat(32) : '保存迁移结果' }],
+        result: task.operation === 'PREVIEW'
+          ? { packageDigest: 'fixture-digest', conflictCount: 0, roots: ['RULE:101'], resources: [], warnings: [] }
+          : { status: 'APPLIED', resources: [{ resourceType: 'RULE', action: 'CREATED', targetId: 201 }] },
+      }
     } else {
       await route.fallback()
       return
@@ -111,6 +135,8 @@ test('导出前可只读预览所选资源的准确业务版本', async ({ page 
   await page.keyboard.press('Escape')
   await control.locator('.el-select').click()
   await page.getByRole('option', { name: '指定 v1 · 修订 1' }).click()
+  await expect(page.getByText('源环境当前血缘', { exact: true })).toBeVisible()
+  await expect(page.getByText(/图中版本来自源环境当前配置/)).toBeVisible()
   await control.getByRole('button', { name: '预览' }).click()
   await expect(dialog).toContainText('授信历史 1')
   await expect(dialog).not.toContainText('授信历史 2')
@@ -164,7 +190,8 @@ test('离线迁移页面展示导出、目标范围和冲突策略流程', async
   const { assertClean, logRequests } = await installTransferRoutes(page)
   await page.goto(`${baseUrl}#/transfer`)
 
-  await expect(page.getByRole('heading', { name: '离线配置迁移' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '配置迁移', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '离线配置迁移' })).toHaveCount(0)
   await expect(page.getByText('配置包即时生成')).toBeVisible()
   await expect(page.getByRole('button', { name: '生成并下载配置包' })).toBeVisible()
   await expect(page.getByText('名单记录、日志和账单不会进入配置包。')).toBeVisible()
@@ -174,15 +201,66 @@ test('离线迁移页面展示导出、目标范围和冲突策略流程', async
   await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toBeVisible()
   await expect(page.getByPlaceholder('新项目名称（可覆盖源名称）')).toBeVisible()
   await expect(page.getByText('导入并发布规则', { exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '预览冲突' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '预览冲突', exact: true })).toBeDisabled()
   await expect(page.getByRole('button', { name: '确认导入' })).toBeDisabled()
   await expect(page.locator('.menu-label', { hasText: '离线迁移' })).toBeVisible()
   expect(logRequests).toHaveLength(0)
   await page.getByRole('tab', { name: '迁移日志', exact: true }).click()
-  await expect.poll(() => logRequests).toEqual([{ pageNum: '1', pageSize: '20' }])
+  await expect.poll(() => logRequests).toEqual([{ pageNum: '1', pageSize: '20', summaryOnly: 'true' }])
   await page.getByRole('tab', { name: '配置迁移', exact: true }).click()
   await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toBeVisible()
   await assertClean()
+})
+
+test('迁移日志按操作、状态与正文组合查询，跨页匹配并能重置', async ({ page }, testInfo) => {
+  const { assertClean } = await installTransferRoutes(page)
+  const logs = Array.from({ length: 21 }, (_, i) => ({
+    id: i + 1, operationType: i === 20 ? 'IMPORT' : 'EXPORT', status: i === 20 ? 'FAILED' : 'SUCCESS',
+    operator: i === 20 ? 'reviewer' : 'admin', packageDigest: 'digest-' + i, resourceCount: 1,
+    contentJson: i === 20 ? '{"resourceCode":"risk_%"}' : '{}', createTime: '2026-11-20 12:00:00',
+  }))
+  const queries = []
+  await page.route('**/api/rule/transfer/logs?*', async route => {
+    const params = Object.fromEntries(new URL(route.request().url()).searchParams)
+    queries.push(params)
+    const matched = logs.filter(row => (!params.operationType || row.operationType === params.operationType)
+      && (!params.status || row.status === params.status)
+      && (!params.keyword || [row.operator, row.packageDigest, row.contentJson].some(value => value.includes(params.keyword))))
+    const start = (Number(params.pageNum) - 1) * Number(params.pageSize)
+    const records = matched.slice(start, start + Number(params.pageSize)).map(row => ({ ...row, contentJson: undefined }))
+    await route.fulfill({ json: platformResponse({ records, total: matched.length }) })
+  })
+  await page.goto(`${baseUrl}#/transfer`)
+  await page.getByRole('tab', { name: '迁移日志', exact: true }).click()
+  const card = page.locator('.transfer-log-card')
+  await expect(card.getByRole('heading', { name: '迁移日志' })).toHaveCount(0)
+  await expect(card.getByText('AUDIT LOG')).toHaveCount(0)
+  await expect(card.locator('.el-table__body tr')).toHaveCount(20)
+  await card.locator('.btn-next').click()
+  await expect(card.getByRole('cell', { name: 'reviewer' })).toBeVisible()
+  for (const [label, choice] of [['操作类型', '导入'], ['状态', '失败']]) {
+    await card.locator('.el-select').filter({ has: page.getByRole('combobox', { name: label, exact: true }) }).click()
+    await page.getByRole('option', { name: choice, exact: true }).click()
+  }
+  const keyword = card.getByRole('textbox', { name: '关键词' })
+  await keyword.click()
+  await expect(page.getByRole('option', { name: 'reviewer' })).toBeVisible()
+  await keyword.fill('risk_%')
+  await keyword.press('Enter')
+  await expect.poll(() => queries.at(-1)).toMatchObject({ operationType: 'IMPORT', status: 'FAILED', keyword: 'risk_%', pageNum: '1' })
+  await expect(card).toContainText('共 1 条')
+  await expect(card.getByRole('cell', { name: 'digest-20' })).toBeVisible()
+  await card.getByRole('button', { name: '刷新' }).click()
+  await expect(card.getByRole('cell', { name: 'reviewer' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('transfer-log-search.png') })
+  await keyword.fill('没有这样的内容')
+  await card.getByRole('button', { name: '查询' }).click()
+  await expect(card.getByText('暂无匹配的迁移日志')).toBeVisible()
+  await card.getByRole('button', { name: '重置' }).click()
+  await expect(keyword).toHaveValue('')
+  await expect(card).toContainText('共 21 条')
+  await expect(card.locator('.el-table__body tr')).toHaveCount(20)
+  assertClean()
 })
 
 test('离线迁移从下载到绑定项目导入始终使用当前预检选项', async ({ page }, testInfo) => {
@@ -194,14 +272,14 @@ test('离线迁移从下载到绑定项目导入始终使用当前预检选项',
   await page.getByRole('option', { name: '授信项目 / credit', exact: true }).click()
   const apply = page.getByRole('button', { name: '确认导入', exact: true })
   await expect(apply).toBeDisabled()
-  await page.getByRole('button', { name: '预览冲突' }).click()
+  await page.getByRole('button', { name: '预览冲突', exact: true }).click()
   await expect(apply).toBeEnabled()
 
   await page.getByRole('combobox', { name: '资源冲突策略' }).press('ArrowDown')
   await page.getByRole('option', { name: '覆盖已有配置', exact: true }).click()
   await expect(apply).toBeDisabled()
   await expect(page.getByRole('heading', { name: '导入预检' })).toHaveCount(0)
-  await page.getByRole('button', { name: '预览冲突' }).click()
+  await page.getByRole('button', { name: '预览冲突', exact: true }).click()
   await expect(apply).toBeEnabled()
   await apply.click()
   const confirm = page.getByRole('dialog', { name: '确认导入' })
@@ -216,6 +294,15 @@ test('离线迁移从下载到绑定项目导入始终使用当前预检选项',
   expect(fixture.imports[0]).toMatchObject({ targetProjectId: 7, targetScope: 'PROJECT', resourcePolicy: 'OVERWRITE' })
   await page.screenshot({ path: testInfo.outputPath('project-import-result.png'), fullPage: true })
   await page.getByRole('dialog', { name: '导入结果' }).getByRole('button', { name: '关闭此对话框' }).click()
+  await page.locator('.menu-label', { hasText: '项目管理' }).click()
+  await page.locator('.menu-label', { hasText: '离线迁移' }).click()
+  await expect(page.getByRole('dialog', { name: '导入结果' })).toBeHidden()
+  await page.getByRole('button', { name: '查看导入配置执行日志' }).click()
+  const history = page.getByRole('dialog', { name: '导入配置执行日志' })
+  await expect(history).toContainText('预检完成')
+  await history.getByRole('button', { name: '查看导入结果' }).click()
+  await expect(page.getByRole('dialog', { name: '导入结果' })).toContainText('配置已导入')
+  await page.getByRole('dialog', { name: '导入结果' }).getByRole('button', { name: '关闭此对话框' }).click()
   await expect(apply).toBeDisabled()
   fixture.assertClean()
 })
@@ -229,19 +316,18 @@ test('新建项目切换全局后迟到预检不能恢复导入按钮', async ({
   await page.getByPlaceholder('新项目名称（可覆盖源名称）').fill('新授信项目')
   let release
   fixture.delayPreview(new Promise(resolve => { release = resolve }))
-  await page.getByRole('button', { name: '预览冲突' }).click()
+  await page.getByRole('button', { name: '预览冲突', exact: true }).click()
   await expect.poll(() => fixture.previews.length).toBe(1)
   await chooseScope(page, '全局')
-  const oldResponse = page.waitForResponse('**/api/rule/transfer/preview/options')
   release()
-  await oldResponse
+  await expect(page.getByRole('button', { name: '查看预览冲突执行日志' })).toBeHidden()
   const apply = page.getByRole('button', { name: '确认导入', exact: true })
   await expect(apply).toBeDisabled()
   await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toBeHidden()
   await expect(page.getByPlaceholder('新项目名称（可覆盖源名称）')).toBeHidden()
   await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toHaveValue('')
   await expect(page.getByPlaceholder('新项目名称（可覆盖源名称）')).toHaveValue('')
-  await page.getByRole('button', { name: '预览冲突' }).click()
+  await page.getByRole('button', { name: '预览冲突', exact: true }).click()
   await expect(apply).toBeEnabled()
   await apply.click()
   const confirm = page.getByRole('dialog', { name: '确认导入' })
@@ -257,6 +343,33 @@ test('新建项目切换全局后迟到预检不能恢复导入按钮', async ({
   fixture.assertClean()
 })
 
+test('后台预检在切换菜单后继续，返回显示同一进度和顺序日志', async ({ page }, testInfo) => {
+  const fixture = await installTransferRoutes(page)
+  await page.goto(baseUrl + '#/transfer')
+  await exportAndUpload(page, testInfo)
+  await chooseScope(page, '全局')
+  let finish
+  fixture.delayPreview(new Promise(resolve => { finish = resolve }))
+  await page.getByRole('button', { name: '预览冲突', exact: true }).click()
+  const action = page.getByRole('button', { name: '查看预览冲突执行日志' })
+  await expect(action).toContainText('核对冲突和引用')
+  await page.locator('.menu-label', { hasText: '项目管理' }).click()
+  await page.waitForURL(/#\/project/)
+  await page.locator('.menu-label', { hasText: '离线迁移' }).click()
+  await expect(action).toContainText('核对冲突和引用')
+  expect(await action.evaluate(el => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === 'ellipsis')).toBe(true)
+  await action.click()
+  const log = page.getByRole('dialog', { name: '预览冲突执行日志' })
+  await expect(log.locator('li').first()).toContainText('上传配置包')
+  await expect(log.locator('li').last()).toContainText('核对冲突和引用')
+  finish()
+  await expect(log.locator('li').last()).toContainText('预检完成')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: '确认导入', exact: true })).toBeEnabled()
+  expect(fixture.previews).toHaveLength(1)
+  await fixture.assertClean()
+})
+
 test('新建项目与发布策略显示和发送一致', async ({ page }, testInfo) => {
   const fixture = await installTransferRoutes(page)
   await page.goto(`${baseUrl}#/transfer`)
@@ -265,7 +378,7 @@ test('新建项目与发布策略显示和发送一致', async ({ page }, testIn
   await page.getByPlaceholder('新项目编码（可覆盖源编码）').fill('new_credit')
   await page.getByPlaceholder('新项目名称（可覆盖源名称）').fill('新授信项目')
   await page.getByText('导入并发布规则', { exact: true }).click()
-  await page.getByRole('button', { name: '预览冲突' }).click()
+  await page.getByRole('button', { name: '预览冲突', exact: true }).click()
   await page.getByRole('button', { name: '确认导入', exact: true }).click()
   const confirm = page.getByRole('dialog', { name: '确认导入' })
   await expect(confirm).toContainText('新项目「新授信项目」')

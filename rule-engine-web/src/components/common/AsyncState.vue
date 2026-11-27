@@ -1,8 +1,8 @@
 <template>
   <div class="async-state" :class="{ 'is-compact': compact }">
-    <div v-if="loading" class="state-content state-loading">
-      <el-icon><el-icon-loading /></el-icon>
-      <span>{{ loadingText }}</span>
+    <div v-if="loading" class="state-content state-loading" role="status" :aria-label="loadingText">
+      <el-icon-loading size="48px" />
+      <span class="state-loading-label">{{ loadingText }}</span>
     </div>
     <div v-else-if="error" class="state-content state-error">
       <el-icon><el-icon-warning-outline /></el-icon>
@@ -59,10 +59,13 @@ export default {
 .is-compact .state-content {
   min-height: 72px;
 }
-.state-loading i {
-  color: var(--el-color-primary);
-  font-size: 22px;
+.state-loading { position: relative; }
+.state-loading-label {
+  position: absolute;
+  top: calc(50% + 26px);
+  font-size: 12px;
 }
+.is-compact .state-loading { min-height: 96px; }
 .state-error {
   color: #f56c6c;
 }

@@ -44,6 +44,10 @@ public class TransferVersionService {
             } else {
                 var metadata = resources.field(reference.refType(), reference.refId(), reference.versionId(),
                         "SNAPSHOT".equals(reference.versionSource()) ? null : reference.versionSource());
+                if ("BUSINESS_VERSION".equals(reference.versionSource()) && "MODEL_OUTPUT".equals(reference.refType())) {
+                    Long owner = Long.valueOf(String.valueOf(metadata.get("versionOwnerId")));
+                    row.put("sourceGovernedSnapshotId", resources.configurationVersion("MODEL", owner, reference.versionId()).getId());
+                }
                 row.put("ownerId", metadata.get("versionOwnerId")); row.put("version", metadata.get("displayVersion"));
                 row.put("label", metadata.getOrDefault("label", metadata.get("funcName")));
                 row.put("valueType", metadata.getOrDefault("valueType", metadata.get("returnType")));
@@ -87,7 +91,22 @@ public class TransferVersionService {
         return result;
     }
 
+    static String includedModel(Map<String,Object> ref, Map<String,TransferBundle.Resource> selected) {
+        if (!"MODEL_OUTPUT".equals(ref.get("refType"))) return null;
+        String owner = "MODEL:" + ref.get("ownerId");
+        var model = selected.get(owner);
+        if (model == null) return null;
+        boolean governed = "BUSINESS_VERSION".equals(ref.get("versionSource"));
+        if (!governed && !"SNAPSHOT".equals(ref.get("versionSource"))) return null;
+        Object snapshot = ref.get(governed ? "sourceGovernedSnapshotId" : "versionId");
+        Object packed = model.configuration().get(governed ? "_transferSourceGovernedSnapshot" : "_transferSourceModelVersion");
+        if (snapshot == null || packed == null || !snapshot.toString().equals(packed.toString())) return null;
+        TransferModelFields.outputPath(model.configuration(), Long.parseLong(String.valueOf(ref.get("refId"))));
+        return owner;
+    }
+
     public List<Map<String, Object>> preview(List<TransferBundle.Resource> selected, TransferImportOptions options) {
+        var included = TransferSelection.index(selected);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (var resource : selected) for (Map<String, Object> source : sourceDescriptors(resource)) {
             Map<String, Object> row = new LinkedHashMap<>(source);
@@ -96,6 +115,13 @@ public class TransferVersionService {
             row.put("binding", binding);
             Long projectId = options.projectBindings() == null ? options.targetProjectId()
                     : options.projectBindings().getOrDefault(String.valueOf(resource.configuration().get("projectId")), options.targetProjectId());
+            String owner = includedModel(source, included);
+            if (binding == null && Boolean.TRUE.equals(options.createProject()) && owner != null) {
+                row.put("includedModel", owner);
+                row.put("valid", true);
+                rows.add(row);
+                continue;
+            }
             try { row.put("target", target(source, binding, options.normalizedScope(), projectId)); row.put("valid", true); }
             catch (IllegalArgumentException | IllegalStateException invalid) { row.put("valid", false); row.put("message", invalid.getMessage()); }
             rows.add(row);
@@ -127,6 +153,12 @@ public class TransferVersionService {
 
     public Map<String, Object> rewrite(Map<String, Object> configuration, TransferBundle.Resource source,
                                        TransferImportOptions options, Map<String, Long> idMap, Long projectId) {
+        return rewrite(configuration, source, options, idMap, projectId, Map.of(), Map.of());
+    }
+
+    public Map<String,Object> rewrite(Map<String,Object> configuration, TransferBundle.Resource source,
+            TransferImportOptions options, Map<String,Long> idMap, Long projectId,
+            Map<String,TransferBundle.Resource> included, Map<String,Map<Long,Long>> childMap) {
         Map<String, Map<String, Object>> descriptors = new LinkedHashMap<>();
         TransferVersionReferences.descriptors(source).forEach(row -> descriptors.put(String.valueOf(row.get("path")), row));
         Map<String, Object> mappings = new LinkedHashMap<>();
@@ -135,6 +167,18 @@ public class TransferVersionService {
         for (var reference : TransferVersionReferences.scan(source.configuration())) {
             var descriptor = descriptors.get(reference.path());
             var binding = options.normalizedVersionBindings().get(reference.key(source.key()));
+            if (binding == null && Boolean.TRUE.equals(options.createProject())) {
+                String owner = includedModel(descriptor, included);
+                if (owner != null) {
+                    Long targetModel = idMap.get(owner);
+                    Long fieldId = childMap.getOrDefault(owner, Map.of()).get(reference.refId());
+                    if (targetModel == null || fieldId == null) throw new IllegalArgumentException("缺少包内模型或输出字段的导入结果");
+                    var versions = candidates("MODEL_OUTPUT", targetModel);
+                    if (versions.size() != 1) throw new IllegalArgumentException("新建模型须有唯一已发布版本才能自动关联");
+                    long version = Long.parseLong(versions.get(0).get("versionId").toString());
+                    binding = new TransferVersionBinding(targetModel, version, fieldId, version);
+                }
+            }
             Map<String, Object> target = target(descriptor, binding, "GLOBAL".equals(configuration.get("scope")) ? "GLOBAL" : options.normalizedScope(), projectId);
             String type = ownerType(reference.refType());
             Object ownerId = descriptor.get("ownerId");
@@ -226,7 +270,9 @@ public class TransferVersionService {
         if ("FUNCTION".equals(type) && source.get("paramsJson") != null && !parameterTypes(String.valueOf(source.get("paramsJson"))).equals(parameterTypes(payload.getString("paramsJson"))))
             throw new IllegalArgumentException("目标函数版本的参数契约不兼容");
         result.put("refId", refId); result.put("snapshotId", version.getId()); result.put("version", version.getDisplayVersion()); result.put("digest", version.getSnapshotDigest());
-        result.put("code", first(field, "scriptName", "varCode", "modelCode", "funcCode", "apiCode", "fieldName"));
+        String code = "MODEL_OUTPUT".equals(refType) ? payload.getString("modelCode") + "." + first(field, "fieldName", "featureName", "scriptName")
+                : first(field, "scriptName", "varCode", "modelCode", "funcCode", "apiCode", "fieldName");
+        result.put("code", code);
         result.put("label", first(field, "varLabel", "modelName", "funcName", "apiName", "fieldLabel")); return result;
     }
 

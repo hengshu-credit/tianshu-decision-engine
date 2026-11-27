@@ -34,21 +34,29 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
         for (var rows = visibilityIndex.unindexed(); !rows.isEmpty(); rows = visibilityIndex.unindexed()) rows.forEach(this::indexVisibility);
     }
 
-    public void recordExport(List<TransferRootRequest> roots, ExportedPackage exported, String operator) {
+    public Long recordExport(List<TransferRootRequest> roots, ExportedPackage exported, String operator) {
+        return recordExport(roots, exported.bundle(), Sha256Digests.bytes(exported.bytes()), operator);
+    }
+
+    public Long recordExport(List<TransferRootRequest> roots, TransferBundle bundle, String packageDigest, String operator) {
         Map<String, Object> content = new LinkedHashMap<>();
         content.put("roots", roots == null ? List.of() : roots);
-        TransferBundle bundle = exported.bundle();
         content.put("lineage", lineageSnapshot(bundle, null));
-        saveLog("EXPORT", "SUCCESS", operator, Sha256Digests.bytes(exported.bytes()),
+        return saveLog("EXPORT", "SUCCESS", operator, packageDigest,
                 bundle.roots(), bundle.resources().size(), content, null);
     }
 
     public void recordImport(byte[] bytes, Map<String, Object> result, String operator, String errorMessage) {
         TransferBundleCodec.Decoded decoded = null;
-        try { decoded = codec.decode(bytes); } catch (RuntimeException ignored) { }
+        try { decoded = codec.decodeDeferred(bytes); } catch (RuntimeException ignored) { }
+        recordDecodedImport(decoded, Sha256Digests.bytes(bytes), result, operator, errorMessage);
+    }
+
+    public void recordDecodedImport(TransferBundleCodec.Decoded decoded, String digest, Map<String,Object> result, String operator, String errorMessage) {
         List<String> roots = decoded == null ? List.of() : decoded.bundle().roots();
         int count = decoded == null ? 0 : decoded.bundle().resources().size();
         Map<String, Object> content = new LinkedHashMap<>();
+        content.put("roots", roots);
         content.put("options", result == null ? Map.of() : result.getOrDefault("options", Map.of()));
         content.put("result", result == null ? Map.of() : result);
         if (decoded != null) {
@@ -56,7 +64,7 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
             content.put("lineage", lineageSnapshot(decoded.bundle(), selected));
         }
         saveLog("IMPORT", errorMessage == null ? "SUCCESS" : "FAILED", operator,
-                Sha256Digests.bytes(bytes), roots, count, content, errorMessage);
+                digest, roots, count, content, errorMessage);
     }
 
     public void recordFailure(String operationType, List<TransferRootRequest> roots, String operator, String errorMessage) {
@@ -66,9 +74,25 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
     }
 
     public IPage<OfflineTransferLog> page(int pageNum, int pageSize, String operationType) {
+        return page(pageNum, pageSize, operationType, null, null, false);
+    }
+
+    public IPage<OfflineTransferLog> page(int pageNum, int pageSize, String operationType,
+                                          String status, String keyword, boolean summaryOnly) {
         LambdaQueryWrapper<OfflineTransferLog> query = new LambdaQueryWrapper<>();
+        if (summaryOnly) {
+            query.select(OfflineTransferLog::getId, OfflineTransferLog::getOperationType, OfflineTransferLog::getStatus,
+                    OfflineTransferLog::getOperator, OfflineTransferLog::getPackageDigest, OfflineTransferLog::getResourceCount,
+                    OfflineTransferLog::getCreateTime, OfflineTransferLog::getErrorMessage);
+        }
+        if (status != null && !status.isBlank()) query.eq(OfflineTransferLog::getStatus, status);
+        if (keyword != null && !keyword.isBlank()) {
+            // 按原文查找，资源编码中的下划线、百分号等字符也按字面匹配。
+            query.apply("(INSTR(operator, {0}) > 0 OR INSTR(package_digest, {0}) > 0 OR INSTR(roots_json, {0}) > 0 "
+                    + "OR INSTR(content_json, {0}) > 0 OR INSTR(error_message, {0}) > 0)", keyword.strip());
+        }
         if (operationType != null && !operationType.isBlank()) query.eq(OfflineTransferLog::getOperationType, operationType);
-        query.orderByDesc(OfflineTransferLog::getCreateTime);
+        query.orderByDesc(OfflineTransferLog::getCreateTime, OfflineTransferLog::getId);
         return page(new Page<>(pageNum, pageSize), query);
     }
 
@@ -163,13 +187,14 @@ public class OfflineTransferLogService extends ServiceImpl<OfflineTransferLogMap
         return result;
     }
 
-    private void saveLog(String operationType, String status, String operator, String digest,
+    private Long saveLog(String operationType, String status, String operator, String digest,
                          List<String> roots, int count, Map<String, Object> content, String error) {
         OfflineTransferLog log = new OfflineTransferLog();
         log.setOperationType(operationType); log.setStatus(status); log.setOperator(operator);
         log.setPackageDigest(digest); log.setRootsJson(JSON.toJSONString(roots)); log.setResourceCount(count);
         log.setContentJson(JSON.toJSONString(content)); log.setErrorMessage(error); save(log);
         if (visibilityIndex != null) indexVisibility(log);
+        return log.getId();
     }
 
     private void indexVisibility(OfflineTransferLog log) {

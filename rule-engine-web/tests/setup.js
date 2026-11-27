@@ -230,6 +230,7 @@ vi.mock('@/api/function', () => ({
   updateFunction: vi.fn(),
   deleteFunction: vi.fn(),
   testFunction: vi.fn(),
+  testFunctionScript: vi.fn(),
   listVersions: vi.fn(),
   getVersion: vi.fn(),
   compareVersions: vi.fn(),
@@ -282,6 +283,7 @@ vi.mock('@/api/project', () => {
     getProjectAuthFull: vi.fn(),
     regenerateProjectAuthSecret: vi.fn(),
     listProjectAuthTokens: vi.fn(),
+    issueProjectAuthToken: vi.fn(),
     getProjectAuthTokenFull: vi.fn(),
     revokeProjectAuthToken: vi.fn(),
     listProjectAuthAccessLogs: vi.fn(),
@@ -326,6 +328,7 @@ vi.mock('@/api/runtimeLog', () => ({
   getRuntimeCallPayloadByCallId: vi.fn(),
   getRuntimeCallPayloadsByRootTraceId: vi.fn(),
   getRuleSetStats: vi.fn(),
+  getExecutionLogDetail: vi.fn(),
   replayExecutionLog: vi.fn(),
   __esModule: true
 }))
@@ -355,6 +358,7 @@ vi.mock('@/api/billing', () => ({
   listBillingRecords: vi.fn(),
   listBillingSummaries: vi.fn(),
   refreshBillingSummary: vi.fn(),
+  sendBillingStatement: vi.fn(),
     getBillingSummaryRefreshTask: vi.fn(),
     getLatestBillingSummaryRefresh: vi.fn().mockResolvedValue({ data: null }),
   __esModule: true

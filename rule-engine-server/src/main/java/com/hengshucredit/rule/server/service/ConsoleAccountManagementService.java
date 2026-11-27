@@ -47,6 +47,8 @@ public class ConsoleAccountManagementService {
     @Resource
     private ConsoleUserMapper userMapper;
     @Resource
+    private com.hengshucredit.rule.server.sftp.EngineSftpAccounts sftpAccounts;
+    @Resource
     private ConsoleRoleMapper roleMapper;
     @Resource
     private ConsolePermissionMapper permissionMapper;
@@ -199,6 +201,11 @@ public class ConsoleAccountManagementService {
         if (existingUser) {
             bumpPermissionVersion(user, operator);
         }
+        boolean disableSftp = Boolean.TRUE.equals(request.getDisableSftp());
+        if (disableSftp || request.getSftpPublicKey() != null && !request.getSftpPublicKey().isBlank()) {
+            if (existingUser) requirePasswordResetPermission(user.getId());
+            sftpAccounts.configure(user.getId(), request.getSftpPublicKey(), disableSftp);
+        }
         replaceProjects(user.getId(), request.getProjectIds(), operator);
         replaceProjectPermissions(user.getId(), request.getProjectPermissionOverrides());
         ensureAtLeastOneAdministrator();
@@ -257,6 +264,22 @@ public class ConsoleAccountManagementService {
         ConsoleUser user = requireUser(userId);
         persistPasswordHash(user, BCrypt.hashpw(rawPassword), operator);
         appendAudit(userId, user.getUsername(), "ACCOUNT_PASSWORD_RESET", null);
+    }
+
+    @Transactional
+    public void configureSftp(Long userId, com.hengshucredit.rule.server.sftp.EngineSftpAccounts.AccessMode mode,
+                              String publicKey, boolean revoke, long revision, String operator) {
+        accessGuard.require(ACCOUNT_MANAGE);
+        requirePasswordResetPermission(userId);
+        lockAccounts();
+        ConsoleUser user = requireUser(userId);
+        if (!java.util.Objects.equals(user.getPermissionVersion(), revision)) throw new IllegalStateException("账户已变更，请刷新后重试");
+        if (revoke && mode != null) throw new IllegalArgumentException("撤销公钥时不能同时设置读写权限");
+        sftpAccounts.configure(userId, publicKey, revoke);
+        if (!revoke) sftpAccounts.setMode(userId, mode);
+        bumpPermissionVersion(user, operator);
+        appendAudit(userId, user.getUsername(), revoke ? "SFTP_ACCESS_REVOKE" : "SFTP_ACCESS_UPDATE",
+                revoke ? null : "{\"mode\":\"" + mode.name() + "\"}");
     }
 
     private void requirePasswordResetPermission(Long userId) {

@@ -4,6 +4,7 @@ import cn.hutool.crypto.digest.BCrypt;
 import com.hengshucredit.rule.model.entity.ConsolePermission;
 import com.hengshucredit.rule.model.entity.ConsoleRole;
 import com.hengshucredit.rule.model.entity.ConsoleUser;
+import com.hengshucredit.rule.server.mapper.ConsoleUserMapper.SessionRange;
 import com.hengshucredit.rule.server.mapper.ConsolePermissionMapper;
 import com.hengshucredit.rule.server.mapper.ConsoleRoleMapper;
 import com.hengshucredit.rule.server.mapper.ConsoleRolePermissionMapper;
@@ -35,11 +36,14 @@ public class DatabaseConsoleAccountServiceTest {
                         times.incrementAndGet();
                         return null;
                     }
+                    if (method.equals("accessSettingsJson")) return "{}";
+                    if (method.equals("advanceLoginSequence")) return null;
+                    if (method.equals("sessionRange")) return SessionRange.LEGACY;
                     throw new AssertionError(method);
                 }));
-        service.updateLastLogin(account);
+        service.recordSuccessfulLogin(account);
         valid.set(false);
-        Assert.assertThrows(com.hengshucredit.rule.model.PlatformException.class, () -> service.updateLastLogin(account));
+        Assert.assertThrows(com.hengshucredit.rule.model.PlatformException.class, () -> service.recordSuccessfulLogin(account));
         Assert.assertEquals(1, times.get());
     }
 
@@ -217,7 +221,8 @@ public class DatabaseConsoleAccountServiceTest {
         }
 
         @Override
-        protected void updateLastLogin(ConsoleUser user) {
+        protected SessionRange recordSuccessfulLogin(ConsoleUser user) {
+            return SessionRange.LEGACY;
         }
 
         @Override

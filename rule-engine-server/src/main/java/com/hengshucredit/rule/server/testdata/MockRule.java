@@ -14,7 +14,10 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 public record MockRule(Long id, String name, String valueType, String matchNames, String generator,
-                       String configJson, boolean builtin) {
+                       String configJson, boolean builtin, Long projectId, String projectName) {
+    public MockRule(Long id, String name, String valueType, String matchNames, String generator, String configJson, boolean builtin) {
+        this(id,name,valueType,matchNames,generator,configJson,builtin,null,null);
+    }
     static final ObjectMapper JSON = new ObjectMapper().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     static JsonNode parse(String raw) {
@@ -37,8 +40,23 @@ public record MockRule(Long id, String name, String valueType, String matchNames
             default -> "STRING";
         };
     }
+    private FakerMethods.Entry fakerMethod() {
+        return "FAKER".equals(generator) ? FakerMethods.METHODS.get(FakerMethods.methodKey(parse(configJson))) : null;
+    }
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    public String getRuleTypeCode() {
+        var method = fakerMethod();
+        return method == null ? "base" : method.module();
+    }
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    public String getRuleType() {
+        var method = fakerMethod();
+        return method == null ? "基础规则" : method.category();
+    }
     boolean matches(String key, String label) {
+        if (matchNames.isBlank()) return false;
         return Arrays.stream(matchNames.split("[,，]")).map(String::trim)
+                .map(s -> s.startsWith("$.") ? s.substring(2) : s)
                 .anyMatch(s -> !s.isEmpty() && (s.equalsIgnoreCase(key) || s.equalsIgnoreCase(label)));
     }
     void validate() {
@@ -47,6 +65,13 @@ public record MockRule(Long id, String name, String valueType, String matchNames
                 || !group(valueType).equals(valueType)) throw new IllegalArgumentException("请核对规则名称、字段类型和生成配置");
         JsonNode config = parse(configJson);
         boolean valid = switch (generator) {
+            case "FAKER" -> {
+                var method = FakerMethods.METHODS.get(FakerMethods.methodKey(config));
+                if (method == null || !method.resultTypes().contains(valueType)) yield false;
+                FakerGenerator.validateArguments(method, config);
+                if (config.path("args").isEmpty() && !method.type().equals(valueType)) yield false;
+                yield true;
+            }
             case "FIXED" -> compatible(config);
             case "CHOICE" -> config.isArray() && !config.isEmpty() && config.valueStream().allMatch(this::compatible);
             case "TEMPLATE" -> valueType.equals("STRING") && config.isTextual();
@@ -61,12 +86,15 @@ public record MockRule(Long id, String name, String valueType, String matchNames
                     && config.get(0).canConvertToInt() && config.get(1).canConvertToInt()
                     && config.get(0).intValue() <= config.get(1).intValue();
             case "TEXT","PHONE","EMAIL","UUID" -> valueType.equals("STRING");
-            case "DATE","BOOLEAN" -> valueType.equals(generator);
+            case "DATE","BOOLEAN","DATETIME","TIMESTAMP" -> valueType.equals(generator);
             default -> false;
         };
         if (!valid) throw new IllegalArgumentException("生成方式或 JSON 参数与字段类型不匹配");
     }
     private boolean compatible(JsonNode node) {
+        return compatible(valueType,node);
+    }
+    static boolean compatible(String valueType, JsonNode node) {
         if (node == null || node.isMissingNode()) return false;
         return switch (valueType) {
             case "OBJECT" -> node.isObject();
@@ -80,6 +108,11 @@ public record MockRule(Long id, String name, String valueType, String matchNames
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         JsonNode config = parse(configJson);
         return switch (generator) {
+            case "FAKER" -> {
+                var value = FakerGenerator.sample(FakerMethods.methodKey(config), config.path("args"));
+                if (!compatible(value)) throw new IllegalArgumentException("所选参数生成结果与字段类型 " + valueType + " 不符");
+                yield value;
+            }
             case "FIXED" -> config;
             case "CHOICE" -> config.get(rng.nextInt(config.size()));
             case "INTEGER" -> LongNode.valueOf(rng.nextLong(config.get(0).longValue(), config.get(1).longValue()+1));
@@ -95,6 +128,7 @@ public record MockRule(Long id, String name, String valueType, String matchNames
             case "PHONE" -> TextNode.valueOf("13" + rng.nextLong(100000000L, 1000000000L));
             case "EMAIL" -> TextNode.valueOf("test" + rng.nextInt(1000000) + "@example.com");
             case "UUID" -> TextNode.valueOf(UUID.randomUUID().toString());
+            case "DATETIME","TIMESTAMP" -> fallback(generator);
             case "DATE" -> TextNode.valueOf(LocalDate.now().minusDays(rng.nextInt(365)).toString());
             case "BOOLEAN" -> BooleanNode.valueOf(rng.nextBoolean());
             case "TEXT" -> TextNode.valueOf("示例" + rng.nextInt(1000000));

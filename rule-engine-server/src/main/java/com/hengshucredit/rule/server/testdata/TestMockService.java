@@ -25,6 +25,7 @@ public class TestMockService {
     private final RuleTestSchemaService schemas;
     private final ConsoleResourceAccess access;
     private final TestDataCatalog catalog;
+    private final MockFieldBindings methodBindings;
     private final RuleVariableMapper variables;
     private final RuleDataObjectMapper objects;
     private final RuleDataObjectFieldMapper fields;
@@ -36,8 +37,11 @@ public class TestMockService {
     public Sample generate(long id, RuleTestSchemaRequest request) {
         access.require("RULE",id,"view");
         var target = targets.resolve(id,request.getExecutionSource(),null,null,request.getProjectId());
-        var inputs = schemas.build(target).getInputs();
-        var snapshot = target.snapshot();
+        return new Sample(examples(schemas.build(target).getInputs(), target.snapshot(), target.projectId()).toString(), target.identity());
+    }
+
+    public ObjectNode examples(List<ResolvedField> inputs, com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot, Long projectId) {
+        if (inputs.isEmpty()) return MockRule.JSON.createObjectNode();
         var varIds = ids(inputs,"VARIABLE");
         var rootIds = ids(inputs,"DATA_OBJECT_ROOT");
         var fieldIds = ids(inputs,"DATA_OBJECT");
@@ -57,7 +61,7 @@ public class TestMockService {
         members.stream().map(RuleDataObjectField::getRefVariableId).filter(Objects::nonNull).forEach(varIds::add);
         // 冻结版本提供字段结构。本机资源使用当前获准的测试配置，外部制品中的 ID 属于另一命名空间。
         boolean local = snapshot == null || !snapshot.isImported();
-        var varBindings = local && !varIds.isEmpty() ? bindingIds(variables.selectByIds(varIds),RuleVariable::getId,RuleVariable::getMockRuleId) : Map.<Long,Long>of();
+        var boundVars = local && !varIds.isEmpty() ? variables.selectByIds(varIds) : List.<RuleVariable>of();
         var boundRoots = snapshot == null ? roots : local && !rootMap.isEmpty() ? objects.selectByIds(rootMap.keySet()) : List.<RuleDataObject>of();
         var boundFields = snapshot == null ? members : local && !fieldMap.isEmpty() ? fields.selectByIds(fieldMap.keySet()) : List.<RuleDataObjectField>of();
         Map<Long,String> varEnums = Map.of(), fieldEnums = Map.of();
@@ -70,11 +74,15 @@ public class TestMockService {
             if (!enumFields.isEmpty()) fieldEnums = optionsByOwner(fieldOptions.selectList(new LambdaQueryWrapper<RuleDataObjectFieldOption>()
                     .in(RuleDataObjectFieldOption::getFieldId,enumFields)),RuleDataObjectFieldOption::getFieldId,RuleDataObjectFieldOption::getOptionValue);
         }
-        var bindings = new Bindings(varBindings,bindingIds(boundRoots,RuleDataObject::getId,RuleDataObject::getMockRuleId),
-                bindingIds(boundFields,RuleDataObjectField::getId,RuleDataObjectField::getMockRuleId),fieldEnums);
-        var rules = catalog.rules();
+        var bindings = new Bindings(settings(MockFieldBindings.Target.VARIABLE,boundVars,RuleVariable::getId,RuleVariable::getExampleMode,RuleVariable::getExampleValue,RuleVariable::getMockRuleId,
+                        row -> catalog.caseValue(row.getExampleCaseBinding(),row.getVarType(),row.getProjectId())),
+                settings(MockFieldBindings.Target.DATA_OBJECT_ROOT,boundRoots,RuleDataObject::getId,RuleDataObject::getExampleMode,RuleDataObject::getExampleValue,RuleDataObject::getMockRuleId,
+                        row -> catalog.caseValue(row.getExampleCaseBinding(),"OBJECT",row.getProjectId())),
+                settings(MockFieldBindings.Target.DATA_OBJECT,boundFields,RuleDataObjectField::getId,RuleDataObjectField::getExampleMode,RuleDataObjectField::getExampleValue,RuleDataObjectField::getMockRuleId,
+                        row -> catalog.caseValue(row.getExampleCaseBinding(),row.getVarType(),row.getProjectId())),fieldEnums);
+        var rules = catalog.rulesForProject(projectId);
         var result = MockRule.JSON.createObjectNode();
-        Map<Long,ObjectNode> samples = new HashMap<>();
+        Map<Long,JsonNode> samples = new HashMap<>();
         for (ResolvedField input : inputs) {
             String path = input.getScriptName();
             if (path == null || path.isBlank()) continue;
@@ -84,12 +92,13 @@ public class TestMockService {
                     : "DATA_OBJECT_ROOT".equals(input.getRefType()) ? rootMap.get(ref) : null;
             JsonNode value;
             if (root != null) {
-                ObjectNode object = samples.computeIfAbsent(root.getId(), ignored ->
+                JsonNode object = samples.computeIfAbsent(root.getId(), ignored ->
                         objectSample(root,members,rootMap,fieldMap,snapshot == null ? Map.of() : snapshot.getReferencePaths(),rules,bindings));
+                if (object.isMissingNode()) continue;
                 if (member == null) value = object;
                 else {
                     String relative = relativePath(root,member,rootMap,fieldMap,snapshot == null ? Map.of() : snapshot.getReferencePaths());
-                    if (bindings.roots().containsKey(root.getId()) && path.endsWith("."+relative)) {
+                    if (bindings.roots().getOrDefault(root.getId(),ExampleSetting.AUTO).configured() && path.endsWith("."+relative)) {
                         writePath(result,path.substring(0,path.length()-relative.length()-1),object,true);
                         continue;
                     }
@@ -101,10 +110,10 @@ public class TestMockService {
                         prefix.append(part).append('.');
                     }
                     if (value != null && value.isArray() && !prefix.isEmpty()) path = prefix.substring(0,prefix.length()-1);
-                    if (value == null) throw new IllegalArgumentException("对象样例缺少字段 " + path);
+                    if (value == null) continue;
                 }
             } else {
-                Long binding = ref == null ? null : switch (Objects.toString(input.getRefType(),"")) {
+                ExampleSetting binding = ref == null ? null : switch (Objects.toString(input.getRefType(),"")) {
                     case "VARIABLE" -> bindings.variables().get(ref);
                     case "DATA_OBJECT" -> bindings.fields().get(ref);
                     default -> null;
@@ -112,19 +121,32 @@ public class TestMockService {
                 String options = input.getValidValues();
                 if ((options == null || options.isBlank() || "[]".equals(options)) && ref != null && "VARIABLE".equals(input.getRefType()))
                     options = varEnums.get(ref);
-                value = sample(input.getValueType(), path,input.getLabel(),binding,options,rules);
+                if (binding == null) binding = ExampleSetting.resolve(null,input.getExampleValue(),null,null);
+                value = binding.value(input.getValueType(),path,input.getLabel(),options,rules,input.getDefaultValue());
             }
-            writePath(result,path,value,true);
+            if (!value.isMissingNode()) writePath(result,path,value,true);
         }
-        return new Sample(result.toString(),target.identity());
+        return result;
     }
-    record Bindings(Map<Long,Long> variables, Map<Long,Long> roots, Map<Long,Long> fields, Map<Long,String> fieldEnums) { }
+    record Bindings(Map<Long,ExampleSetting> variables, Map<Long,ExampleSetting> roots, Map<Long,ExampleSetting> fields, Map<Long,String> fieldEnums) { }
     private static <T> Map<Long,String> optionsByOwner(List<T> rows,Function<T,Long> owner,Function<T,String> value) {
         return rows.stream().collect(Collectors.groupingBy(owner,Collectors.mapping(value,Collectors.collectingAndThen(
                 Collectors.toList(),list -> MockRule.JSON.valueToTree(list).toString()))));
     }
-    private static <T> Map<Long,Long> bindingIds(List<T> rows, Function<T,Long> id, Function<T,Long> rule) {
-        return rows.stream().filter(row -> rule.apply(row) != null).collect(Collectors.toMap(id,rule));
+    private <T> Map<Long,ExampleSetting> settings(MockFieldBindings.Target target,List<T> rows,Function<T,Long> id,
+            Function<T,String> mode,Function<T,String> fixed,Function<T,Long> method,Function<T,JsonNode> caseValue) {
+        var matches = methodBindings.matches(target,rows.stream().map(id).toList());
+        Map<Long,ExampleSetting> settings = new HashMap<>();
+        for (T row : rows) {
+            Long key = id.apply(row);
+            String selectedMode = mode.apply(row);
+            if (target == MockFieldBindings.Target.DATA_OBJECT_ROOT && "FIXED".equals(selectedMode)
+                    && (fixed.apply(row) == null || fixed.apply(row).isBlank())) selectedMode = "AUTO";
+            var setting = "CASE".equals(selectedMode) ? new ExampleSetting("CASE",null,null,() -> caseValue.apply(row))
+                    : ExampleSetting.resolve(selectedMode,fixed.apply(row),method.apply(row),matches.get(key));
+            if (setting.configured() || mode.apply(row) != null) settings.put(key,setting);
+        }
+        return settings;
     }
     private static Set<Long> ids(List<ResolvedField> inputs,String type) {
         return inputs.stream().filter(f -> type.equals(f.getRefType())).map(ResolvedField::getRefId)
@@ -142,24 +164,32 @@ public class TestMockService {
         if (full == null || !full.startsWith(prefix)) throw new IllegalArgumentException("对象字段路径与所属对象不匹配");
         return full.substring(prefix.length());
     }
-    static ObjectNode objectSample(RuleDataObject root,List<RuleDataObjectField> members,Map<Long,RuleDataObject> roots,
+    static JsonNode objectSample(RuleDataObject root,List<RuleDataObjectField> members,Map<Long,RuleDataObject> roots,
             Map<Long,RuleDataObjectField> fields,Map<String,String> paths,List<MockRule> rules,Bindings bindings) {
-        ObjectNode result = (ObjectNode)sample("OBJECT",root.getObjectCode(),root.getObjectLabel(),bindings.roots().get(root.getId()),null,rules);
+        var rootSetting = bindings.roots().getOrDefault(root.getId(),ExampleSetting.AUTO);
+        JsonNode result = rootSetting.value("OBJECT",root.getObjectCode(),root.getObjectLabel(),null,rules);
+        if (result.isMissingNode()) return result;
+        if (!result.isObject()) throw new IllegalArgumentException("整体对象示例必须是 JSON 对象");
         var children = members.stream().filter(f -> root.getId().equals(f.getObjectId()))
                 .sorted(Comparator.comparingInt(f -> relativePath(root,f,roots,fields,paths).split("\\.").length)).toList();
         Set<String> boundParents = new HashSet<>();
-        if (bindings.roots().containsKey(root.getId())) boundParents.add("");
+        if (rootSetting.configured()) boundParents.add("");
         for (var child : children) {
             String path = relativePath(root,child,roots,fields,paths);
-            Long binding = bindings.fields().get(child.getId());
-            if (binding == null && child.referencesValue()) binding = bindings.variables().get(child.getRefVariableId());
-            if (binding == null && boundParents.stream().anyMatch(path::startsWith)) continue;
-            if (binding != null) boundParents.add(path+".");
-            writePath(result,path,sample(child.getVarType(),path,child.getVarLabel(),binding,bindings.fieldEnums().get(child.getId()),rules),binding != null);
+            ExampleSetting binding = bindings.fields().get(child.getId());
+            if ((binding == null || !binding.configured()) && child.referencesValue()) binding = bindings.variables().get(child.getRefVariableId());
+            if ((binding == null || !binding.configured()) && boundParents.stream().anyMatch(path::startsWith)) continue;
+            if (binding != null && binding.configured()) boundParents.add(path+".");
+            var setting = binding == null ? ExampleSetting.AUTO : binding;
+            String rootPath = paths.getOrDefault("DATA_OBJECT_ROOT:"+root.getId(), root.getScriptName() == null || root.getScriptName().isBlank() ? root.getObjectCode() : root.getScriptName());
+            writePath(result,path,setting.value(child.getVarType(),rootPath+"."+path,child.getVarLabel(),bindings.fieldEnums().get(child.getId()),rules),setting.configured());
         }
         return result;
     }
     static JsonNode sample(String type,String path,String label,Long binding,String options,List<MockRule> rules) {
+        return sample(type,path,label,binding,options,rules,null);
+    }
+    static JsonNode sample(String type,String path,String label,Long binding,String options,List<MockRule> rules,String defaultValue) {
         String group = MockRule.group(type);
         MockRule rule = null;
         if (binding != null) {
@@ -179,10 +209,12 @@ public class TestMockService {
         }
         if (rule == null) {
             String key = path.substring(path.lastIndexOf('.')+1);
-            rule = rules.stream().filter(r -> group.equals(r.valueType()) && r.matches(key,label)).findFirst().orElse(null);
+            rule = rules.stream().filter(r -> group.equals(r.valueType()) && (r.matches(path,label) || r.matches(key,label))).findFirst().orElse(null);
             if (rule == null && !"PROBABILITY".equals(type)) rule = rules.stream().filter(r -> group.equals(r.valueType())
                     && "*".equals(r.matchNames())).findFirst().orElse(null);
         }
+        if (rule == null && defaultValue != null && !defaultValue.isEmpty())
+            return MockRule.JSON.valueToTree(RuleTestSchemaService.parseConfiguredValue(defaultValue,type == null ? "STRING" : type));
         return MockRule.checked(type,rule == null ? MockRule.fallback(type) : rule.sample());
     }
     static void writePath(JsonNode parent,String path,JsonNode value,boolean replace) {
@@ -194,11 +226,13 @@ public class TestMockService {
         if (!(parent instanceof ObjectNode object)) throw new IllegalArgumentException("Mock 数据的父字段必须是对象："+path);
         int dot = path.indexOf('.');
         if (dot < 0) {
-            if (replace || !object.has(path)) object.set(path,value.deepCopy());
+            if (value.isMissingNode()) object.remove(path);
+            else if (replace || !object.has(path)) object.set(path,value.deepCopy());
             return;
         }
         String first = path.substring(0,dot);
         JsonNode next = object.get(first);
+        if (next == null && value.isMissingNode()) return;
         if (next == null) next = object.putObject(first);
         writePath(next,path.substring(dot+1),value,replace);
     }

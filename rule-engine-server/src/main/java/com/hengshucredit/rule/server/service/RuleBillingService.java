@@ -166,6 +166,30 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         return pageRecords(pageNum, pageSize, billingTarget, billingCode, projectCode, projectName, authType, authCode, tokenCode, beginTime, endTime, null);
     }
 
+    public record TraceCharge(String billingName, String billingCode, String billingBasis, String billingTarget,
+                              Long ruleId, Long targetRefId, Integer attemptNo, String quantity, String unitPrice,
+                              String amount, String currency, LocalDateTime occurTime) {
+        static TraceCharge from(RuleBillingRecord row) {
+            return new TraceCharge(row.getBillingName(), row.getBillingCode(), row.getBillingBasis(), row.getBillingTarget(),
+                    row.getRuleId(), row.getTargetRefId(), row.getAttemptNo(), decimal(row.getQuantity()),
+                    decimal(row.getUnitPrice()), decimal(row.getAmount()), row.getCurrency(), row.getOccurTime());
+        }
+        private static String decimal(BigDecimal value) { return value == null ? null : value.toPlainString(); }
+    }
+
+    public record TraceCharges(List<TraceCharge> records, long total, List<RuleBillingRecordMapper.TraceTotal> subtotals) {}
+
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public TraceCharges recordsByTrace(String rootTraceId, Long projectId, int pageNum) {
+        if (!hasText(rootTraceId) || pageNum < 1) throw new IllegalArgumentException("请选择执行流水和有效页码");
+        var page = recordMapper.selectPage(new Page<>(pageNum, 20), new LambdaQueryWrapper<RuleBillingRecord>()
+                .eq(RuleBillingRecord::getRootTraceId, rootTraceId)
+                .eq(projectId != null, RuleBillingRecord::getProjectId, projectId)
+                .orderByDesc(RuleBillingRecord::getOccurTime, RuleBillingRecord::getId));
+        return new TraceCharges(page.getRecords().stream().map(TraceCharge::from).toList(), page.getTotal(),
+                recordMapper.totalsByTrace(rootTraceId, projectId));
+    }
+
     @Resource private ExecutionVersionFilter executionVersionFilter;
 
     public IPage<RuleBillingRecord> pageRecords(int pageNum, int pageSize, String billingTarget, String billingCode,
@@ -250,7 +274,22 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         wrapper.orderByDesc(RuleBillingSummary::getSummaryDate)
                 .orderByAsc(RuleBillingSummary::getProjectCode)
                 .orderByAsc(RuleBillingSummary::getBillingCode);
-        return summaryMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        IPage<RuleBillingSummary> page = summaryMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        var configIds = page.getRecords().stream().map(RuleBillingSummary::getBillingConfigId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (!configIds.isEmpty()) {
+            var enabled = list(new LambdaQueryWrapper<RuleBillingConfig>()
+                    .select(RuleBillingConfig::getId, RuleBillingConfig::getProjectId, RuleBillingConfig::getScope)
+                    .in(RuleBillingConfig::getId, configIds)
+                    .eq(RuleBillingConfig::getStatus, 1).isNotNull(RuleBillingConfig::getBillEmail))
+                    .stream().collect(java.util.stream.Collectors.toMap(RuleBillingConfig::getId, config -> config));
+            for (var row : page.getRecords()) {
+                var config = enabled.get(row.getBillingConfigId());
+                row.setMailAvailable(row.getProjectId() != null && config != null && ("GLOBAL".equals(config.getScope())
+                        || java.util.Objects.equals(row.getProjectId(), config.getProjectId())));
+            }
+        }
+        return page;
     }
 
     public void saveConfigWithDefaults(RuleBillingConfig config) {
@@ -474,6 +513,7 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             RuleBillingRecord record = buildApiRecord(apiConfig, datasource, project, config.getBillingCode(),
                     config.getBillingName(), config.getUnitPrice(), config.getCurrency(), success, costTimeMs,
                     errorMessage, now, config.getTargetRefId());
+            record.setBillingConfigId(config.getId());
             record.setQuantity(resolveQuantity(config.getChargeType(), success, costTimeMs));
             record.setAmount(record.getQuantity().multiply(record.getUnitPrice()).setScale(6, RoundingMode.HALF_UP));
             persistApiBillingRecord(record);

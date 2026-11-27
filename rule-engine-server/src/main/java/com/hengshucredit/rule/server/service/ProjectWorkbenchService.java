@@ -3,7 +3,6 @@ package com.hengshucredit.rule.server.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.dto.ProjectWorkbenchDTO;
 import com.hengshucredit.rule.model.entity.GovernanceApprovalRequest;
-import com.hengshucredit.rule.model.entity.RuleApiDocScenario;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
@@ -33,6 +32,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -142,7 +142,7 @@ public class ProjectWorkbenchService {
             metrics.setPublishedRuleCount(rules.stream()
                     .filter(value -> Integer.valueOf(1).equals(value.getStatus()))
                     .count());
-            metrics.setTestScenarioCount(countScenarios(result, rules));
+            loadScenarioCoverage(result, rules);
         }
 
         metrics.setPendingApprovalCount(safeCount(result, "待审批事项",
@@ -168,25 +168,44 @@ public class ProjectWorkbenchService {
                 metrics.getRecentSuccessCount()));
 
         RuleExecutionLog latest = safeLoad(result, "最近一次执行",
-                () -> {
-                    List<RuleExecutionLog> rows = executionLogMapper.selectLogicalList(
+                () -> executionLogMapper.selectRecentSummary(
                             new LambdaQueryWrapper<RuleExecutionLog>()
                                     .eq(RuleExecutionLog::getExecutionProjectId, projectId)
                                     .orderByDesc(RuleExecutionLog::getCreateTime)
                                     .orderByDesc(RuleExecutionLog::getId)
-                                    .last("LIMIT 1"));
-                    return rows == null || rows.isEmpty() ? null : rows.get(0);
-                });
+                                    .last("LIMIT 1")));
         result.setRecentExecution(toRecentExecution(latest));
         result.setChecks(buildChecks(project, metrics, latest));
-        if (ruleWarmupStatus != null && (accessGuard == null || accessGuard.can("rule:view"))) {
+        if (ruleWarmupStatus != null && canView(projectId, "rule:view")) {
             result.setWarmup(consoleProjects == null ? ruleWarmupStatus.details()
                     : consoleProjects.globalStatusSummary(ruleWarmupStatus.details(), "rule:view"));
             result.getChecks().add(warmupCheck(ruleWarmupStatus.details()));
         }
-        ProjectWorkbenchDTO.CheckItem fieldCheck = checkRuleFieldReferences(rules);
-        result.getChecks().replaceAll(item -> "FIELD".equals(item.getCode()) ? fieldCheck : item);
+        result.getChecks().replaceAll(item -> {
+            if (!canInspect(projectId, item.getCode())) {
+                return check(item.getCode(), item.getTitle(), "RESTRICTED", "当前账户未获此项目检查项所需的查看权限。", null, null);
+            }
+            return "FIELD".equals(item.getCode()) ? checkRuleFieldReferences(rules) : item;
+        });
         return result;
+    }
+
+    private boolean canView(Long projectId, String permission) {
+        var scope = consoleProjects == null ? null : consoleProjects.current();
+        if (scope != null && scope.userId() != null) return scope.can(permission, projectId);
+        return accessGuard == null || accessGuard.can(permission);
+    }
+
+    private boolean canInspect(Long projectId, String checkCode) {
+        return switch (checkCode) {
+            case "FIELD" -> canView(projectId, "rule:view") && canView(projectId, "field:view");
+            case "RULE", "TEST", "PUBLISH", "WARMUP" -> canView(projectId, "rule:view");
+            case "RUN" -> canView(projectId, "rule:view") && canView(projectId, "log:view");
+            case "SOURCE" -> canView(projectId, "datasource:view") && canView(projectId, "database:view");
+            case "MODEL" -> canView(projectId, "model:view");
+            case "APPROVAL" -> canView(projectId, "approval:view");
+            default -> canView(projectId, "project:view");
+        };
     }
 
     private ProjectWorkbenchDTO.CheckItem warmupCheck(Map<String, Object> details) {
@@ -277,20 +296,7 @@ public class ProjectWorkbenchService {
                 "尚未创建或关联任何规则。",
                 "CONFIGURE_RULES", "创建规则"));
 
-        Long scenarios = metrics.getTestScenarioCount();
-        checks.add(scenarios == null
-                ? unavailable("TEST", "准备测试场景")
-                : totalRules != null && totalRules == 0
-                ? check("TEST", "准备测试场景", "BLOCKED",
-                "需要先完成规则设计，才能保存可复用测试场景。",
-                "CONFIGURE_RULES", "先创建规则")
-                : scenarios > 0
-                ? check("TEST", "准备测试场景", "READY",
-                "已保存 " + scenarios + " 个测试场景。",
-                "TEST_RULES", "执行测试")
-                : check("TEST", "准备测试场景", "ACTION_REQUIRED",
-                "尚未保存测试场景，发布前建议覆盖主要业务分支。",
-                "TEST_RULES", "补充测试"));
+        checks.add(testCaseCheck(metrics));
 
         Long pending = metrics.getPendingApprovalCount();
         checks.add(pending == null
@@ -417,20 +423,35 @@ public class ProjectWorkbenchService {
                                 + "AND rdr.project_id = " + projectId));
     }
 
-    private Long countScenarios(ProjectWorkbenchDTO result,
-                                List<RuleDefinition> rules) {
+    private void loadScenarioCoverage(ProjectWorkbenchDTO result, List<RuleDefinition> rules) {
         List<Long> ids = rules.stream()
                 .map(RuleDefinition::getId)
-                .filter(java.util.Objects::nonNull)
                 .toList();
-        if (ids.isEmpty()) {
-            return 0L;
+        List<RuleApiDocScenarioMapper.EnabledCount> counts = ids.isEmpty() ? List.of()
+                : safeLoad(result, "测试场景", () -> scenarioMapper.countEnabledByDefinition(ids));
+        if (counts == null) return;
+        var coveredIds = counts.stream().map(RuleApiDocScenarioMapper.EnabledCount::definitionId)
+                .collect(Collectors.toSet());
+        var metrics = result.getMetrics();
+        metrics.setTestScenarioCount(counts.stream().mapToLong(RuleApiDocScenarioMapper.EnabledCount::caseCount).sum());
+        metrics.setTestCoveredRuleCount((long) coveredIds.size());
+        metrics.setFirstUncoveredRuleId(ids.stream().filter(id -> !coveredIds.contains(id)).min(Long::compareTo).orElse(null));
+    }
+
+    private ProjectWorkbenchDTO.CheckItem testCaseCheck(ProjectWorkbenchDTO.Metrics metrics) {
+        String title = "准备测试场景";
+        Long total = metrics.getRuleCount();
+        Long covered = metrics.getTestCoveredRuleCount();
+        if (total == null || covered == null) return unavailable("TEST", title);
+        if (total == 0) {
+            return check("TEST", title, "BLOCKED", "创建规则后即可保存固定用例。", "CONFIGURE_RULES", "先创建规则");
         }
-        return safeCount(result, "测试场景",
-                () -> scenarioMapper.selectCount(
-                        new LambdaQueryWrapper<RuleApiDocScenario>()
-                                .in(RuleApiDocScenario::getDefinitionId, ids)
-                                .eq(RuleApiDocScenario::getStatus, 1)));
+        String summary = "共 " + total + " 条规则，其中 " + covered + " 条已有启用的固定用例。";
+        if (covered < total) {
+            return check("TEST", title, "ACTION_REQUIRED", summary + "还需为 " + (total - covered) + " 条规则补充用例。",
+                    "CONFIGURE_TEST_CASES", "查看待补规则");
+        }
+        return check("TEST", title, "READY", summary + "请在规则测试中验证预期结果。", "TEST_RULES", "执行测试");
     }
 
     private ProjectWorkbenchDTO.ProjectSummary toSummary(RuleProject project) {
@@ -477,7 +498,7 @@ public class ProjectWorkbenchService {
             case "最近执行次数", "最近成功次数", "最近一次执行" -> "log:view";
             default -> "project:view";
         };
-        if (accessGuard != null && !accessGuard.can(permission)) return null;
+        if (!canView(result.getProject().getId(), permission)) return null;
         try {
             return loader.get();
         } catch (RuntimeException error) {

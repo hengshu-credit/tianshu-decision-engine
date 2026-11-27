@@ -24,6 +24,7 @@
           @changed="load"
         />
         <el-button v-permission="'model:edit'" size="small" @click="openImpact('REPLACE')">替换模型文件</el-button>
+        <el-button v-permission="'model:edit'" size="small" @click="openImpact('REPLACE', true)">从 SFTP 替换</el-button>
         <el-button
           v-permission="'model:edit'"
           size="small"
@@ -157,9 +158,9 @@
     </el-card>
 
     <!-- 输入输出字段 -->
-    <el-tabs type="border-card">
+    <el-tabs v-model="activeModelTab" type="border-card">
       <!-- 输入字段 tab -->
-      <el-tab-pane>
+      <el-tab-pane name="inputs">
         <template v-slot:label>
           <span
             ><el-icon><el-icon-arrow-down /></el-icon> 输入字段</span
@@ -335,7 +336,7 @@
       </el-tab-pane>
 
       <!-- 输出字段 tab -->
-      <el-tab-pane>
+      <el-tab-pane name="outputs">
         <template v-slot:label>
           <span
             ><el-icon><el-icon-arrow-up /></el-icon> 输出字段</span
@@ -527,10 +528,9 @@
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog
+    <resource-workspace-drawer
       title="版本历史"
       v-model="versionVisible"
-      width="min(1120px, 96vw)"
       :close-on-click-modal="false"
     >
       <div class="version-compare-toolbar">
@@ -559,7 +559,7 @@
           >查看具体差异</el-button
         >
       </div>
-      <el-table show-overflow-tooltip
+      <el-table class="workspace-history-table" show-overflow-tooltip
         :data="versionList"
         border
         size="small"
@@ -607,7 +607,7 @@
         :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)" />
       <version-snapshot-panel v-else-if="versionPreview" historical resource-type="MODEL"
         :snapshot="versionPreview" :modified-label="versionDisplayLabel(versionPreview)" />
-    </el-dialog>
+    </resource-workspace-drawer>
 
     <!-- 模型测试对话框 -->
     <el-dialog
@@ -618,7 +618,7 @@
       :close-on-click-modal="false"
       @closed="closeTestDialog"
     >
-      <resource-test-cases v-if="testVisible && model.id" :key="'cases-' + testVersion" :endpoint="'/rule/model/'+model.id+'/test-cases'" :params="testJsonStr" :outcome="testResult" @apply="value => { testMode = 'json'; testJsonStr = value; syncJsonToParams(); testResult = null }" />
+      <resource-test-cases kind="MODEL" :owner="model" v-if="testVisible && model.id" :key="'cases-' + testVersion" :endpoint="'/rule/model/'+model.id+'/test-cases'" :params="testJsonStr" :outcome="testResult" @apply="value => { testMode = 'json'; testJsonStr = value; syncJsonToParams(); testResult = null }" />
       <div class="version-compare-toolbar model-test-version-toolbar" data-testid="model-test-version-toolbar">
         <span>测试版本</span>
         <el-select :model-value="testVersion" :disabled="testSaving" data-testid="model-test-version" @change="openTestDialog">
@@ -917,6 +917,8 @@
 </template>
 
 <script>
+import ResourceWorkspaceDrawer from '@/components/common/ResourceWorkspaceDrawer.vue'
+import { pageTabState } from '@/mixins/pageTabState'
 import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
@@ -1000,6 +1002,7 @@ const MODEL_TYPE_LABELS = {
 export default {
   data() {
     return {
+      activeModelTab: 'inputs',
       loading: false,
       detailActivated: false,
       model: {},
@@ -1011,6 +1014,7 @@ export default {
       modelPublishing: false,
       impactVisible: false,
       impactAction: 'REPLACE',
+      replaceFromSftp: false,
       replaceImpactToken: '',
       /** refType:id -> 字段对象映射（从变量管理/模型管理加载） */
       varMap: {},
@@ -1068,7 +1072,7 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: { ResourceTestCases, DismissibleGuidance, VersionSnapshotPanel,
+  components: { ResourceWorkspaceDrawer, ResourceTestCases, DismissibleGuidance, VersionSnapshotPanel,
     ResourceVersionManager,
     ResourcePicker,
     OperandPicker,
@@ -1081,7 +1085,7 @@ export default {
     ResourcePreflightPanel,
   },
   name: 'ModelDetail',
-  mixins: [configurationDraftMixin(vm => ({ model: vm.model })), workspaceTabTitleMixin(vm => vm.model.modelName)],
+  mixins: [pageTabState('activeModelTab', ['inputs', 'outputs']), configurationDraftMixin(vm => ({ model: vm.model })), workspaceTabTitleMixin(vm => vm.model.modelName)],
   computed: {
     preflightConfigSignature() {
       if (!this.model || !this.model.id) return ''
@@ -1261,8 +1265,12 @@ export default {
       return options
     },
   },
-  created() {
-    this.load()
+  async created() {
+    await this.load()
+    const version = this.$route?.query?.testVersion
+    if (this.model?.id && (version === 'current' || /^[1-9]\d*$/.test(version || ''))) {
+      this.openTestDialog(version === 'current' ? undefined : Number(version))
+    }
   },
   activated() {
     if (!this.detailActivated) { this.detailActivated = true; return }
@@ -1273,20 +1281,26 @@ export default {
     ...historicalVersionMethods,
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
-    openImpact(action) {
+    openImpact(action, fromSftp = false) {
+      this.replaceFromSftp = fromSftp
       this.impactAction = action
       this.impactVisible = true
     },
-    handleImpactConfirmed({ impactToken }) {
+    async handleImpactConfirmed({ impactToken }) {
       this.replaceImpactToken = impactToken
       this.impactVisible = false
-      this.$refs.replaceFile.click()
+      if (this.replaceFromSftp) {
+        const result = await this.$prompt('填写个人上传目录中的文件路径', '从内置 SFTP 替换模型', { inputPattern: /\S/, inputErrorMessage: '请填写路径' }).catch(() => null)
+        if (result) await this.handleReplaceFile(null, result.value.trim())
+        else this.replaceImpactToken = ''
+      } else this.$refs.replaceFile.click()
     },
-    async handleReplaceFile(event) {
-      const file = event.target.files && event.target.files[0]
-      if (!file || !this.replaceImpactToken) return
+    async handleReplaceFile(event, sftpPath) {
+      const file = event?.target?.files?.[0]
+      if ((!file && !sftpPath) || !this.replaceImpactToken) return
       const formData = new FormData()
-      formData.append('file', file)
+      if (sftpPath) formData.append('sftpPath', sftpPath)
+      else formData.append('file', file)
       formData.append('changeLog', '影响分析确认后的模型替换')
       if (this.model.modelFormat === 'ONNX') {
         const config = this.parseModelConfig(this.model.modelConfig)
@@ -1300,7 +1314,7 @@ export default {
           this.replaceImpactToken
         )
         this.replaceImpactToken = ''
-        event.target.value = ''
+        if (event) event.target.value = ''
         await completeResourceChange(this, response, () => this.load())
       } catch (error) {
         this.$message.error(error.message || '模型替换失败')
@@ -1475,7 +1489,7 @@ export default {
       await this.$refs.modelPreflight?.runCheck?.()
     },
     async saveModelDraft() {
-      if (this.modelSaving || !this.model.id) return
+      if (this.modelSaving || !this.model.id || this.skipUnchangedConfiguration(this.model.id)) return
       this.modelSaving = true
       try {
         const snapshot = JSON.parse(JSON.stringify(this.model))
@@ -1688,6 +1702,7 @@ export default {
         {
           VARIABLE: '变量',
           CONSTANT: '常量',
+          DATA_OBJECT_ROOT: '数据对象',
           DATA_OBJECT: '对象字段',
           MODEL: '模型',
         }[type] ||
@@ -2006,7 +2021,10 @@ export default {
         let configParams = null
         let configParamSource = 'CONFIG_SAMPLE'
         try {
-          const rawConfig = freshModel.modelConfig
+          const sampleModel = String(version) === String(context.currentVersion) && hasPermission('model:edit',freshModel)
+            ? await editableResource('MODEL',modelId,freshModel) : freshModel
+          if (!this.isActiveTestSetup(requestId, modelId)) return
+          const rawConfig = sampleModel?.modelConfig
           const config =
             typeof rawConfig === 'string'
               ? JSON.parse(rawConfig)

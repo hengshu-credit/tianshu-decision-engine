@@ -7,8 +7,8 @@ import { h, nextTick } from 'vue'
 import fs from 'fs'
 import path from 'path'
 
-import { generateTestInput } from '@/api/testData'
-vi.mock('@/api/testData', () => ({ generateTestInput: vi.fn() }))
+import { generateTestInput, saveDefaultInput } from '@/api/testData'
+vi.mock('@/api/testData', () => ({ generateTestInput: vi.fn(), saveDefaultInput: vi.fn() }))
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
 import * as projectApi from '@/api/project'
@@ -94,6 +94,29 @@ function makeStub(tag) {
 describe('RuleTest — 初始化与数据加载', () => {
   let wrapper
 
+  test.each([
+    ['TABLE', { age: 17 }, { decision: '拒绝' }], ['TREE', { age: 17, income: 6000 }, { decision: '拒绝' }],
+    ['FLOW', { blocked: true, score: 700 }, { decision: '拒绝' }], ['RULE_SET', { overdue: 1, score: 550 }, { decision: '拒绝' }],
+    ['CROSS', { grade: 'A', months: 6 }, { limit: 8000 }], ['CROSS_ADV', { score: 600, income: 5000 }, { limit: 10000 }],
+    ['SCORE', { income: 5000 }, { score: 600 }], ['SCORE_ADV', { income: 5000, overdue: 0 }, { score: 400 }],
+    ['SCRIPT', { amount: 1000 }, true],
+  ])('%s 验收样例按当前模型载入输入和独立预期，保留已保存用例', async (modelType, input, expected) => {
+    await wrapper.setData({ selectedRuleId: 101, selectedRule: { id: 101, modelType }, inputExecutionIdentity: { modelType },
+      loadedTestCase: { id: 8 }, inputLoadState: 'READY', examplesVisible: true })
+    wrapper.vm.loadAcceptanceExample()
+    expect(JSON.parse(stringifyExactJson(wrapper.vm.buildParamMap()))).toEqual(input)
+    expect(JSON.parse(wrapper.vm.expectedSnapshotJson)).toEqual({ success: true, result: expected })
+    expect(JSON.parse(wrapper.vm.expectationJson).mode).toBe('SNAPSHOT')
+    expect(wrapper.vm.loadedTestCase).toBeNull()
+    expect(wrapper.vm.exampleHint).toMatch(/检查|核对/)
+    expect(wrapper.vm.examplesVisible).toBe(false)
+    await wrapper.setData({ lastRawResponse: { data: { executionIdentity: {
+      definitionId: '101', sourceType: 'VERSION', sourceId: '9007199254740993', modelType,
+    } } } })
+    expect(wrapper.vm.testedDesigner.params).toEqual({ id: '101' })
+    expect(wrapper.vm.testedDesigner.query.sourceId).toBe('9007199254740993')
+  })
+
   beforeEach(async () => {
     projectApi.listProjects.mockResolvedValueOnce({ data: { records: mockProjects() } })
     definitionApi.listDefinitions.mockResolvedValueOnce({ data: { records: mockRules() } })
@@ -177,6 +200,7 @@ describe('RuleTest — 初始化与数据加载', () => {
 
   test('真实输入状态仅成功空Schema提示可直接执行，失败和加载中不显示正常空态', async () => {
     const page = shallowMount(RuleTest, {
+      stubs: { DismissibleGuidance: false },
       mocks: { $route: { params: {} }, $router: { push: vi.fn(), replace: vi.fn() } },
     })
     try {
@@ -184,7 +208,7 @@ describe('RuleTest — 初始化与数据加载', () => {
       const inputs = page.find('.input-parameters-card')
       expect(inputs.find('.input-load-state').text()).toContain('测试输入加载失败')
       expect(inputs.find('.input-load-state').text()).toContain('冻结版本字段读取失败')
-      expect(inputs.find('.input-load-state').text()).toContain('重新加载')
+      expect(inputs.find('.input-parameters-title').text()).toContain('重新加载字段')
       expect(inputs.text()).not.toContain('该规则暂无结构化输入，可直接执行或手动添加参数')
       for (const state of ['IDLE', 'LOADING', 'READY']) {
         await page.setData({ inputLoadState: state })
@@ -592,7 +616,7 @@ describe('RuleTest — 辅助方法', () => {
         'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
         'el-select': makeStub('select'), 'el-option': makeStub('option'),
         'el-input': makeStub('input'), 'el-input-number': makeStub('input'),
-        'el-button': makeStub('button'), 'el-tag': makeStub('span'),
+        'el-button': { template: '<button><slot /></button>' }, 'el-tag': makeStub('span'),
         'el-table': makeStub('table'), 'el-table-column': makeStub('td'),
         'el-tabs': tabStub, 'el-tab-pane': tabStub,
         'el-dialog': makeStub('div'), 'el-card': makeStub('div'),
@@ -676,7 +700,7 @@ describe('RuleTest — 辅助方法', () => {
     expect(wrapper.vm.$message.warning).toHaveBeenCalled()
   })
 
-  test('生成 JSON 样例复用统一 Schema，按选中规则生成且保留精确数字', async () => {
+  test('载入首条启用的有效请求，同步表单与 JSON 并保留精确数字', async () => {
     wrapper.vm.selectedRuleId = 1
     wrapper.vm.selectedRule = mockRules()[0]
     definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: {
@@ -685,7 +709,14 @@ describe('RuleTest — 辅助方法', () => {
     } })
     await wrapper.vm.loadVariables()
     wrapper.vm.params[0].value = '99'
-    wrapper.vm.generateInputSample()
+    wrapper.vm.testCases = [
+      { status: 0, requestJson: '{"params":{"disabled":true}}' },
+      { status: 1, requestJson: 'invalid' }, { status: 1, requestJson: '{"params":[]}' },
+      { status: 1, requestJson: '{"traceId":"unused","params":{"customer":{"age":18},"id":9007199254740993}}' },
+      { status: 1, requestJson: '{"params":{"later":true}}' },
+    ]
+    await wrapper.vm.loadRequestSample()
+    expect(wrapper.vm.buildRequestJson()).not.toContain('unused')
     expect(stringifyExactJson(wrapper.vm.buildParamMap())).toBe('{"customer":{"age":18},"id":9007199254740993}')
     wrapper.vm.switchInputMode('json')
     expect(JSON.parse(wrapper.vm.paramsJson).customer.age).toBe(18)
@@ -736,22 +767,14 @@ describe('RuleTest — 辅助方法', () => {
     expect(wrapper.vm.params.map(param => param.key)).toEqual(['id', 'empty'])
   })
 
-  test('输入参数位于固定测试用例之前且空用例卡片紧凑', async () => {
-    wrapper.vm.selectedRule = mockRules()[0]
-    wrapper.vm.testCases = []
-    wrapper.vm.testCasesLoading = false
-    wrapper.vm.testCasesError = ''
-    await nextTick()
-
-    const input = wrapper.find('.input-parameters-card')
-    const fixed = wrapper.find('.fixed-cases-card')
-    const html = wrapper.find('.test-left').html()
-
-    expect(input.exists()).toBe(true)
-    expect(fixed.exists()).toBe(true)
-    expect(html.indexOf('input-parameters-card'))
-      .toBeLessThan(html.indexOf('fixed-cases-card'))
-    expect(fixed.classes()).toContain('is-empty')
+  test('单次测试仅展示输入操作，不展示用例收藏与回归报告', async () => {
+    await wrapper.setData({ selectedRule: mockRules()[0], selectedRuleId: 1 })
+    const left = wrapper.find('.test-left')
+    expect(left.find('.input-parameters-card').exists()).toBe(true)
+    expect(left.find('.fixed-cases-card').exists()).toBe(false)
+    for (const label of ['回归报告','保存为新用例','输入工具','将当前输入设为默认','载入默认样例']) expect(left.text()).not.toContain(label)
+    expect(left.find('.input-parameters-title').text()).toContain('加载MOCK数据')
+    expect(left.find('.input-parameters-title').text()).toContain('重新加载字段')
   })
 
   test('mtl 对未知类型返回原值', () => {
@@ -793,6 +816,20 @@ describe('RuleTest — 辅助方法', () => {
       },
       mockModelScore: 88
     })
+  })
+
+  test('目录和原测试入口共用资源 ID 与精确默认输入', async () => {
+    await wrapper.setData({ selectedRuleId: 1 })
+    const row = { type: 'RULE', ownerId: '1' }
+    wrapper.vm.syncCatalogDefault(row,'{"amount":9007199254740993}')
+    expect(stringifyExactJson(wrapper.vm.buildParamMap())).toBe('{"amount":9007199254740993}')
+    wrapper.vm.syncCatalogDefault({ ...row, ownerId: 2 },'{"amount":32}')
+    expect(wrapper.vm.params[0].value).toBe('9007199254740993')
+    wrapper.vm.params[0].value = '9007199254740995'
+    wrapper.vm.testCases = [{ status: 0, requestJson: '{"params":{}}' }]
+    await wrapper.vm.loadRequestSample()
+    expect(stringifyExactJson(wrapper.vm.buildParamMap())).toBe('{"amount":9007199254740995}')
+    expect(saveDefaultInput).not.toHaveBeenCalled()
   })
 
   test('自动生成使用选中的版本并同步表单及精确 JSON', async () => {

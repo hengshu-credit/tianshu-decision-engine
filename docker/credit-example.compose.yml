@@ -27,12 +27,14 @@ services:
     build: ./rule-engine-mysql/example
     restart: unless-stopped
     environment:
+      EXAMPLE_ENGINE_URLS: "${EXAMPLE_ENGINE_URLS:-${EXAMPLE_ENGINE_URL:-http://server:8080}}"
       EXAMPLE_ENGINE_URL: "${EXAMPLE_ENGINE_URL:-http://server:8080}"
     extra_hosts:
       - host.docker.internal:host-gateway
     volumes:
       - *example-jar
       - example-supplier-credentials:/state:ro
+      - example-supplier-receipts:/var/lib/tianshu-example-receipts
     networks: [rule-engine]
   example-data-import:
     profiles: [example-data]
@@ -40,7 +42,11 @@ services:
     restart: "no"
     entrypoint: [java, -XX:ActiveProcessorCount=2, -Xmx1024m, -jar, /app/server.jar, --load-credit-example]
     environment:
-      RULE_MODEL_STORAGE_BACKEND: ${RULE_MODEL_STORAGE_BACKEND:-MYSQL}
+      ENGINE_SFTP_HOST: ${ENGINE_SFTP_HOST:-host.docker.internal}
+      ENGINE_SFTP_PORT: ${ENGINE_SFTP_PORT:-2222}
+      ENGINE_SFTP_USERNAME: ${ENGINE_SFTP_USERNAME:-engine-storage}
+      ENGINE_SFTP_PASSWORD: "${ENGINE_SFTP_PASSWORD:-}"
+      ENGINE_SFTP_HOST_FINGERPRINT: "${ENGINE_SFTP_HOST_FINGERPRINT:-}"
       RULE_MODEL_WRITE_PAYLOAD_LIMIT_BYTES: ${RULE_MODEL_WRITE_PAYLOAD_LIMIT_BYTES:-0}
       RULE_MODEL_STORAGE_DIRECTORY: /data/model-files
       RULE_MODEL_MAX_FILE_SIZE_BYTES: ${RULE_MODEL_MAX_FILE_SIZE_BYTES:-268435456}

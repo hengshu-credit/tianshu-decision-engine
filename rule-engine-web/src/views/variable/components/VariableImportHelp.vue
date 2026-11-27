@@ -13,12 +13,16 @@
 
 <script>
 const IMPORT_HELP = {
+  'json-variable': {
+    description: '每个顶层键生成一个输入变量，值用于推断类型并保存为固定示例。同编码的已有输入变量可更新，其他来源的变量会报告冲突。',
+    sample: '{\n  "Applicant_ID": "A001",\n  "amount": 100.50,\n  "active": false\n}',
+  },
   'java-entity': {
     description: '粘贴实体类源码或上传 UTF-8 的 .java 文件。解析带访问修饰符的实例字段，保留类名、字段名及注释。支持基本类型、数组、List 和 Map；自定义类型需先导入并审批其数据对象。不会编译或执行 Java，record、继承字段及复杂泛型需改为明确的字段声明。',
     sample: 'public class RiskRequest {\n  private String User_ID;\n  private int age;\n  private String[] tags;\n}',
   },
   'json-object': {
-    description: '填写对象编码，并提供实际 JSON 对象样本。嵌套对象和对象数组保留层级；数组从首个非 null 元素推断结构，请使用字段完整的同类型样本。空数组不猜测元素类型，导入后可编辑；null 标量暂按字符串识别。',
+    description: '填写对象编码，并提供实际 JSON 对象样本。新对象将样本保存为整体示例。嵌套对象和对象数组保留层级；数组从首个非 null 元素推断结构，请使用字段完整的同类型样本。空数组不猜测元素类型，导入后可编辑；null 标量暂按字符串识别。',
     sample: '{\n  "User_ID": "U001",\n  "profile": { "age": 30 },\n  "apps": [{ "app_code": "A", "enabled": true }]\n}',
   },
   'ddl-table': {

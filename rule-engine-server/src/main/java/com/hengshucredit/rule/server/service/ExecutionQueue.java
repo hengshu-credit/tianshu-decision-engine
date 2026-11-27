@@ -66,6 +66,24 @@ public class ExecutionQueue {
 
     public void leave() { admission.leave(); }
 
+    public boolean enter(ProjectAuthContext auth) {
+        if (admission == null
+                || auth == null
+                || admission.forProject(auth.getProjectId()) == admission) return enter();
+        int remaining = RequestDeadlineContext.remainingMillis();
+        return remaining > 0
+                && admission
+                        .forProject(auth.getProjectId())
+                        .enter(RequestDeadlineContext.currentNanoTime(), remaining);
+    }
+
+    public void leave(ProjectAuthContext auth) {
+        if (admission == null
+                || auth == null
+                || admission.forProject(auth.getProjectId()) == admission) leave();
+        else admission.forProject(auth.getProjectId()).leave();
+    }
+
     public ProjectExecutionGuard.Permit permit(ProjectAuthContext auth) {
         return projectGuard.acquire(auth.getAuthId(), auth.getAccessPolicy());
     }
@@ -127,17 +145,19 @@ public class ExecutionQueue {
         for (Work work : candidates) {
             if (!assigned.add(work.trace())) continue;
             try {
-                workers.execute(() -> {
-                    boolean entered = admission.enterWorker();
-                    try {
-                        if (entered) dispatch(experiment, table, work);
-                    } catch (RuntimeException failure) {
-                        log.warn("持久订单接管失败，trace={}", work.trace(), failure);
-                    } finally {
-                        if (entered) admission.leave();
-                        assigned.remove(work.trace());
-                    }
-                });
+                workers.execute(
+                        () -> {
+                            var lane = admission.forProject(work.project());
+                            boolean entered = lane.enterWorker();
+                            try {
+                                if (entered) dispatch(experiment, table, work);
+                            } catch (RuntimeException failure) {
+                                log.warn("持久订单接管失败，trace={}", work.trace(), failure);
+                            } finally {
+                                if (entered) lane.leave();
+                                assigned.remove(work.trace());
+                            }
+                        });
             } catch (RejectedExecutionException full) {
                 assigned.remove(work.trace());
                 return;
@@ -175,7 +195,7 @@ public class ExecutionQueue {
             return;
         }
         if ("WAITING_EXTERNAL".equals(work.status()) && !experiments.canPollOriginal(work.trace(),
-                JSON.parseObject(state.resultJson(), RuleExperimentExecuteResult.class))) {
+                RuleExperimentExecutionStateService.readResult(state.resultJson()))) {
             failBeforeStart("rule_experiment_execution_state", work, "原外数回执缺失或状态不明，需核实后恢复");
             return;
         }

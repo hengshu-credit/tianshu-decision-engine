@@ -416,6 +416,7 @@ export default {
     },
     async handleSubmit() {
       if (this.submitting) return
+      if (this.finishUnchangedEdit('dialogVisible', this.form.id)) return
       this.submitting = true
       try {
         const valid = await new Promise(resolve => this.$refs.form.validate(resolve))

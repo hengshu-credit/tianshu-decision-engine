@@ -76,6 +76,7 @@
             {{ ruleTraceStatusLabel(ruleTraceFrame.status) }}
           </span>
           <span>{{ ruleTraceFrame.durationMs || 0 }} ms</span>
+          <el-button v-if="frameRuleLocation" link type="primary" @click="$router.push(frameRuleLocation)">查看规则配置</el-button>
         </div>
       </div>
 
@@ -874,6 +875,8 @@
 </template>
 
 <script>
+import { hasPermission } from '@/security/permissionState'
+import { normalizeProjectId } from '@/utils/projectContext'
 import ContentReference from './ContentReference.vue'
 import { findConditionOperator, isSourceStatusOperator } from '@/constants/conditionOperators'
 import {
@@ -1007,6 +1010,13 @@ export default {
     document.removeEventListener('keydown', this._onEsc)
   },
   computed: {
+    frameRuleLocation() {
+      const frame = this.ruleTraceFrame
+      const id = normalizeProjectId(frame?.ruleId)
+      const projectId = normalizeProjectId(frame?.projectId)
+      if (!id || !hasPermission('rule:view', projectId ? { scope: 'PROJECT', projectId } : undefined)) return null
+      return { name: 'RuleDetail', params: { id: String(id) }, query: projectId ? { projectId } : {} }
+    },
     executedRuleVersion() {
       return this.ruleTraceFrame?.ruleVersion ?? this.ruleTraceFrame?.version ?? this.ruleVersion
     },

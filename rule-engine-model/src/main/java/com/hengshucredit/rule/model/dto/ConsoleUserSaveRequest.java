@@ -16,6 +16,8 @@ public class ConsoleUserSaveRequest {
     private String displayName;
     private String email;
     private String password;
+    private String sftpPublicKey;
+    private Boolean disableSftp;
     private Integer status;
     private List<Long> roleIds;
     private Map<String, String> permissionOverrides;

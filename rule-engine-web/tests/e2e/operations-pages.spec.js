@@ -2,6 +2,7 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
+const { createManagementApiData } = require('./support/managementFixtures.cjs')
 const { withTestExecutionIdentity } = require('./support/testExecutionFixtures.cjs')
 const { DEFAULT_THEME_CONFIG } = require('../../src/theme/themeConfig.js')
 
@@ -160,9 +161,9 @@ test('规则测试长表单可滚动到底并点击执行，窄屏底部也可�
   await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
   await page.getByRole('option', { name: /age_rule/ }).click()
   await expect(page.getByText('测试输入已就绪', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '自动生成', exact: true }).click()
+  await page.getByRole('button', { name: '加载MOCK数据', exact: true }).click()
   await expect(page.locator('.param-value input').first()).toHaveValue('36')
-  for (let i = 0; i < 18; i++) await page.getByRole('button', { name: '手动添加' }).click()
+  for (let i = 0; i < 18; i++) await page.getByRole('button', { name: '添加参数' }).click()
   await expect(page.locator('.param-row')).toHaveCount(19)
   const left = page.locator('.test-left')
   const execute = page.getByRole('button', { name: '执行测试', exact: true })
@@ -182,7 +183,7 @@ test('规则测试长表单可滚动到底并点击执行，窄屏底部也可�
   await execute.click()
   await expectNoRootOverflow(page)
   await page.setViewportSize({ width: 1440, height: 1400 })
-  await page.getByRole('button', { name: '生成样例', exact: true }).click()
+  await page.getByRole('button', { name: '载入样例', exact: true }).click()
   const shortLayout = await page.locator('.test-actions').evaluate(element => ({
     top: element.getBoundingClientRect().top,
     previousBottom: element.previousElementSibling.getBoundingClientRect().bottom,
@@ -232,14 +233,28 @@ test('规则测试在表单与 JSON 间同步输入、生成样例并校验执�
   await expect(editor.getByRole('alert')).toHaveText('输入参数必须是 JSON 对象')
   await page.getByRole('button', { name: '执行测试', exact: true }).click()
   expect(submitted).toBeNull()
-  await page.getByRole('button', { name: '生成样例', exact: true }).click()
+  await page.getByRole('button', { name: '载入样例', exact: true }).click()
   await expect(editor.getByRole('alert')).toHaveCount(0)
-  await expect(editor.locator('.view-lines')).toContainText('18')
+  await expect(editor.locator('.view-lines')).toContainText('24')
   await page.getByRole('button', { name: '执行测试', exact: true }).click()
   await expect(page.getByText('执行成功', { exact: true })).toBeVisible()
-  expect(JSON.parse(submitted.requestJson).params).toEqual({ age: 18 })
+  expect(JSON.parse(submitted.requestJson).params).toEqual({ age: 24 })
   await page.screenshot({ path: testInfo.outputPath('rule-test-json.png') })
   assertClean()
+})
+
+test('窄屏血缘起点在筛选面板内完整显示并可选择', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await installDistRoutes(page, { apiData: createOperationsApiData() })
+  await page.goto('http://tianshu.local/index.html#/lineage')
+  const form = page.locator('.lineage-page .query-panel')
+  const select = form.locator('.el-select').nth(1)
+  await expect(select).toBeVisible()
+  const panel = await form.boundingBox(), field = await select.boundingBox()
+  expect(field.x + field.width).toBeLessThanOrEqual(panel.x + panel.width)
+  await select.click()
+  await page.getByRole('option').first().click()
+  await expect(page.getByRole('button', { name: '生成血缘图' })).toBeEnabled()
 })
 
 test('血缘默认隐藏小地图、使用直线且可独立调节背景透明度', async ({ page }, testInfo) => {
@@ -767,6 +782,7 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
     .locator('.el-select')
   await ruleSelect.click()
   await page.getByRole('option', { name: /age_rule/ }).click()
+  await page.locator('.expected-output-editor summary').click()
   const inputReady = page.locator('.input-load-state.is-ready')
   await expectStyleUsesToken(
     page.locator('.expected-output-editor .el-radio-button:not(.is-active) .el-radio-button__inner').first(),
@@ -817,9 +833,9 @@ test('夜间模式下运行页面的提示区、代码块和血缘画布使用�
 
   await page.goto('http://tianshu.local/index.html#/experiment')
   await expectStyleUsesToken(
-    page.locator('.experiment-page h2'),
+    page.locator('.experiment-page .guidance-heading').first(),
     'color',
-    '--tianshu-text-primary'
+    '--tianshu-info-text'
   )
   const experimentRow = page.getByRole('row').filter({ hasText: 'risk_ab' })
   await experimentRow.getByRole('button', { name: '验证执行', exact: true }).click()
@@ -1039,7 +1055,7 @@ test('夜间模式下审批与修订字段区域使用主题表面色', async ({
   assertClean()
 })
 
-test('固定用例标题与三项操作在桌面和窄屏内完整可见', async ({ page }) => {
+test('输入参数的两组操作在桌面和窄屏内完整可见', async ({ page }) => {
   const fixtures = createOperationsApiData()
   fixtures.set('/api/rule/definition/101/api-scenarios', [{ id: 71, scenarioName: '标题布局用例', requestJson: '{"params":{"age":18}}', responseJson: '{}', expectationJson: '{"version":1,"mode":"NONE"}' }])
   const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
@@ -1047,20 +1063,18 @@ test('固定用例标题与三项操作在桌面和窄屏内完整可见', async
   await page.goto('http://tianshu.local/index.html#/test')
   await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
   await page.getByRole('option', { name: /age_rule/ }).click()
-  await page.locator('.fixed-case-row').getByRole('button', { name: '载入', exact: true }).click()
-  await expect(page.getByRole('button', { name: '保存当前用例', exact: true })).toBeVisible()
-  for (const width of [1440, 768]) {
+  const card = page.locator('.input-parameters-card')
+  await expect(page.locator('.test-left .fixed-cases-card')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '回归报告', exact: true })).toHaveCount(0)
+  for (const width of [1440, 768, 390]) {
     await page.setViewportSize({ width, height: 1000 })
-    const title = page.locator('.fixed-cases-title > span').first()
-    await expect.poll(() => title.evaluate(element => {
-      const range = document.createRange(); range.selectNodeContents(element)
-      return new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size
-    })).toBe(1)
-    const card = await page.locator('.fixed-cases-card').boundingBox()
-    for (const name of ['保存为新用例', '保存当前用例', '批量执行']) {
-      const box = await page.getByRole('button', { name, exact: true }).boundingBox()
-      expect(box.x).toBeGreaterThanOrEqual(card.x)
-      expect(box.x + box.width).toBeLessThanOrEqual(card.x + card.width)
+    await expect(card.locator('.input-parameters-title button')).toHaveText(['重新加载字段', '加载MOCK数据'])
+    await expect(card.locator('.input-mode-toolbar button')).toHaveText(['载入样例', ' 添加参数'])
+    const bounds = await card.boundingBox()
+    for (const name of ['重新加载字段', '加载MOCK数据', '载入样例', '添加参数']) {
+      const box = await card.getByRole('button', { name, exact: true }).boundingBox()
+      expect(box.x).toBeGreaterThanOrEqual(bounds.x)
+      expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width)
     }
   }
   assertClean()
@@ -1072,6 +1086,7 @@ test('预期模式按钮在明暗实时预览后仍使用可读文字色', async
   await page.goto('http://tianshu.local/index.html#/test')
   await page.locator('.test-left .el-form-item').filter({ hasText: '规则' }).locator('.el-select').click()
   await page.getByRole('option', { name: /age_rule/ }).click()
+  await page.locator('.expected-output-editor summary').click()
   await page.getByTestId('expectation-mode').getByText('按输出字段校验', { exact: true }).click()
   await page.locator('.layout-account-trigger').click()
   await page.locator('[data-account-command="theme"]').click()
@@ -1086,5 +1101,254 @@ test('预期模式按钮在明暗实时预览后仍使用可读文字色', async
     })).toBe(true)
   }
   await drawer.getByRole('button', { name: '取消', exact: true }).click()
+  assertClean()
+})
+
+test('规则测试刷新恢复管理页签，默认跨类型展示用例并保留筛选栏底部间距', async ({ page }) => {
+  const fixtures = createOperationsApiData()
+  fixtures.set('GET /api/rule/test-data/cases', { total: 2, records: [
+    { type: 'VARIABLE', source: 'CASE', ownerId: 8, id: '1', name: '低收入申请', resourceName: '收入', code: 'income' },
+    { type: 'API', source: 'API_NAMED', ownerId: 9, id: 'high', name: '高分响应', resourceName: '风险评分', code: 'score' },
+  ] })
+  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+  await page.goto('http://tianshu.local/index.html#/test')
+  const cases = page.getByRole('tab', { name: '测试用例', exact: true })
+  await cases.click()
+  await page.reload()
+  await expect(cases).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByText('低收入申请', { exact: true })).toBeVisible()
+  await expect(page.getByText('高分响应', { exact: true })).toBeVisible()
+  const toolbar = page.locator('.test-management:visible .uiue-filter-toolbar')
+  for (const width of [1440, 680]) {
+    await page.setViewportSize({ width, height: 800 })
+    const gap = await toolbar.evaluate(el => el.getBoundingClientRect().bottom -
+      Math.max(...Array.from(el.querySelectorAll('button')).map(b => b.getBoundingClientRect().bottom)))
+    expect(gap).toBeGreaterThanOrEqual(8)
+  }
+  assertClean()
+})
+
+test('Mock 规则按项目范围排列，可按 Faker 类别和方法查询、预览并重置筛选', async ({ page }) => {
+  const apiData = createManagementApiData()
+  const person = { id: 39, name: '全名', valueType: 'STRING', generator: 'FAKER', configJson: '"person.fullName"', builtin: true, matchNames: '' }
+  apiData.set('GET /api/rule/test-data/rules', [
+    person, { ...person, id: 40, name: '作者', configJson: '"book.author"' },
+    { ...person, id: 41, projectId: 1, projectName: 'E2E 项目', name: '订单编号', generator: 'UUID', configJson: 'null' },
+  ])
+  apiData.set('POST /api/rule/test-data/rules/preview', ({ request }) => {
+    expect(request.postDataJSON()).toMatchObject({ id: 39, generator: 'FAKER', configJson: '"person.fullName"' })
+    return { valueJson: '"陈明"' }
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.goto('http://tianshu.local/#/variable')
+  await expect(page.locator('.var-tabs > .el-tabs__header').getByRole('tab')).toHaveText([
+    '变量列表', '数据对象', '常量列表', '字段校验', 'MOCK 规则',
+  ])
+  const mockTab = page.getByRole('tab', { name: 'MOCK 规则', exact: true })
+  await mockTab.click()
+  await page.reload()
+  await expect(mockTab).toHaveAttribute('aria-selected', 'true')
+  const pane = page.getByRole('tabpanel', { name: 'MOCK 规则' })
+  const headers = pane.locator('.el-table__header th:not(.gutter)')
+  await expect(headers).toHaveText(['作用范围', '项目名称', '规则名称', 'MOCK 分类', '实际规则', '字段类型', '自动匹配字段', '操作'])
+  await pane.getByRole('combobox', { name: 'MOCK 分类', exact: true }).click()
+  await page.getByRole('option', { name: '个人资料 · person', exact: true }).click()
+  await pane.getByPlaceholder('规则名称、方法或匹配字段').fill('fullName')
+  await pane.getByPlaceholder('规则名称、方法或匹配字段').press('Enter')
+  await expect(pane.locator('.el-table__body tr')).toHaveCount(1)
+  await pane.getByRole('row').filter({ hasText: 'person.fullName' }).getByRole('button', { name: '编辑' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Mock 规则详情' })
+  await dialog.getByRole('button', { name: '试生成' }).click()
+  await expect(dialog.getByLabel('生成预览')).toHaveText('"陈明"')
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await pane.getByRole('button', { name: '重置', exact: true }).click()
+  await expect(pane.locator('.el-table__body tr')).toHaveCount(3)
+  assertClean()
+})
+
+test('Mock 数值上下界可依次输入并与 JSON 参数同步', async ({ page }) => {
+  const apiData = createManagementApiData()
+  const row = { id: 7, name: '整数', valueType: 'NUMBER', generator: 'FAKER', configJson: '"number.int"', builtin: true, matchNames: '' }
+  apiData.set('GET /api/rule/test-data/rules', [row])
+  apiData.set('POST /api/rule/test-data/rules/preview', ({ request }) => {
+    expect(JSON.parse(request.postDataJSON().configJson)).toEqual({ method: 'number.int', args: [{ min: 42, max: 42 }] })
+    return { valueJson: '42' }
+  })
+  await page.addInitScript(() => localStorage.setItem('tianshu:table-columns:test-mock',
+    JSON.stringify({ version: 2, visibleKeys: ['scope','name','category','generator'] })))
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.goto('http://tianshu.local/#/variable')
+  await page.getByRole('tab', { name: 'MOCK 规则', exact: true }).click()
+  const pane = page.getByRole('tabpanel', { name: 'MOCK 规则' })
+  await expect(pane.locator('.el-table__header th:not(.gutter)')).toHaveText(['作用范围', '规则名称', 'MOCK 分类', '实际规则', '操作'])
+  await pane.getByRole('button', { name: '编辑', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Mock 规则详情' })
+  await dialog.getByLabel('最小值', { exact: true }).fill('42')
+  await dialog.getByLabel('最大值', { exact: true }).fill('42')
+  await dialog.getByRole('button', { name: '试生成' }).click()
+  await expect(dialog.getByLabel('生成预览')).toHaveText('42')
+  assertClean()
+})
+
+test('变量示例可在内容选择器绑定规则，也可组合生成固定示例', async ({ page }) => {
+  const apiData = createManagementApiData()
+  apiData.set('/api/rule/variable/source-options', { apiOptions: [], databaseOptions: [], listOptions: [], sftpOptions: [] })
+  let savedVariable
+  apiData.set('POST /api/rule/governance/drafts', ({ request }) => {
+    const body = request.postDataJSON()
+    savedVariable = JSON.parse(body.snapshotJson)
+    return { ...body, id: 991, resourceId: 301, status: 'EDITING', draftSnapshotJson: body.snapshotJson }
+  })
+  const fullName = { id: 39, name: '全名', valueType: 'STRING', generator: 'FAKER', configJson: '"person.fullName"', matchNames: '' }
+  const projectCode = { id: 40, name: '项目标记', projectId: 1, valueType: 'STRING', generator: 'FIXED', configJson: '"P01"', matchNames: '' }
+  apiData.set('GET /api/rule/test-data/rules', [
+    fullName, projectCode,
+    { ...projectCode, id: 41, name: '其他项目规则', projectId: 2 },
+    { ...projectCode, id: 42, name: '数值规则', valueType: 'NUMBER', configJson: '42' },
+  ])
+  const requested = []
+  apiData.set('POST /api/rule/test-data/rules/preview', ({ request }) => {
+    const { id, configJson } = request.postDataJSON()
+    requested.push(id)
+    return { valueJson: id === fullName.id ? '"陈明"' : configJson }
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.goto('http://tianshu.local/#/variable?projectId=1')
+  await page.getByRole('button', { name: '新建字段', exact: true }).click()
+  const field = page.getByRole('dialog', { name: '新建字段', exact: true })
+  await field.getByRole('textbox', { name: '固定示例值' }).fill('手工示例')
+  await field.getByText('固定值', { exact: true }).click()
+  await page.getByRole('option', { name: '绑定 MOCK 规则', exact: true }).click()
+  await field.getByRole('button', { name: '打开内容选择器选择 MOCK 规则' }).click()
+  const bind = page.getByRole('dialog', { name: '内容选择器 · 绑定 MOCK 规则' })
+  await expect(bind.getByRole('columnheader', { name: 'MOCK 分类' })).toBeVisible()
+  await expect(bind.getByRole('columnheader', { name: '实际规则' })).toBeVisible()
+  await expect(bind.getByRole('row').filter({ hasText: '其他项目规则' })).toHaveCount(0)
+  await expect(bind.getByRole('row').filter({ hasText: '数值规则' })).toHaveCount(0)
+  const person = bind.getByRole('row').filter({ hasText: 'person.fullName' })
+  await expect(person.getByRole('gridcell', { name: '个人资料' })).toBeVisible()
+  await person.dblclick()
+  await expect(field.getByRole('button', { name: '打开内容选择器选择 MOCK 规则' })).toHaveText('全名')
+  expect(requested).toEqual([])
+
+  await field.getByText('绑定 MOCK 规则', { exact: true }).click()
+  await page.getByRole('option', { name: '固定值', exact: true }).click()
+  await page.setViewportSize({ width: 620, height: 820 })
+  await field.getByRole('button', { name: '从 MOCK 生成' }).click()
+  const generate = page.getByRole('dialog', { name: '内容选择器 · 生成示例值' })
+  await generate.getByRole('row').filter({ hasText: 'person.fullName' }).press('Enter')
+  await generate.getByRole('button', { name: '添加固定文本' }).click()
+  await generate.getByRole('textbox', { name: '固定文本 2' }).fill('-')
+  await generate.getByRole('row').filter({ hasText: '项目标记' }).press('Enter')
+  await generate.getByRole('row').filter({ hasText: '数值规则' }).press('Enter')
+  await expectNoRootOverflow(page)
+  await generate.getByRole('button', { name: '生成并填入' }).click()
+  await expect(field.getByRole('textbox', { name: '固定示例值' })).toHaveValue('陈明-P0142')
+  expect(requested).toEqual([39, 40, 42])
+  await field.getByPlaceholder('英文标识，如 taxAmount').fill('mockExample')
+  await field.getByPlaceholder('中文名称，如 应纳税额').fill('组合示例')
+  await field.getByRole('button', { name: '保存草稿', exact: true }).click()
+  await expect(field).toBeHidden()
+  expect(savedVariable).toMatchObject({ exampleMode: 'FIXED', exampleValue: '陈明-P0142', mockRuleId: null })
+  assertClean()
+})
+
+for (const source of ['手动填写', 'MOCK 自动生成', '从 MOCK 填入']) {
+  test(`数据对象可保存整体 JSON 示例 · ${source}`, async ({ page }) => {
+    const apiData = createManagementApiData()
+    apiData.set('/api/rule/variable/source-options', { apiOptions: [], databaseOptions: [], listOptions: [], sftpOptions: [] })
+    const tree = apiData.get('/api/rule/dataobject/tree')
+    const node = tree.tree[0]
+    apiData.set('/api/rule/dataobject/tree/1', tree)
+    apiData.set('/api/rule/dataobject/' + node.object.id, node)
+    apiData.set('/api/rule/dataobject/field/' + node.variables[0].id + '/options', [])
+    apiData.set('/api/rule/function/project/1/all', [])
+    apiData.set('/api/rule/model/project/1/all', [])
+    const json = '{"scores":[0],"approved":false}'
+    const objectRule = { id: 43, name: '申请信息示例', valueType: 'OBJECT', generator: 'FIXED', configJson: json }
+    apiData.set('GET /api/rule/test-data/rules', [objectRule])
+    apiData.set('POST /api/rule/test-data/rules/preview', ({ request }) => {
+      expect(request.postDataJSON()).toMatchObject(objectRule)
+      return { valueJson: json }
+    })
+    let savedObject
+    apiData.set('/api/rule/governance/workspaces/DATA_OBJECT/' + node.object.id, () =>
+      savedObject ? { draftSnapshotJson: JSON.stringify(savedObject) } : null)
+    apiData.set('POST /api/rule/governance/drafts', ({ request }) => {
+      const body = request.postDataJSON()
+      expect(body.resourceType).toBe('DATA_OBJECT')
+      savedObject = JSON.parse(body.snapshotJson)
+      return { ...body, id: 992, status: 'EDITING', draftSnapshotJson: body.snapshotJson }
+    })
+    const { assertClean } = await installDistRoutes(page, { apiData })
+    await page.goto('http://tianshu.local/#/variable?projectId=1')
+    await page.getByRole('tab', { name: '数据对象', exact: true }).click()
+    const edit = page.getByRole('row').filter({ hasText: node.object.objectLabel }).getByRole('button', { name: '编辑', exact: true })
+    await edit.click()
+    const dialog = page.getByRole('dialog', { name: '编辑数据对象' })
+    const input = dialog.getByRole('textbox', { name: '固定示例值' })
+    await expect(dialog.getByText('MOCK 自动生成', { exact: true })).toBeVisible()
+    if (source === '从 MOCK 填入') {
+      await dialog.getByRole('button', { name: '从 MOCK 生成' }).click()
+      const picker = page.getByRole('dialog', { name: '内容选择器 · 生成示例值' })
+      await picker.getByRole('row').filter({ hasText: objectRule.name }).press('Enter')
+      await picker.getByRole('button', { name: '生成并填入' }).click()
+    } else {
+      await input.fill(json)
+    }
+    await expect(input).toHaveValue(json)
+    const auto = source === 'MOCK 自动生成'
+    if (auto) {
+      await dialog.getByText('固定值', { exact: true }).click()
+      await page.getByRole('option', { name: 'MOCK 自动生成' }).click()
+      await expect(input).toHaveValue('')
+    }
+    await dialog.getByRole('button', { name: '保存草稿', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    expect(savedObject).toMatchObject({ exampleMode: auto ? 'AUTO' : 'FIXED', exampleValue: auto ? '' : json, mockRuleId: null })
+    await edit.click()
+    await expect(dialog.getByText(auto ? 'MOCK 自动生成' : '固定值', { exact: true })).toBeVisible()
+    await expect(input).toHaveValue(auto ? '' : json)
+    assertClean()
+  })
+}
+test('根流水串起缓存、重试、模型、名单、实验和按币种计费，并按 ID 打开配置', async ({ page }) => {
+  const fixtures = new Map([...createDetailApiData(), ...createOperationsApiData()])
+  const traceId = 'trace_rule_001'
+  const logRows = [
+    { moduleType: 'DATASOURCE', actionType: 'API_INVOKE', targetName: '供应商评分', targetRefId: '9007199254740993', cacheStatus: 'HIT', attemptNo: 2, success: 1 },
+    { moduleType: 'MODEL', targetName: '评估模型', targetRefId: 31, attemptNo: 1, success: 1 },
+    { moduleType: 'LIST', targetName: '申请人名单', targetRefId: 17, attemptNo: 1, success: 1 },
+    { moduleType: 'DATABASE', targetName: '超时查询', datasourceId: 22, attemptNo: 1, success: 0 },
+  ]
+  const match = (rows, queryKey = 'traceId', extra = {}) => ({ url }) => {
+    expect(url.searchParams.get(queryKey)).toBe(traceId)
+    return { records: rows, total: rows.length, ...extra }
+  }
+  fixtures.set('/api/rule/runtime-log/list', match(logRows))
+  fixtures.set('/api/rule/experiment/logs', match([{ experimentId: 14, experimentCode: '风控实验', groupName: '空跑分组', childTraceId: 'child-001' }]))
+  fixtures.set('/api/rule/billing/record/by-trace', match([
+    { billingName: '试运行费用', billingBasis: 'DRAFT_TRIAL', amount: '0.00', currency: 'CNY', billingTarget: 'API', targetRefId: 7 },
+    { billingName: '线上费用', amount: '12.30', currency: 'USD', billingTarget: 'ENGINE', ruleId: 101 },
+  ], 'rootTraceId', { subtotals: [{ amount: '0.00', currency: 'CNY' }, { amount: '12.30', currency: 'USD' }] }))
+  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+  await page.goto('http://tianshu.local/index.html#/log')
+  await page.getByRole('row').filter({ hasText: traceId }).getByRole('button', { name: '详情' }).click()
+  await page.getByRole('tab', { name: '调用与费用' }).click()
+  const panel = page.getByRole('region', { name: '按执行流水查看调用与费用' })
+  const row = text => panel.getByRole('row').filter({ hasText: text })
+  await expect(row('供应商评分')).toContainText('命中缓存')
+  await expect(row('供应商评分').getByRole('link')).toHaveAttribute('href', /datasource\/api\/9007199254740993/)
+  await expect(row('评估模型').getByRole('link')).toHaveAttribute('href', /model\/31/)
+  await expect(row('申请人名单').getByRole('link')).toHaveAttribute('href', /list\/17/)
+  await expect(row('超时查询')).toContainText('失败')
+  await panel.getByText('实验分流', { exact: true }).click()
+  await expect(row('空跑分组').getByRole('link')).toHaveAttribute('href', /experiment\/detail\/14/)
+  await panel.getByText('计费明细', { exact: true }).click()
+  await expect(row('试运行费用')).toContainText('草稿试运行')
+  await expect(panel.getByText('已入账合计 12.30 USD')).toBeVisible()
+  await expect(panel.getByText('已入账合计 0.00 CNY')).toBeVisible()
+  await row('线上费用').getByRole('link').click()
+  await expect(page).toHaveURL(/#\/rule\/101/)
   assertClean()
 })

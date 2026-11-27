@@ -63,6 +63,39 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void engineSftpPathFromInputAndCacheAreScopedToExecutionProject() throws Exception {
+        var variable = variable("report", "SFTP",
+                "{\"engineSftp\":true,\"remotePath\":\"$.address\",\"outputFormat\":\"JSON\",\"cacheSeconds\":60}");
+        var resolver = resolver(List.of(variable), new FakeApiService(Map.of()), new FakeDbPools(List.of()));
+        variable.setScope("GLOBAL");
+        variable.setProjectId(0L);
+        variable.setVarType("OBJECT");
+        var root = java.nio.file.Files.createTempDirectory("engine-sftp-variable-");
+        try (var fixture = new com.hengshucredit.rule.server.sftp.EngineSftpFixture(root)) {
+            for (int project : List.of(1, 2)) {
+                byte[] bytes = ("{\"score\":" + project + "}").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                fixture.nodeA.publish("/projects/" + project + "/u7/result.json",
+                        com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(bytes), new java.io.ByteArrayInputStream(bytes), bytes.length);
+            }
+            setField(resolver, "engineSftpFiles", new com.hengshucredit.rule.server.sftp.EngineSftpFiles(fixture.nodeB, null));
+            setField(resolver, "sftpFileCache", new SftpFileCache(new ExternalCallProperties(), (SftpFileDistributedCache) null));
+            for (long project : List.of(1L, 2L, 1L)) {
+                Map<String,Object> values = resolver.resolve(project, Map.of("address", "u7/result.json"), VariableResolveOptions.defaults());
+                assertEquals(project, ((Number)((Map<?,?>)values.get("report")).get("score")).longValue());
+            }
+            var restricted = new com.hengshucredit.rule.server.security.ConsoleProjectAccess() {
+                @Override public Scope current() { return new Scope(8L, java.util.Set.of(1L),java.util.Set.of()); }
+            };
+            setField(resolver, "engineSftpFiles", new com.hengshucredit.rule.server.sftp.EngineSftpFiles(fixture.nodeB, restricted));
+            org.junit.Assert.assertThrows(com.hengshucredit.rule.server.security.ConsoleAccessDeniedException.class, () -> resolver.resolve(1L, Map.of("address", "u7/result.json"), VariableResolveOptions.defaults()));
+        } finally {
+            try (var paths = java.nio.file.Files.walk(root)) {
+                for (var path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) java.nio.file.Files.delete(path);
+            }
+        }
+    }
+
+    @Test
     public void businessFileAddressIsUploadedAndReusedWithinRootExecution() throws Exception {
         RuleVariable variable = variable("contractText", "SFTP",
                 "{\"sftpDatasourceId\":9,\"remotePath\":\"/contracts/A.pdf\","
@@ -372,7 +405,27 @@ public class VariableSourceResolverTest {
         Map<String, Object> result = resolver.testVariable(1L, params);
 
         assertEquals(88, result.get("resolvedValue"));
+        assertEquals("PRESENT", ((Map<?, ?>) result.get("sourceEvidence")).get("SOURCE_VALUE"));
         assertEquals(1, apiService.callCount);
+    }
+
+    @Test
+    public void onlineTestDistinguishesMissingInputAndDatabaseReturningNoRows() throws Exception {
+        RuleVariable input = variable("age", "INPUT", "{}");
+        var resolver = resolver(Collections.singletonList(input), new FakeApiService(responseBody("score", 1)),
+                new FakeDbPools(Collections.emptyList()));
+        var absent = resolver.testVariable(1L, Map.of());
+        assertEquals("ABSENT", ((Map<?, ?>) absent.get("sourceEvidence")).get("SOURCE_VALUE"));
+        var zero = resolver.testVariable(1L, Map.of("age", 0));
+        assertEquals(0, zero.get("resolvedValue"));
+        assertEquals("PRESENT", ((Map<?, ?>) zero.get("sourceEvidence")).get("SOURCE_VALUE"));
+
+        RuleVariable db = variable("score", "DB", "{\"datasourceId\":3,\"sql\":\"select 1\",\"resultPath\":\"0.score\"}");
+        resolver = resolver(Collections.singletonList(db), new FakeApiService(responseBody("score", 1)),
+                new FakeDbPools(Collections.emptyList()));
+        var evidence = (Map<?, ?>) resolver.testVariable(1L, Map.of()).get("sourceEvidence");
+        assertEquals(0, evidence.get("ROW_COUNT"));
+        assertEquals("NO_DATA", evidence.get("DATA_STATE"));
     }
 
     @Test

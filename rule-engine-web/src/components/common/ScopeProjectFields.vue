@@ -42,6 +42,7 @@ export default {
     scopeDisabled: { type: Boolean, default: false },
     projectDisabled: { type: Boolean, default: false },
     required: { type: Boolean, default: true },
+    editPermission: { type: String, default: '' },
     scopeLabel: { type: String, default: '作用范围' },
     projectLabel: { type: String, default: '所属项目' },
     projectProp: { type: String, default: '' },
@@ -52,6 +53,7 @@ export default {
   computed: {
     canEditGlobal() {
       if (getCurrentUser()?.globalEditable === false) return false
+      if (this.editPermission) return hasPermission(this.editPermission, { scope: 'GLOBAL' })
       const menu = SIDEBAR_MENUS.find(item => item.index === getActiveMenuIndex(this.$route?.path))
       const permission = typeof menu?.permission === 'string' && menu.permission.endsWith(':view') ? menu.permission.replace(':view', ':edit') : null
       return !permission || hasPermission(permission, { scope: 'GLOBAL' })

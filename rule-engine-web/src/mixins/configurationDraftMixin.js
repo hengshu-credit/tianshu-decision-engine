@@ -38,6 +38,11 @@ export default function configurationDraftMixin(readDraft, isSaving = () => fals
       return this.confirmConfigurationLeave()
     },
     methods: {
+      skipUnchangedConfiguration(existingId) {
+        if (!existingId || this.configurationBaseline == null || this.configurationHasUnsavedChanges) return false
+        this.$message.info('配置未修改，无需保存')
+        return true
+      },
       markConfigurationSaved(fingerprint = this.configurationFingerprint) {
         this.configurationBaseline = fingerprint
         this.configurationLeaveApproved = false

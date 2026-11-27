@@ -2,6 +2,7 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
+const { DEFAULT_THEME_CONFIG } = require('../../src/theme/themeConfig.js')
 
 for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 函数方法选择保留精确类型并在宽窄切换后保持可操作`, async ({ page }) => {
   await page.addInitScript(scheme => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({ schemaVersion: 1, colorScheme: scheme, accentPreset: 'LIQUID_PURPLE', sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false })), colorScheme)
@@ -21,7 +22,6 @@ for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 函数方法�
   await page.goto('http://tianshu.local/index.html#/function')
   await page.getByRole('row').filter({ hasText: 'e2eMath' }).getByRole('button', { name: '编辑', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '编辑函数', exact: true })
-  await dialog.getByRole('button', { name: '读取方法', exact: true }).click()
   await expect(dialog).toContainText('方法已核对')
   await dialog.getByTestId('function-method-select').click()
   await page.getByRole('option', { name: 'min(int, int) → int', exact: true }).click()
@@ -45,6 +45,111 @@ for (const colorScheme of ['LIGHT', 'DARK']) test(`${colorScheme} 函数方法�
   expect(harness.requests.filter(request => request.method === 'POST' && /\/governance\/requests\/\d+\/submit$/.test(new URL(request.url).pathname))).toEqual([])
   const snapshot = JSON.parse(submitted.snapshotJson)
   expect(snapshot.implMethod).toBe('max'); expect(JSON.parse(snapshot.paramsJson)).toEqual(params)
+  harness.assertClean()
+})
+
+for (const scheme of ['LIGHT','DARK']) test(`${scheme} 空输入框的提示可复制，输入和复制实际值仍使用原字段`, async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const theme = { ...DEFAULT_THEME_CONFIG, colorScheme: scheme }
+  await page.addInitScript(value => localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify(value)), theme)
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: new Map([
+    ['/api/auth/console/preferences/theme', theme],
+    ['/api/rule/function/list', { records: [], total: 0 }],
+  ]) })
+  await page.goto(`${origin}/#/function`)
+  await expect(page.locator('html')).toHaveAttribute('data-theme', scheme.toLowerCase())
+  await page.getByRole('button', { name: '新建函数', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '新建函数', exact: true })
+  const code = dialog.getByPlaceholder('如 calcTax（QLExpress 脚本中的调用名）')
+  const description = dialog.getByPlaceholder('函数功能说明')
+  const name = dialog.getByPlaceholder('中文名称，如 计算税额')
+  const colors = await code.evaluate(el => [getComputedStyle(el).color, getComputedStyle(el, '::placeholder').color])
+  expect(colors[0]).not.toBe(colors[1])
+  await code.dblclick()
+  await expect(code).toHaveAttribute('data-selected-hint', '')
+  await page.keyboard.press('Control+c')
+  await expect(code).toHaveValue('')
+  await name.click()
+  await page.keyboard.press('Control+v')
+  await expect(name).toHaveValue(await code.getAttribute('placeholder'))
+  const box = await code.boundingBox()
+  await page.mouse.move(box.x + 10, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 90, box.y + box.height / 2, { steps: 4 })
+  await page.mouse.up()
+  await expect(code).toHaveAttribute('data-selected-hint', '')
+  await code.press('Control+c')
+  await description.click()
+  await description.press('Control+v')
+  await expect(description).toHaveValue(await code.getAttribute('placeholder'))
+  await description.fill('')
+  await description.click()
+  await page.keyboard.press('Control+a')
+  await page.keyboard.press('Control+c')
+  await expect(description).toHaveValue('')
+  await name.fill('')
+  await name.press('Control+v')
+  await expect(name).toHaveValue('函数功能说明')
+  await code.click()
+  await code.press('Control+a')
+  await page.keyboard.insertText('realValue')
+  await expect(code).toHaveValue('realValue')
+  await code.press('End')
+  for (let i = 0; i < 5; i++) await code.press('Shift+ArrowLeft')
+  await code.press('Control+c')
+  await description.click()
+  await description.press('Control+v')
+  await expect(description).toHaveValue('Value')
+  harness.assertClean()
+})
+
+test('函数脚本可单独调高，Java 类和 Bean 输入后自动读取实际方法', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const targets = []
+  const apiData = new Map([
+    ['/api/rule/function/list', { records: [], total: 0 }],
+    ['POST /api/rule/function/methods', ({ request }) => {
+      const form = request.postDataJSON()
+      targets.push(form.implType === 'JAVA' ? form.implClass : form.implBeanName)
+      return { status: 'AVAILABLE', valid: false, message: '请选择实际方法', methods: [
+        { name: 'score', signature: 'score()', displaySignature: 'score() → int', available: true, returnJavaType: 'int', parameters: [] },
+      ] }
+    }],
+  ])
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+  await page.goto(`${origin}/#/function`)
+  await page.getByRole('button', { name: '新建函数', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '新建函数', exact: true })
+  const editor = dialog.locator('.monaco-editor-container')
+  await editor.locator('.view-lines').click()
+  await page.keyboard.insertText('return 42;')
+  const handle = dialog.getByRole('separator', { name: '调整脚本编辑器高度' })
+  await handle.scrollIntoViewIfNeeded()
+  const initialHeight = (await editor.boundingBox()).height
+  const grip = await handle.boundingBox()
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 + 80, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(async () => (await editor.boundingBox()).height).toBeGreaterThanOrEqual(initialHeight + 78)
+  await handle.dblclick()
+  await expect.poll(async () => (await editor.boundingBox()).height).toBe(initialHeight)
+  await expect(editor.locator('.view-lines')).toContainText('return 42;')
+
+  await dialog.getByText('Java 类', { exact: true }).click()
+  const javaClass = dialog.getByPlaceholder('已部署的 Java 类全名')
+  await javaClass.fill('example.Score')
+  await expect.poll(() => targets).toEqual(['example.Score'])
+  await expect(javaClass).toBeFocused()
+  await dialog.getByTestId('function-method-select').click()
+  await page.getByRole('option', { name: 'score() → int' }).click()
+  await dialog.getByText('Spring Bean', { exact: true }).click()
+  const bean = dialog.getByPlaceholder('已部署的 Spring Bean 名称')
+  await bean.fill('scoreBean')
+  await expect.poll(() => targets).toEqual(['example.Score', 'scoreBean'])
+  await expect(bean).toBeFocused()
+  await dialog.getByText('Java 类', { exact: true }).click()
+  await expect.poll(() => targets).toEqual(['example.Score', 'scoreBean', 'example.Score'])
   harness.assertClean()
 })
 
@@ -117,6 +222,26 @@ test('从最近执行按 trace 和项目 ID 查询，旧日期和规则筛选仅
   expect(params.has('endTime')).toBe(false)
   expect(await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)), key)).toEqual(cached)
   assertClean()
+})
+
+test('大整数项目工作台跳到日志时保持路由和实际查询项目一致', async ({ page }) => {
+  const id = '9007199254740993'
+  const fixtures = workflowFixtures()
+  fixtures.set('/api/rule/project/' + id, { id, projectCode: 'large_project', projectName: '大编号项目', status: 1 })
+  fixtures.set('/api/rule/definition/project-list/' + id, { records: [], total: 0 })
+  fixtures.set('/api/rule/project/' + id + '/workbench', {
+    checks: [{ code: 'MODEL', title: '接入预测模型', status: 'RESTRICTED', reason: '当前账户无查看权限' },
+      { code: 'PROJECT', title: '启用项目', status: 'READY' }],
+    recentExecution: { traceId: 'large-project-trace', success: 1 }, metrics: {},
+  })
+  const { requests } = await installDistRoutes(page, { apiData: fixtures })
+  await page.goto('http://tianshu.local/#/project/' + id)
+  await expect(page.getByText('1/1 已就绪', { exact: true })).toBeVisible()
+  await expect(page.locator('.next-action-card')).toHaveCount(0)
+  await page.locator('.recent-panel').getByRole('button', { name: '查看执行日志' }).click()
+  await expect(page).toHaveURL(new RegExp('projectId=' + id))
+  await expect.poll(() => requests.filter(item => new URL(item.url).pathname === '/api/rule/log/list')
+    .map(item => new URL(item.url).searchParams.get('projectId'))).toContain(id)
 })
 
 for (const entry of ['project', 'rule']) {
@@ -231,7 +356,8 @@ test('审批任务中心默认跨模块展示待处理事项并覆盖全部资�
 
   await page.goto('http://tianshu.local/index.html#/approval')
 
-  await expect(page.getByRole('heading', { name: '审批任务中心' })).toBeVisible()
+  await expect(page.getByRole('region', { name: '审批任务概览' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '审批任务中心' })).toHaveCount(0)
   await expect(page.getByRole('tab', { name: '待处理', exact: true }))
     .toHaveAttribute('aria-selected', 'true')
   await expect(page.getByText('手机号黑名单 · 4 条内容变更', { exact: true }))
@@ -455,7 +581,10 @@ test('新建字段按业务取值方式引导并可在送审前预览外数结�
   await expect(dialog.getByText('按业务取值方式完成字段配置', { exact: true }))
     .toBeVisible()
   await expect(dialog.getByText('3 个可用', { exact: true })).toHaveCount(0)
-  await expect(dialog.getByText('1 个可用', { exact: true })).toHaveCount(3)
+  for (const source of ['外数接口', '数据库查询', '名单匹配', 'SFTP 文件']) {
+    await expect(dialog.getByRole('button', { name: new RegExp(source) }).getByText('1 个可用', { exact: true })).toBeVisible()
+  }
+  await expect(dialog.getByText('1 个可用', { exact: true })).toHaveCount(4)
   await dialog.getByRole('button', { name: /外数接口/ }).click()
   await expect(dialog.getByText('保存前验证取值', { exact: true })).toBeVisible()
 
@@ -490,14 +619,38 @@ test('数据库只读查询按 SQL 占位符引导填写参数并区分结果状
     queryPayload = request.postDataJSON()
     return [{ score: queryPayload.params[0] }]
   })
-  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const { assertClean } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: fixtures })
 
-  await page.goto('http://tianshu.local/index.html#/database')
+  await page.goto(`${origin}/#/database`)
   const datasourceRow = page.getByRole('row').filter({ hasText: 'risk_mysql' })
   await datasourceRow.getByRole('button', { name: '查询', exact: true }).click()
 
   const dialog = page.locator('.el-dialog:visible').last()
   await expect(dialog.getByText('只读查询', { exact: true })).toBeVisible()
+  for (const width of [1440, 450]) {
+    await page.setViewportSize({ width, height: 900 })
+    const layout = await dialog.evaluate(el => {
+      const rect = selector => el.querySelector(selector).getBoundingClientRect()
+      const timeoutLabel = Array.from(el.querySelectorAll('label')).find(label => label.textContent.includes('查询超时'))
+      const text = document.createRange()
+      text.selectNodeContents(timeoutLabel)
+      const body = el.querySelector('.el-dialog__body')
+      return {
+        targetGap: rect('.el-form').top - rect('.query-target').bottom,
+        timeoutGap: rect('.query-no-params').top - text.getBoundingClientRect().bottom,
+        stateGap: rect('.query-result-state').top - rect('.query-no-params').bottom,
+        descriptionGap: rect('.query-result-state span').top - rect('.query-result-state strong').bottom,
+        overflow: body.scrollWidth - body.clientWidth
+      }
+    })
+    expect(layout.targetGap).toBeGreaterThanOrEqual(12)
+    expect(layout.timeoutGap).toBeGreaterThanOrEqual(8)
+    expect(layout.stateGap).toBeGreaterThanOrEqual(12)
+    expect(layout.descriptionGap).toBeGreaterThanOrEqual(4)
+    expect(layout.overflow).toBeLessThanOrEqual(1)
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
   const editor = dialog.getByRole('textbox', { name: /Editor content/ })
   await editor.click()
   await page.keyboard.insertText('SELECT ? AS score')

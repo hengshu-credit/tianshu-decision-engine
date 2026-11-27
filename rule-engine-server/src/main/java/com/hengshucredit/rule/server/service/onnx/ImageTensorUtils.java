@@ -4,13 +4,11 @@ import nu.pattern.OpenCV;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfByte;
 import org.opencv.core.Rect;
 import org.opencv.core.Size;
-import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
-import java.util.Base64;
+import com.hengshucredit.rule.core.function.ImageGeometryFunctions;
 import java.util.List;
 
 public final class ImageTensorUtils {
@@ -27,29 +25,7 @@ public final class ImageTensorUtils {
     }
 
     public static Mat decodeBase64(String encoded) {
-        if (encoded == null || encoded.trim().isEmpty()) {
-            throw new IllegalArgumentException("图片 Base64 不能为空");
-        }
-        String value = encoded.trim();
-        int comma = value.indexOf(',');
-        if (value.startsWith("data:") && comma >= 0) value = value.substring(comma + 1);
-        final byte[] bytes;
-        try {
-            bytes = Base64.getMimeDecoder().decode(value);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("图片 Base64 格式无效", e);
-        }
-        MatOfByte buffer = new MatOfByte(bytes);
-        try {
-            Mat image = Imgcodecs.imdecode(buffer, Imgcodecs.IMREAD_COLOR);
-            if (image.empty()) {
-                image.release();
-                throw new IllegalArgumentException("Base64 内容不是有效图片");
-            }
-            return image;
-        } finally {
-            buffer.release();
-        }
+        return ImageGeometryFunctions.decodeBase64(encoded);
     }
 
     public static Mat expandedSquareCrop(Mat image, FaceRegion face, double expansionFactor) {

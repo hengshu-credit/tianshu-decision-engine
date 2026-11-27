@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
@@ -13,6 +14,26 @@ const topologies = {
   'docker-compose.redis.yml': ['redis'],
   'docker-compose.kafka.yml': ['kafka'],
 }
+
+test('ES 主文件及快照覆盖文件使用安装目录的持久化路径', () => {
+  const base = ['compose', '--env-file', '.env.server.example', '-f', 'docker/docker-compose.elasticsearch.yml']
+  const env = { ...process.env, ELASTICSEARCH_BOOTSTRAP_PASSWORD: 'compose-render-only' }
+  for (const snapshots of [false, true]) {
+    const files = snapshots ? ['-f', 'docker/docker-compose.elasticsearch.snapshot.yml'] : []
+    const config = JSON.parse(execFileSync('docker', [...base, ...files, 'config', '--format', 'json'],
+      { cwd: root, env, encoding: 'utf8' }))
+    const service = config.services.elasticsearch
+    const expected = { '/usr/share/elasticsearch/data': 'data', '/usr/share/elasticsearch/logs': 'logs' }
+    if (snapshots) expected['/mnt/tianshu-snapshots'] = 'snapshots'
+    assert.equal(service.volumes.length, Object.keys(expected).length)
+    for (const mount of service.volumes) {
+      assert.equal(mount.type, 'bind')
+      assert.equal(path.resolve(mount.source), path.join(root, 'docker', 'rule-engine-elasticsearch', expected[mount.target]))
+      assert.equal(mount.bind.create_host_path, false)
+    }
+    assert.equal(service.environment['path.repo'], snapshots ? '/mnt/tianshu-snapshots' : undefined)
+  }
+})
 
 test('各部署拓扑将每个服务的 CPU 和内存覆盖传递给 Docker', () => {
   const env = { ...process.env }

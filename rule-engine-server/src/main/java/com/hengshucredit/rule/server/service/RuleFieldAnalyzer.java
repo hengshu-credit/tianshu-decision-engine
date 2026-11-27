@@ -328,7 +328,7 @@ public class RuleFieldAnalyzer {
             if (inputPath == null || field.getVarId() == null || refType == null) {
                 continue;
             }
-            if ("DATA_OBJECT".equals(refType)) {
+            if (isDataObjectReference(refType)) {
                 if (dataObjectSchemaResolver == null) {
                     continue;
                 }
@@ -616,7 +616,7 @@ public class RuleFieldAnalyzer {
             return;
         }
         for (RuleDefinitionInputField field : fields) {
-            if (!"DATA_OBJECT".equals(normalizeRefType(field.getRefType()))
+            if (!isDataObjectReference(normalizeRefType(field.getRefType()))
                     || field.getVarId() == null) {
                 continue;
             }
@@ -636,16 +636,25 @@ public class RuleFieldAnalyzer {
         }
     }
 
+    private boolean isDataObjectReference(String type) {
+        return "DATA_OBJECT".equals(type) || "DATA_OBJECT_ROOT".equals(type);
+    }
+
+    private DataObjectSchemaResolver.ShapeResult dataObjectShape(String type, Long id, Long projectId) {
+        return "DATA_OBJECT_ROOT".equalsIgnoreCase(type) ? dataObjectSchemaResolver.resolveRoot(id, projectId)
+                : dataObjectSchemaResolver.resolveField(id, projectId);
+    }
+
     private Map<String, Object> resolveDataObjectInputSchema(
             RuleDefinitionInputField field,
             Long projectId,
             List<RuleValidationIssue> diagnostics) {
         DataObjectSchemaResolver.ShapeResult shape =
-                dataObjectSchemaResolver.resolveField(field.getVarId(), projectId);
+                dataObjectShape(field.getRefType(), field.getVarId(), projectId);
         mergeDiagnostics(diagnostics, shape.getDiagnostics());
         QLScriptFieldResolver.ValidatedScriptReference reference =
                 qlScriptFieldResolver.validateReference(
-                        projectId, field.getVarId(), "DATA_OBJECT");
+                        projectId, field.getVarId(), field.getRefType());
         String inputPath = trimToNull(field.getScriptName());
         String stableRoot = reference == null ? null : reference.getScriptRoot();
         String descendantPath = relativePath(inputPath, stableRoot);
@@ -677,12 +686,12 @@ public class RuleFieldAnalyzer {
             return;
         }
         for (RuleDefinitionOutputField field : fields) {
-            if (!"DATA_OBJECT".equals(normalizeRefType(field.getRefType()))
+            if (!isDataObjectReference(normalizeRefType(field.getRefType()))
                     || field.getVarId() == null) {
                 continue;
             }
             DataObjectSchemaResolver.ShapeResult shape =
-                    dataObjectSchemaResolver.resolveField(field.getVarId(), projectId);
+                    dataObjectShape(field.getRefType(), field.getVarId(), projectId);
             mergeDiagnostics(diagnostics, shape.getDiagnostics());
             String fieldName = trimToNull(field.getFieldName());
             if (fieldName != null) {
@@ -3260,32 +3269,9 @@ public class RuleFieldAnalyzer {
     public static String buildObjectFieldScriptName(RuleDataObjectField field,
                                               Map<Long, RuleDataObject> objectMap,
                                               Map<Long, RuleDataObjectField> objectFieldMap) {
-        String fieldScript = trimToNull(field.getScriptName());
-        if (fieldScript == null) fieldScript = trimToNull(field.getVarCode());
-        if (fieldScript == null) return null;
-        Set<Long> visited = new HashSet<>();
-        Long parentId = field.getParentFieldId();
-        while (parentId != null && visited.add(parentId)) {
-            RuleDataObjectField parent = objectFieldMap == null ? null : objectFieldMap.get(parentId);
-            if (parent == null) break;
-            String parentScript = trimToNull(parent.getScriptName());
-            if (parentScript == null) parentScript = trimToNull(parent.getVarCode());
-            if (parentScript == null) break;
-            if (!fieldScript.equals(parentScript)
-                    && !fieldScript.startsWith(parentScript + ".")) {
-                fieldScript = parentScript + "." + fieldScript;
-            }
-            parentId = parent.getParentFieldId();
-        }
-        RuleDataObject object = objectMap.get(field.getObjectId());
-        String objectScript = object != null ? trimToNull(object.getScriptName()) : null;
-        if (objectScript == null && object != null) {
-            objectScript = trimToNull(object.getObjectCode());
-        }
-        if (objectScript == null || fieldScript.equals(objectScript) || fieldScript.startsWith(objectScript + ".")) {
-            return fieldScript;
-        }
-        return objectScript + "." + fieldScript;
+        RuleDataObject owner = objectMap.get(field.getObjectId());
+        return DataObjectScriptPath.resolve(owner == null ? null : owner.getScriptName(), field,
+                id -> objectFieldMap == null ? null : objectFieldMap.get(id));
     }
 
     private String normalizeRefType(String refType) {

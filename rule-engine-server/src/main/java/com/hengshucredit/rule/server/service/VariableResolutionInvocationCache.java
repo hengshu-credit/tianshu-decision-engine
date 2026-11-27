@@ -55,13 +55,24 @@ public class VariableResolutionInvocationCache {
         rootVariables = List.copyOf(variables);
     }
 
-    private final Map<IndexedHistoryCount.Selection, Map<LocalDateTime, IndexedHistoryCount.Count>> historicalCounts =
+    private record FieldCount(IndexedHistoryCount.Selection selection,String field,String inputJson) {}
+    private final Map<Object, Map<LocalDateTime, IndexedHistoryCount.Count>> historicalCounts =
             new ConcurrentHashMap<>();
 
     public IndexedHistoryCount.Count historyCount(
             IndexedHistoryCount.Selection selection, LocalDateTime from,
             Supplier<Map<LocalDateTime, IndexedHistoryCount.Count>> loader) {
-        return historicalCounts.compute(selection, (ignored, previous) -> {
+        return cachedCount(selection,from,loader);
+    }
+
+    public IndexedHistoryCount.Count historyFieldCount(IndexedHistoryCount.Selection selection,String field,Object input,
+            LocalDateTime from,Supplier<Map<LocalDateTime,IndexedHistoryCount.Count>> loader) {
+        return cachedCount(new FieldCount(selection,field,com.alibaba.fastjson.JSON.toJSONString(input)),from,loader);
+    }
+
+    private IndexedHistoryCount.Count cachedCount(Object key, LocalDateTime from,
+            Supplier<Map<LocalDateTime,IndexedHistoryCount.Count>> loader) {
+        return historicalCounts.compute(key, (ignored, previous) -> {
             if (previous != null && previous.containsKey(from)) return previous;
             var loaded = loader.get();
             if (previous == null || previous.isEmpty()) return loaded;
@@ -97,11 +108,22 @@ public class VariableResolutionInvocationCache {
     private final Map<String,Set<String>> recoveredConsumers = new ConcurrentHashMap<>();
 
     void requireOriginalIdentity(String source, long apiId, String identity) {
+        requireOriginalIdentity(source, apiId, identity, null);
+    }
+
+    void requireOriginalIdentity(String source, long apiId, String identity, String context) {
         if (recoveredCalls.contains(identity)) return;
         String prefix = "API_CHAIN:" + apiId + ":";
         for (String key : recoveredCalls) {
             var previous = completedStep(key);
             if (previous == null || "FAILED".equals(previous.getStatus())) continue;
+            // A rule and its frozen model may legitimately consume separate contracts for the
+            // same variable/API IDs. Never reinterpret an unconfirmed or a legacy call this way.
+            Object origin = previous.getMetadata().get("orderCallContext");
+            if ("SUCCESS".equals(previous.getStatus())
+                    && origin != null
+                    && context != null
+                    && !context.equals(origin)) continue;
             var consumers = recoveredConsumers.getOrDefault(key, Set.of());
             if (source != null && consumers.contains(source) || consumers.isEmpty() && key.startsWith(prefix))
                 throw ExternalApiWaitingException.manualReview("原订单的外数请求身份已变化，请核对原接口配置和入参后恢复");

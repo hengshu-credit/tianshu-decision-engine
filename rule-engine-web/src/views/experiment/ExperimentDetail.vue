@@ -170,7 +170,7 @@
                 :precision="2"
                 size="small"
                 class="ratio-input"
-              />
+              ><template #suffix>%</template></el-input-number>
             </div>
           </div>
         </div>
@@ -325,7 +325,7 @@
                 :precision="2"
                 size="small"
                 class="ratio-input"
-              />
+              ><template #suffix>%</template></el-input-number>
             </div>
           </div>
         </div>
@@ -443,13 +443,11 @@
             width="100"
             align="center"
           />
-          <el-table-column label="字段校验" min-width="240">
+          <el-table-column label="字段校验" min-width="240" class-name="field-validation-cell" :show-overflow-tooltip="false">
             <template #default="{ row }">
               <el-select
                 :model-value="inputValidationIds(row)"
                 multiple
-                collapse-tags
-                collapse-tags-tooltip
                 clearable
                 filterable
                 placeholder="可选"
@@ -735,13 +733,11 @@
       </div>
     </el-drawer>
 
-    <el-dialog
+    <resource-workspace-drawer
       title="分流实验版本管理"
       v-model="versionVisible"
-      width="min(1120px, 96vw)"
-      append-to-body
     >
-      <el-table show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
+      <el-table class="workspace-history-table" show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
         <el-table-column
           prop="displayVersion"
           label="版本"
@@ -787,11 +783,13 @@
         :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)" />
       <version-snapshot-panel v-else-if="versionPreview" historical resource-type="EXPERIMENT"
         :snapshot="versionPreview" :modified-label="versionDisplayLabel(versionPreview)" />
-    </el-dialog>
+    </resource-workspace-drawer>
   </div>
 </template>
 
 <script>
+import ResourceWorkspaceDrawer from '@/components/common/ResourceWorkspaceDrawer.vue'
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
 import GuidanceGroup from '@/components/common/GuidanceGroup.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
@@ -834,7 +832,7 @@ import {
 } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import { normalizeRuleOptions } from '@/utils/ruleCallConfig'
-import { routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, routeProjectId } from '@/utils/projectContext'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import { listAvailableFieldValidations } from '@/api/variable'
 
@@ -906,7 +904,7 @@ export default {
     }
   },
   name: 'ExperimentDetail',
-  components: { GuidanceGroup, VersionSnapshotPanel,
+  components: { ResourceWorkspaceDrawer, GuidanceGroup, VersionSnapshotPanel,
     ConditionGroupEditor,
     OperandPicker,
     ProjectResourceSelect,
@@ -914,7 +912,7 @@ export default {
     GroupActionForm,
     TraceTree,
   },
-  mixins: [configurationDraftMixin(vm => ({ form: vm.form, inputValidationConfigMap: vm.inputValidationConfigMap })), varPickerMixin, workspaceTabTitleMixin(vm => vm.form.experimentName)],
+  mixins: [pageTabState('activeTab', ['champion', 'test', 'inputFields', 'outputFields', 'logs']), configurationDraftMixin(vm => ({ form: vm.form, inputValidationConfigMap: vm.inputValidationConfigMap })), varPickerMixin, workspaceTabTitleMixin(vm => vm.form.experimentName)],
   computed: {
     editorFunctions() {
       return this.$data.projectFunctions || []
@@ -1056,8 +1054,8 @@ export default {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     async applyProjectContext(projectId) {
-      const id = Number(projectId)
-      const project = (this.projects || []).find(item => Number(item.id) === id)
+      const id = normalizeProjectId(projectId)
+      const project = (this.projects || []).find(item => normalizeProjectId(item.id) === id)
       this.form.projectId = id
       this.form.projectCode = project ? project.projectCode || '' : ''
       await this.loadRules(id)
@@ -1422,6 +1420,7 @@ export default {
       return new Promise((resolve) => {
         this.$refs.form.validate(async (valid) => {
           if (!valid) return resolve(false)
+          if (this.skipUnchangedConfiguration(this.form.id)) return resolve(true)
           for (const group of this.form.groups) {
             if (!this.isConditionModeForGroup(group) || this.isFallbackGroup(group) || !group.conditionConfig) continue
             const error = this.conditionError(group)
@@ -1814,6 +1813,7 @@ export default {
   }
 
   .ratio-config-panel {
+    container: ratio-panel / inline-size;
     margin-top: 12px;
     border: 1px solid var(--tianshu-info-border);
     border-radius: 4px;
@@ -1837,13 +1837,14 @@ export default {
 
   .ratio-config-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
     gap: 10px;
   }
 
   .ratio-config-item {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 122px;
+    grid-template-columns: minmax(0, 1fr) minmax(80px, 122px);
+    min-width: 0;
     align-items: center;
     gap: 10px;
     padding: 8px 10px;
@@ -1864,6 +1865,11 @@ export default {
       width: 100%;
       max-width: none;
     }
+  }
+
+  @container ratio-panel (max-width: 260px) {
+    .ratio-config-item { grid-template-columns: minmax(0, 1fr); }
+    .ratio-config-head, .ratio-group-meta { flex-wrap: wrap; }
   }
 
   .ratio-group-meta {
@@ -1890,7 +1896,9 @@ export default {
   }
 
   .ratio-input {
-    width: 144px;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .ratio-input :deep(.el-input__inner) {

@@ -3,6 +3,8 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.core.engine.ExecutionCapacityException;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -36,7 +38,6 @@ import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 @Service
@@ -1140,7 +1141,7 @@ public class RuleModelService {
                 return new Page<>(pageNum, pageSize);
             }
         }
-        LambdaQueryWrapper<RuleModel> wrapper = withoutModelContent();
+        LambdaQueryWrapper<RuleModel> wrapper = modelListProjection();
         wrapper.ne(RuleModel::getStatus, -1);
 
         if (scope != null && !scope.isEmpty()) {
@@ -1205,6 +1206,8 @@ public class RuleModelService {
                         .eq(RuleModelOutputField::getModelId, modelId)
                         .orderByAsc(RuleModelOutputField::getSortOrder)));
 
+        model.setInputFieldCount(model.getInputFields().size());
+        model.setOutputFieldCount(model.getOutputFields().size());
         model.setModelContent(null);
         return model;
     }
@@ -1213,7 +1216,7 @@ public class RuleModelService {
      * 查询项目下所有模型（非分页，设计器使用）
      */
     public List<RuleModel> listByProject(Long projectId) {
-        LambdaQueryWrapper<RuleModel> wrapper = withoutModelContent();
+        LambdaQueryWrapper<RuleModel> wrapper = modelListProjection();
         if (projectId != null && projectId > 0) {
             wrapper.and(w -> w
                     .eq(RuleModel::getScope, SCOPE_GLOBAL)
@@ -1232,6 +1235,15 @@ public class RuleModelService {
         fillOutputFields(models);
         clearModelContent(models);
         return models;
+    }
+
+    // 列表与详情均统计已配置的字段行。历史导入的汇总列可能为空，也可能已过期。
+    private LambdaQueryWrapper<RuleModel> modelListProjection() {
+        String columns = TableInfoHelper.getTableInfo(RuleModel.class).chooseSelect(field ->
+                !Set.of("modelContent", "inputFieldCount", "outputFieldCount").contains(field.getProperty()));
+        return new QueryWrapper<RuleModel>().select(columns,
+                "(SELECT COUNT(*) FROM rule_model_input_field mi WHERE mi.model_id = rule_model.id) AS input_field_count",
+                "(SELECT COUNT(*) FROM rule_model_output_field mo WHERE mo.model_id = rule_model.id) AS output_field_count").lambda();
     }
 
     private LambdaQueryWrapper<RuleModel> withoutModelContent() {
@@ -1637,27 +1649,28 @@ public class RuleModelService {
         if (modelId == null || maxConcurrentPerModel <= 0) {
             return modelExecutionTimeoutExecutor.execute(task, timeoutMs);
         }
-        Semaphore semaphore = modelExecutionPermits.computeIfAbsent(modelId,
-                ignored -> new Semaphore(maxConcurrentPerModel));
-        if (!semaphore.tryAcquire()) {
-            throw new ExecutionCapacityException(ExecutionCapacityException.Resource.MODEL_EXECUTION,
-                    "模型执行并发已达上限: " + maxConcurrentPerModel);
-        }
-        AtomicBoolean started = new AtomicBoolean(false);
-        try {
-            return modelExecutionTimeoutExecutor.execute(() -> {
-                started.set(true);
-                try {
-                    return task.call();
-                } finally {
-                    semaphore.release();
-                }
-            }, timeoutMs);
-        } catch (RuntimeException error) {
-            // A task rejected before it starts never reaches the finally block.
-            if (!started.get()) semaphore.release();
-            throw error;
-        }
+        Semaphore semaphore =
+                modelExecutionPermits.computeIfAbsent(
+                        modelId, ignored -> new Semaphore(maxConcurrentPerModel, true));
+        long deadline =
+                System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        // Queued jobs already count against the bounded executor/deadline. A per-model permit
+        // belongs only to a running task and must survive cancellation until that task exits.
+        return modelExecutionTimeoutExecutor.execute(
+                () -> {
+                    if (!semaphore.tryAcquire(
+                            Math.max(0, deadline - System.nanoTime()),
+                            java.util.concurrent.TimeUnit.NANOSECONDS))
+                        throw new ExecutionCapacityException(
+                                ExecutionCapacityException.Resource.MODEL_EXECUTION,
+                                "模型执行并发等待超时: " + maxConcurrentPerModel);
+                    try {
+                        return task.call();
+                    } finally {
+                        semaphore.release();
+                    }
+                },
+                timeoutMs);
     }
 
     private Map<String, Object> executeConfiguredModel(RuleModel model, Map<String, Object> params,

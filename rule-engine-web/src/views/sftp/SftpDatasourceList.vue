@@ -4,6 +4,11 @@
       维护可复用的 SFTP 连接池。规则执行时的 SFTP 文件读取会沿用当前规则 trace_id，并在查询日志中保留远端文件地址。
     </dismissible-guidance>
 
+    <el-descriptions title="引擎内置 SFTP" :column="1" border size="small">
+      <template #extra><engine-sftp-settings /></template>
+      <el-descriptions-item label="系统连接">只读 · 用于项目进件文件、素材和模型上传</el-descriptions-item>
+    </el-descriptions>
+
     <el-tabs model-value="datasource" class="sftp-tabs" :before-leave="navigateTab">
       <el-tab-pane label="数据源配置" name="datasource" />
       <el-tab-pane label="查询日志" name="logs" />
@@ -55,6 +60,7 @@
 
 <script>
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
+import EngineSftpSettings from './EngineSftpSettings.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { createSftpDatasource, deleteSftpDatasource, getSftpDatasource, listSftpDatasources, testSftpDatasource, testSftpDatasourceDraft, updateSftpDatasource } from '@/api/sftp'
 import { editableResource } from '@/api/governance'
@@ -78,7 +84,7 @@ function emptyForm() {
 export default {
   name: 'SftpDatasourceList',
   mixins: [credentialEditMixin, draftProtection],
-  components: { DismissibleGuidance, ProjectFilterSelect, GovernanceWorkspaceToolbar, GovernanceResourceStatus, GovernancePublishAction, ScopeProjectFields, TableColumnSettings },
+  components: { EngineSftpSettings, DismissibleGuidance, ProjectFilterSelect, GovernanceWorkspaceToolbar, GovernanceResourceStatus, GovernancePublishAction, ScopeProjectFields, TableColumnSettings },
   data() {
     return {
       repairDatasourceCode: false,
@@ -162,6 +168,7 @@ export default {
     },
     async save() {
       if (this.saving) return
+      if (this.skipUnchangedConfiguration(this.form.id)) return
       this.saving = true
       try {
         const valid = await this.$refs.formRef.validate().catch(() => false)

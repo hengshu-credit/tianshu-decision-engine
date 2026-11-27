@@ -94,6 +94,29 @@ public class GovernanceDependencyServiceTest {
     }
 
     @Test
+    public void fixedObjectRootChecksThePublishedObjectByOwnerId() {
+        TestService service = new TestService() {
+            @Override protected GovernedResource findTarget(String type, Long id) {
+                Assert.assertEquals("DATA_OBJECT", type);
+                Assert.assertEquals(Long.valueOf(91), id);
+                var owner = resource(id, 92L, 3, "ACTIVE");
+                owner.setResourceType(type);
+                return owner;
+            }
+        };
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "resourceVersions", new com.hengshucredit.rule.server.service.ResourceVersionService() {
+            @Override public com.alibaba.fastjson.JSONObject snapshot(com.hengshucredit.rule.core.engine.ResourceVersionCall call, Long projectId) {
+                Assert.assertEquals("DATA_OBJECT_ROOT", call.refType());
+                return com.alibaba.fastjson.JSON.parseObject("{\"ownerId\":91,\"resolvedVersionId\":81,\"displayVersion\":2,\"digest\":\"frozen\"}");
+            }
+        });
+        var selection = new DependencyVersionSelection("DATA_OBJECT_ROOT", 91L, "BUSINESS_VERSION", 71L);
+        var report = service.preflight("RULE", 7L, List.of(new ResourceDependencyRef("DATA_OBJECT", 91L, "DATA_OBJECT_ROOT",
+                "$.refId", "REFERENCES", true, selection)), List.of());
+        Assert.assertTrue(report.errors().toString(), report.valid());
+    }
+
+    @Test
     public void fixedRuleBindingTracksItsNativeSnapshotRatherThanTheGovernanceLatest() {
         TestService service = new TestService(); service.target = resource(91L, 92L, 3, "ACTIVE"); service.target.setResourceType("RULE");
         org.springframework.test.util.ReflectionTestUtils.setField(service, "ruleVersions", new com.hengshucredit.rule.server.service.RuleVersionBindingService() {
@@ -232,6 +255,20 @@ public class GovernanceDependencyServiceTest {
         Assert.assertFalse(report.valid());
         Assert.assertEquals("DEPENDENCY_DIGEST_CHANGED",
                 report.errors().get(0).code());
+    }
+
+    @Test
+    public void objectRootUsesItsOwnPublishedGovernanceVersion() {
+        TestService service = new TestService();
+        service.target = resource(91L, 92L, 3, "ACTIVE");
+        service.target.setResourceType("DATA_OBJECT");
+        service.version = new GovernedResourceVersion();
+        service.version.setId(92L);
+        var ref = new ResourceDependencyRef("DATA_OBJECT", 91L, "DATA_OBJECT_ROOT", "$.scriptVarRefs[0].varId", "REFERENCES", true);
+        var report = service.preflight("RULE", 7L, List.of(ref), List.of());
+        Assert.assertTrue(report.errors().toString(), report.valid());
+        Assert.assertEquals("DATA_OBJECT", report.dependencies().get(0).targetResourceType());
+        Assert.assertEquals(Long.valueOf(91L), report.dependencies().get(0).targetResourceId());
     }
 
     @Test

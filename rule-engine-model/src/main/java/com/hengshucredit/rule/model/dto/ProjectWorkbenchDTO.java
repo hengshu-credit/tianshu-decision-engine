@@ -43,6 +43,8 @@ public class ProjectWorkbenchDTO {
         private Long draftRuleCount;
         private Long publishedRuleCount;
         private Long testScenarioCount;
+        private Long testCoveredRuleCount;
+        private Long firstUncoveredRuleId;
         private Long pendingApprovalCount;
         private Long recentExecutionCount;
         private Long recentSuccessCount;

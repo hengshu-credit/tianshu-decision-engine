@@ -20,6 +20,28 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.apache.sshd</groupId>
+            <artifactId>sshd-sftp</artifactId>
+            <version>2.20.1</version>
+        </dependency>
+        <!-- Faker 的官方 npm 发行包，以只读 ES 模块在 JDK 17 内执行。 -->
+        <dependency>
+            <groupId>org.mvnpm.at.faker-js</groupId>
+            <artifactId>faker</artifactId>
+            <version>10.6.0</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.graalvm.js</groupId>
+            <artifactId>js</artifactId>
+            <version>23.0.14</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.weisj</groupId>
+            <artifactId>jsvg</artifactId>
+            <version>2.0.0</version>
+        </dependency>
+        <dependency>
             <groupId>com.twelvemonkeys.imageio</groupId>
             <artifactId>imageio-webp</artifactId>
         </dependency>
@@ -139,8 +161,13 @@
                 <directory>src/main/resources</directory>
             </resource>
             <resource>
+                <directory>../rule-engine-web/public/fonts</directory>
+                <targetPath>brand/fonts</targetPath>
+                <includes><include>font.woff2</include><include>AlimamaFangYuanTiVF-*.txt</include></includes>
+            </resource>
+            <resource>
                 <directory>../rule-engine-web/src/constants</directory>
-                <includes><include>reserved-codes.json</include></includes>
+                <includes><include>reserved-codes.json</include><include>theme-presets.json</include><include>faker-methods.json</include></includes>
             </resource>
         </resources>
         <testResources>

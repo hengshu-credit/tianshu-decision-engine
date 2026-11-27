@@ -101,7 +101,6 @@ public class RuleGovernanceSubmissionService {
             content.setCompiledScript(revision.getCompiledScript()); content.setCompiledType(revision.getCompiledType());
             content.setOpenApiConfigJson(revision.getOpenApiConfigJson()); content.setCompileStatus(1);
             value.put("content", content); value.put("inputFieldsJson", fields.getInputFields()); value.put("outputFieldsJson", fields.getOutputFields());
-            snapshot = new ResourceSnapshot(CanonicalJson.write(value), snapshot.effectiveStatus(), snapshot.secretPayloadCiphertext(), snapshot.secretDigest());
         }
         value.put("_ruleRevisionId", revision.getId());
         snapshot = new ResourceSnapshot(CanonicalJson.write(value), snapshot.effectiveStatus(), snapshot.secretPayloadCiphertext(), snapshot.secretDigest());
@@ -135,8 +134,8 @@ public class RuleGovernanceSubmissionService {
         GovernanceSubmitRequest submit =
                 new GovernanceSubmitRequest();
         submit.setComment(comment(action, "提交规则审批"));
-        request = approvalService.submit(
-                request.getId(), submit, actor);
+        request = approvalService.submitReviewedRule(
+                request.getId(), submit, actor, revision);
         revision.setGovernanceRequestId(request.getId());
         if (revisionMapper.updateById(revision) != 1) {
             throw new IllegalStateException(

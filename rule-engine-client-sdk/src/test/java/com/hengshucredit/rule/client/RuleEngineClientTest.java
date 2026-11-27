@@ -214,6 +214,42 @@ public class RuleEngineClientTest {
     }
 
     @Test
+    public void heartbeatRetriesAfterAuthFailureAndReconcilesFunctionCatalog() throws Exception {
+        RuleEngineClient client = client();
+        var recovered = new CountDownLatch(1);
+        var attempts = new java.util.concurrent.atomic.AtomicInteger();
+        var catalog = new java.util.concurrent.atomic.AtomicReference<List<com.alibaba.fastjson.JSONObject>>(List.of());
+        setField(client, "httpSyncClient", new StubHttpSyncClient(Collections.emptyList()) {
+            @Override public List<com.alibaba.fastjson.JSONObject> fetchFunctionsAll() { return catalog.get(); }
+            @Override public List<CachedRule> fetchAll() {
+                int attempt = attempts.incrementAndGet();
+                if (attempt == 2) throw new ProjectClientAuthenticationException("temporary denial");
+                if (attempt > 2) recovered.countDown();
+                return Collections.emptyList();
+            }
+        });
+        var function = new com.alibaba.fastjson.JSONObject();
+        function.put("scope", "GLOBAL");
+        function.put("funcCode", "dailyScore");
+        function.put("implType", "SCRIPT");
+        function.put("implScript", "return 7;");
+        catalog.set(List.of(function));
+        ((RuleEngineClientConfig) getField(client, "config")).setHeartbeatIntervalMs(40);
+        try {
+            client.start();
+            assertTrue(client.getFunctionRegistrar().hasRemoteFunction("GLOBAL", null, "dailyScore"));
+            catalog.set(List.of());
+            assertTrue(recovered.await(3, TimeUnit.SECONDS));
+            assertFalse(client.getFunctionRegistrar().hasRemoteFunction("GLOBAL", null, "dailyScore"));
+            catalog.set(List.of(function));
+            client.refreshAll();
+            assertTrue(client.getFunctionRegistrar().hasRemoteFunction("GLOBAL", null, "dailyScore"));
+        } finally {
+            client.close();
+        }
+    }
+
+    @Test
     public void startRethrowsProjectAuthenticationFailure() throws Exception {
         RuleEngineClient client = client();
         StubHttpSyncClient syncClient = new StubHttpSyncClient(Collections.emptyList());

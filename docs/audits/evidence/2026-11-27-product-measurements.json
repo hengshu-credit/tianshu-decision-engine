@@ -1,0 +1,516 @@
+{
+  "date": "2026-11-27",
+  "menu_width_checks": [
+    {
+      "menu": "/dashboard",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/project",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/rule",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/variable",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/list",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/datasource",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/database",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/sftp",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/model",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/function",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/test",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/lineage",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/experiment",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/log",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/billing",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/approval",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/ledger",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/transfer",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/account",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/system/settings",
+      "width_px": 1440,
+      "document_scroll_px": 1440,
+      "main_width_px": 1220,
+      "main_scroll_px": 1220
+    },
+    {
+      "menu": "/dashboard",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/project",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/rule",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/variable",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/list",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/datasource",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/database",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/sftp",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/model",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/function",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/test",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/lineage",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/experiment",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/log",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/billing",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/approval",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/ledger",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/transfer",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/account",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/system/settings",
+      "width_px": 768,
+      "document_scroll_px": 768,
+      "main_width_px": 768,
+      "main_scroll_px": 768
+    },
+    {
+      "menu": "/dashboard",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/project",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/rule",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/variable",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/list",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/datasource",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/database",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/sftp",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/model",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/function",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/test",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/lineage",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/experiment",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/log",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/billing",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/approval",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/ledger",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/transfer",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/account",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    },
+    {
+      "menu": "/system/settings",
+      "width_px": 390,
+      "document_scroll_px": 390,
+      "main_width_px": 390,
+      "main_scroll_px": 390
+    }
+  ],
+  "workbench_latest_row_mysql_batch_utf8_bytes": {
+    "full_row": 4637,
+    "seven_columns": 95
+  },
+  "jfr_single_thread_profile": {
+    "threadlocal": {
+      "operations": 58784512,
+      "wall_ns_per_op": 68.0,
+      "cpu_ns_per_op": 64.1,
+      "bytes_per_op": 56.0
+    },
+    "snapshot": {
+      "operations": 1210368,
+      "wall_ns_per_op": 3305.1,
+      "cpu_ns_per_op": 2814.2,
+      "bytes_per_op": 12976.0
+    },
+    "constant_copy": {
+      "operations": 556032,
+      "wall_ns_per_op": 7195.3,
+      "cpu_ns_per_op": 6322.7,
+      "bytes_per_op": 9472.0
+    },
+    "constant_compare": {
+      "operations": 1713920,
+      "wall_ns_per_op": 2333.9,
+      "cpu_ns_per_op": 2042.1,
+      "bytes_per_op": 0.0
+    },
+    "execute": {
+      "operations": 1386240,
+      "wall_ns_per_op": 2885.7,
+      "cpu_ns_per_op": 2637.5,
+      "bytes_per_op": 1440.0
+    },
+    "execute_empty_request": {
+      "operations": 6345984,
+      "wall_ns_per_op": 630.3,
+      "cpu_ns_per_op": 571.2,
+      "bytes_per_op": 2064.0
+    }
+  },
+  "independent_blocking_sources": {
+    "sources": 8,
+    "simulated_delay_ms": 30,
+    "warmup_per_mode": 3,
+    "measured_per_mode": 9,
+    "sequential_median_ms": 306,
+    "parallel_4_median_ms": 77,
+    "sequential_p95_ms": 313,
+    "parallel_4_p95_ms": 85
+  },
+  "published_rule_local_http": {
+    "expected_result": 42,
+    "warmup_per_group": 5,
+    "errors": 0,
+    "groups": {
+      "server1": {
+        "concurrency": 1,
+        "count": 40,
+        "p50_ms": 79.37,
+        "p95_ms": 107.49,
+        "p99_ms": 114.17,
+        "completed_per_second": 12.1
+      },
+      "sdk1": {
+        "concurrency": 1,
+        "count": 40,
+        "p50_ms": 14.54,
+        "p95_ms": 18.8,
+        "p99_ms": 23.14,
+        "completed_per_second": 74.7
+      },
+      "server4": {
+        "concurrency": 4,
+        "count": 40,
+        "p50_ms": 68,
+        "p95_ms": 110.38,
+        "p99_ms": 113.98,
+        "completed_per_second": 49.7
+      },
+      "sdk4": {
+        "concurrency": 4,
+        "count": 40,
+        "p50_ms": 11.9,
+        "p95_ms": 17.44,
+        "p99_ms": 19.99,
+        "completed_per_second": 312.6
+      }
+    }
+  }
+}

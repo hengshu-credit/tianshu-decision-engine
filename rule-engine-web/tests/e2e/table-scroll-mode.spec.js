@@ -45,6 +45,104 @@ async function expectFixedList(page) {
   return { table, pager }
 }
 
+async function resizeDrawer(page, drawer, delta) {
+  const handle = drawer.locator('.el-drawer__dragger')
+  await handle.hover()
+  const rect = await handle.boundingBox()
+  const before = await drawer.boundingBox()
+  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(rect.x + rect.width / 2 - delta, rect.y + rect.height / 2, { steps: 5 })
+  await page.mouse.up()
+  await expect.poll(async () => Math.round((await drawer.boundingBox()).width - before.width)).toBe(delta)
+}
+
+async function checkDrawerScroll(drawer, table, mode) {
+  const body = drawer.locator('.el-drawer__body')
+  const wrap = table.locator('.el-scrollbar__wrap').first()
+  const scrollRange = el => el.scrollHeight - el.clientHeight
+  await expect.poll(() => (mode === 'FIXED' ? wrap : body).evaluate(scrollRange)).toBeGreaterThan(50)
+  await expect.poll(() => (mode === 'FIXED' ? body : wrap).evaluate(scrollRange)).toBeLessThanOrEqual(1)
+  const scroll = mode === 'FIXED' ? wrap : body
+  await scroll.evaluate(el => { el.scrollTop = el.scrollHeight })
+  await expect.poll(() => scroll.evaluate(el => el.scrollTop)).toBeGreaterThan(50)
+}
+
+for (const mode of ['FIXED', 'AUTO']) test(`版本与审批抽屉支持左侧调宽、长参数预览和 ${mode} 滚动`, async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const data = createDocsApiData()
+  const fn = data.get('/api/rule/function/list').records[0]
+  const vector = Array.from({ length: 512 }, (_, i) => i)
+  const parameters = [{ name: 'embeddings', type: 'LIST', example: [vector, vector] },
+    ...Array.from({ length: 30 }, (_, i) => ({ name: 'field_' + i, type: 'NUMBER', example: i }))]
+  const snapshot = { ...fn, paramsJson: JSON.stringify(parameters) }
+  const history = Array.from({ length: 40 }, (_, i) => ({
+    id: i + 1, versionNo: i + 1, revisionNo: 1, snapshotJson: JSON.stringify(i === 39 ? snapshot : fn),
+  }))
+  const api = `/api/rule/resource-versions/FUNCTION/${fn.id}`
+  data.set(api, { latestVersionId: 40, history, versions: history.map(row => ({ versionId: row.id, version: row.versionNo, revision: 1 })) })
+  data.set(api + '/events', history.map(row => ({ id: row.id, action: 'SAVE_DRAFT' })))
+  data.set(`/api/rule/function/versions/${fn.id}`, history.map(row => ({ version: row.versionNo, functionJson: row.snapshotJson })))
+  data.set('/api/rule/governance/workspaces', { total: 20, records: history.slice(0, 20).map(row => ({
+    id: row.id, status: 'EDITING', resourceType: 'FUNCTION', action: 'UPDATE', requestNo: '申请' + row.id,
+  })) })
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+  await page.setViewportSize({ width: 1440, height: 800 })
+  await page.goto(origin + '/#/function')
+  await chooseMode(page, mode)
+  await page.getByRole('button', { name: '版本', exact: true }).first().click()
+  const versions = page.getByRole('dialog', { name: '版本管理', exact: true })
+  const params = versions.locator('[data-section="paramsJson"]')
+  await expect(params).toContainText('embeddings')
+  await resizeDrawer(page, versions, 128)
+  const first = params.getByRole('button', { name: /第 1 项$/, expanded: false }).first()
+  await first.click()
+  const lastValue = params.getByText('第 512 项', { exact: true })
+  await lastValue.scrollIntoViewIfNeeded()
+  await expect(lastValue).toBeInViewport()
+  const scrollOwners = await lastValue.evaluate(el => {
+    const owners = []
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      if (/auto|scroll/.test(getComputedStyle(p).overflowY) && p.scrollHeight > p.clientHeight + 1) owners.push(p.className)
+    }
+    return owners
+  })
+  expect(scrollOwners).toEqual(['preview-region-body', 'el-drawer__body'])
+  await params.locator('.section-toggle').click()
+  await expect(lastValue).toBeHidden()
+  await params.locator('.section-toggle').click()
+  await params.getByRole('button', { name: '显示完整高度' }).click()
+  await lastValue.scrollIntoViewIfNeeded()
+  await expect(lastValue).toBeInViewport()
+  expect(await params.locator('.preview-region-body').evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1)
+  await params.getByText('field_29', { exact: true }).scrollIntoViewIfNeeded()
+  await expect(params.getByText('field_29', { exact: true })).toBeInViewport()
+  await versions.locator('.version-comparison-toolbar .el-select').click()
+  await page.getByRole('option', { name: 'v1 · 修订 1', exact: true }).click()
+  await resizeDrawer(page, versions, -688)
+  const panels = params.locator('.business-preview-card')
+  await expect(panels).toHaveCount(2)
+  expect((await panels.last().boundingBox()).y).toBeGreaterThan((await panels.first().boundingBox()).y)
+  await resizeDrawer(page, versions, 688)
+  await versions.getByRole('tab', { name: '版本与修订' }).click()
+  await checkDrawerScroll(versions, versions.locator('.workspace-table:visible').first(), mode)
+  await versions.getByRole('tab', { name: '变更记录' }).click()
+  await checkDrawerScroll(versions, versions.locator('.workspace-table:visible'), mode)
+  await versions.getByRole('button', { name: '早期历史快照' }).click()
+  const historical = page.getByRole('dialog', { name: '函数版本管理' })
+  await checkDrawerScroll(historical, historical.locator('.workspace-history-table'), mode)
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '草稿与审批', exact: true }).click()
+  const drafts = page.getByRole('dialog', { name: '草稿与审批', exact: true })
+  await expect(drafts.locator('.workspace-table')).toContainText('申请20')
+  await resizeDrawer(page, drafts, -128)
+  await checkDrawerScroll(drafts, drafts.locator('.workspace-table'), mode)
+  await expect(drafts.locator('.el-pagination')).toBeInViewport()
+  await page.setViewportSize({ width: 390, height: 700 })
+  await expect.poll(() => drafts.locator('.el-drawer__body').evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
+  harness.assertClean()
+})
+
 for (const [index, [route, api]] of listCases.entries()) {
   test(`${route} 50 行可在表格内滚动，表头分页固定并可恢复自动高度`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })
@@ -149,7 +247,7 @@ for (const mode of ['FIXED', 'AUTO']) test(`变量每页 500 条在 ${mode} 模�
   harness.assertClean()
 })
 
-test('大型对象的子字段在展开后按可见区渲染，滚动可以抵达最后一项', async ({ page }) => {
+for (const mode of ['FIXED', 'AUTO']) test(`大型对象在 ${mode} 模式按可见区渲染子字段，滚动可以抵达最后一项`, async ({ page }) => {
   const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
   const data = createDocsApiData()
   const node = data.get('/api/rule/dataobject/tree').tree[0]
@@ -159,16 +257,237 @@ test('大型对象的子字段在展开后按可见区渲染，滚动可以抵�
   const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
   await page.goto(origin + '/#/variable')
   await page.getByRole('tab', { name: '数据对象', exact: true }).click()
-  await page.getByTestId('data-object-table').getByText(node.object.objectCode, { exact: true }).first().click()
-  const fields = page.locator('.object-field-expansion .el-table')
-  await expect(fields.locator('.el-table__row')).toHaveCount(1)
-  await page.getByRole('button', { name: '展开全部' }).click()
-  await expect(fields.getByText('child_0', { exact: true })).toBeVisible()
-  expect(await fields.locator('.el-table__row').count()).toBeLessThan(50)
-  await fields.locator('.el-scrollbar__wrap').evaluate(el => { el.scrollTop = el.scrollHeight })
-  await expect(fields.getByText('child_4999', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '收起全部' }).click()
-  await expect(fields.locator('.el-table__row')).toHaveCount(1)
+  if (mode === 'AUTO') await chooseMode(page, 'AUTO')
+  const table = page.getByTestId('data-object-table')
+  await expect(table.getByRole('button', { name: '展开或收起 ' + node.object.objectCode, exact: true })).toBeVisible()
+  const rootCount = await table.locator('.el-table__row').count()
+  await table.getByRole('button', { name: '展开或收起 ' + node.object.objectCode, exact: true }).click()
+  await expect(table.locator('.el-table__row')).toHaveCount(rootCount + 1)
+  await expect(table.getByRole('button', { name: /展开全部|收起全部/ })).toHaveCount(0)
+  const root = table.getByRole('row').filter({ has: page.getByText('根字段', { exact: true }) })
+  const toggle = root.getByRole('button', { name: '展开或收起 root', exact: true })
+  await toggle.click()
+  const child = table.getByRole('row').filter({ has: page.getByText('child_0', { exact: true }) })
+  const headers = await table.getByRole('columnheader').allTextContents()
+  const cell = (row, label) => row.getByRole('cell').nth(headers.indexOf(label))
+  await expect(cell(child, '对象编码')).toHaveText('child_0')
+  await expect(cell(child, '对象名称')).toHaveText('子字段0')
+  await expect(cell(child, '类型')).toHaveText('字符串')
+  const object = table.getByRole('row').filter({ has: page.getByRole('button', { name: '展开或收起 ' + node.object.objectCode }) })
+  const guides = row => cell(row, '对象编码').locator('.object-tree-guide')
+  await expect(guides(object)).toHaveCount(1)
+  await expect(guides(root)).toHaveCount(2)
+  await expect(guides(child)).toHaveCount(3)
+  const [objectLine, parentLine, childLine] = await Promise.all([object, root, child].map(row => guides(row).last().boundingBox()))
+  expect(childLine.x - parentLine.x).toBe(parentLine.x - objectLine.x)
+  expect(parentLine.x).toBeGreaterThan(objectLine.x)
+  expect(objectLine.y + objectLine.height).toBe(parentLine.y)
+  expect(parentLine.y + parentLine.height).toBe(childLine.y)
+  const background = await cell(object, '对象编码').evaluate(el => getComputedStyle(el).backgroundColor)
+  for (const row of [root, child]) {
+    await cell(row, '对象编码').hover()
+    await expect(cell(row, '对象编码')).toHaveCSS('background-color', background)
+    await expect(cell(row, '操作')).toHaveCSS('background-color', background)
+    await expect(cell(object, '对象编码')).toHaveCSS('background-color', background)
+  }
+  expect(await table.locator('.el-table__row').count()).toBeLessThan(50)
+  const wrap = mode === 'FIXED' ? table.locator('.el-scrollbar__wrap').first() : page.locator('.layout-main')
+  // 连续滚动跨过多个渲染窗口，验证行复用和更新次数，不依赖 CI 机器的帧率。
+  const activity = await wrap.evaluate(async el => {
+    const tbody = document.querySelector('.data-object-table tbody')
+    const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
+    el.scrollTop = 3000
+    await frame()
+    await frame()
+    const originalRows = new Set(tbody.rows)
+    const firstField = tbody.rows[2].textContent
+    let updates = 0
+    const observer = new MutationObserver(() => updates++)
+    observer.observe(tbody, { childList: true })
+    for (let i = 0; i < 16; i++) {
+      el.scrollTop += 42
+      await frame()
+      await frame()
+    }
+    observer.disconnect()
+    return { updates, reused: [...tbody.rows].every(row => originalRows.has(row)), advanced: tbody.rows[2].textContent !== firstField }
+  })
+  expect(activity.advanced).toBe(true)
+  expect(activity.reused).toBe(true)
+  expect(activity.updates).toBeLessThanOrEqual(5)
+  await wrap.evaluate(el => { el.scrollTop = el.scrollHeight })
+  await expect(table.getByText('child_4999', { exact: true })).toBeVisible()
+  const last = table.getByRole('row').filter({ has: page.getByText('child_4999', { exact: true }) })
+  await last.getByRole('button', { name: '删除', exact: true }).click()
+  const confirmation = page.getByRole('dialog', { name: '确认删除', exact: true })
+  await expect(confirmation).toContainText('子字段4999')
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click()
+  await wrap.evaluate(el => { el.scrollTop = 0 })
+  await toggle.click()
+  await expect(table.locator('.el-table__row')).toHaveCount(rootCount + 1)
+  await table.getByRole('button', { name: '展开或收起 ' + node.object.objectCode, exact: true }).click()
+  await expect(table.locator('.el-table__row')).toHaveCount(rootCount)
+  harness.assertClean()
+})
+
+test('悬停仅点亮本组和直接上一级竖线，切换分支或移出后恢复', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const data = createDocsApiData()
+  const node = data.get('/api/rule/dataobject/tree').tree[0]
+  node.variables = ['Home', 'Work'].map((code, i) => ({
+    id: i + 1, varCode: code, varType: 'OBJECT',
+    children: ['Name', 'Phone'].map((suffix, j) => ({ id: 10 + 2 * i + j, varCode: code + suffix, varType: 'STRING' })),
+  }))
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+  await page.goto(origin + '/#/variable')
+  await page.getByRole('tab', { name: '数据对象', exact: true }).click()
+  const table = page.getByTestId('data-object-table')
+  for (const code of [node.object.objectCode, 'Home', 'Work']) {
+    await table.getByRole('button', { name: '展开或收起 ' + code, exact: true }).click()
+  }
+  const row = code => table.getByRole('row').filter({ has: page.getByText(code, { exact: true }) })
+  const active = code => row(code).locator('.object-tree-guide.is-active')
+  await row('HomeName').getByRole('cell').last().hover()
+  await expect(active('HomeName')).toHaveCount(2)
+  await expect(active('HomePhone')).toHaveCount(2)
+  await expect(active('Home')).toHaveCount(1)
+  await expect(active('WorkName')).toHaveCount(1)
+  await expect(active(node.object.objectCode)).toHaveCount(0)
+  await row('WorkPhone').getByRole('cell').nth(1).hover()
+  await expect(active('HomePhone')).toHaveCount(1)
+  await expect(active('WorkName')).toHaveCount(2)
+  await table.getByRole('columnheader').first().hover()
+  await expect(table.locator('.object-tree-guide.is-active')).toHaveCount(0)
+  harness.assertClean()
+})
+
+for (const mode of ['FIXED', 'AUTO']) {
+  for (const count of [12, 90]) test(`对象父行在 ${mode} 模式随分组吸顶和交接（每组 ${count} 个字段）`, async ({ page }) => {
+    const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+    const data = createDocsApiData()
+    const referenceId = data.get('/api/rule/variable/project/1')[0].id
+    const tree = data.get('/api/rule/dataobject/tree')
+    const base = tree.tree[0].object
+    let id = 0
+    function group(code) {
+      return { id: ++id, varCode: code, varLabel: code, varType: 'OBJECT',
+        children: Array.from({ length: count }, (_, i) => ({
+          id: ++id, varCode: code + '_' + i, varLabel: '字段' + i, varType: 'STRING',
+          refVariableId: code === 'Third' ? referenceId : null,
+        })) }
+    }
+    tree.tree = [
+      { object: { ...base, objectCode: 'ObjectA' }, variables: [group('First'), group('Second')] },
+      { object: { ...base, id: 999, objectCode: 'ObjectB' }, variables: [group('Third')] },
+    ]
+    const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+    await page.setViewportSize({ width: 1440, height: 560 })
+    await page.goto(origin + '/#/variable')
+    await page.getByRole('tab', { name: '数据对象', exact: true }).click()
+    if (mode === 'AUTO') await chooseMode(page, mode)
+    const table = page.getByTestId('data-object-table')
+    const toggle = code => table.getByRole('button', { name: '展开或收起 ' + code, exact: true })
+    for (const code of ['ObjectB', 'Third', 'ObjectA', 'Second', 'First']) await toggle(code).click()
+
+    const scroller = mode === 'FIXED' ? table.locator('.el-scrollbar__wrap').first() : page.locator('.layout-main')
+    const body = table.locator('.el-table__body-wrapper .el-scrollbar__view')
+    const height = await table.locator('.el-table__row').first().evaluate(el => el.getBoundingClientRect().height)
+    async function scrollTo(index) {
+      const viewport = await scroller.boundingBox()
+      const originY = (await body.boundingBox()).y
+      await scroller.evaluate((el, delta) => { el.scrollTop += delta }, originY - viewport.y + index * height)
+    }
+    async function pinned(level, code) {
+      const row = table.getByRole('row').filter({ has: page.getByRole('button', { name: '展开或收起 ' + code, exact: true }) })
+      const top = (await scroller.boundingBox()).y + level * height
+      await expect.poll(async () => Math.abs((await row.boundingBox())?.y - top)).toBeLessThan(2)
+      // 真实命中测试：吸顶行的编码与右侧操作须盖住从下方滚过的子字段。
+      for (const cell of [row.getByRole('cell').first(), row.getByRole('cell').last()]) {
+        await expect.poll(() => cell.evaluate(el => {
+          const rect = el.getBoundingClientRect()
+          const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+          return el.contains(hit) ? 'parent cell' : [el.className, hit?.className, hit?.closest('tr')?.innerText].join(' / ')
+        })).toBe('parent cell')
+      }
+    }
+    await scrollTo(count - 2)
+    await pinned(0, 'ObjectA')
+    await pinned(1, 'First')
+    await scrollTo(count + 4.5)
+    await pinned(0, 'ObjectA')
+    await pinned(1, 'Second')
+    await scrollTo(2 * count + 6.25)
+    await pinned(0, 'ObjectB')
+    await pinned(1, 'Third')
+    await expect(table.locator('.reference-variable-cell').first()).toBeAttached()
+    expect(await table.locator('.el-table__row').evaluateAll(rows =>
+      [...new Set(rows.map(row => row.getBoundingClientRect().height))])).toEqual([height])
+    await scrollTo(count - 2)
+    await pinned(0, 'ObjectA')
+    await pinned(1, 'First')
+    await toggle('First').click()
+    await expect(table.getByText('First_0', { exact: true })).toHaveCount(0)
+    await expect(toggle('First')).toHaveAttribute('aria-expanded', 'false')
+    harness.assertClean()
+  })
+}
+
+test('对象字段分页、脚本名称显示和编辑使用当前行', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const data = createDocsApiData()
+  const node = data.get('/api/rule/dataobject/tree').tree[0]
+  data.get('/api/rule/dataobject/tree').tree.push({
+    object: { ...node.object, id: 999, objectCode: 'Other', scriptName: 'OtherAlias' }, variables: [],
+  })
+  node.object.scriptName = null
+  node.variables = Array.from({ length: 21 }, (_, i) => ({
+    id: i + 1, objectId: node.object.id, varCode: 'code_' + i, varLabel: '字段 ' + i,
+    varType: 'STRING', originalScriptName: 'alias_' + i, scriptName: 'path.alias_' + i,
+  }))
+  node.variables[0].originalScriptName = null
+  data.set('/api/rule/governance/workspaces/DATA_OBJECT/' + node.object.id, null)
+  data.set('/api/rule/dataobject/' + node.object.id, node)
+  data.set('/api/rule/dataobject/project/' + node.object.projectId, [node.object])
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData: data })
+  await page.goto(origin + '/#/variable')
+  await page.getByRole('tab', { name: '数据对象', exact: true }).click()
+  const table = page.getByTestId('data-object-table')
+  await table.getByRole('button', { name: '展开或收起 ' + node.object.objectCode }).click()
+  const headers = await table.getByRole('columnheader').allTextContents()
+  const scriptIndex = headers.indexOf('脚本名称')
+  expect(scriptIndex).toBeGreaterThanOrEqual(0)
+  const objectRow = table.getByRole('row').filter({ has: page.getByRole('button', { name: '展开或收起 ' + node.object.objectCode }) })
+  await expect(objectRow.getByRole('cell').nth(scriptIndex)).toHaveText(node.object.objectCode)
+  await expect(objectRow.getByRole('cell').nth(headers.indexOf('类型'))).toHaveText('输入对象')
+  await expect(objectRow.getByRole('combobox')).toHaveCount(0)
+  const other = table.getByRole('row').filter({ has: page.getByText('Other', { exact: true }) })
+  await expect(other.getByRole('cell').nth(scriptIndex)).toHaveText('OtherAlias')
+  const first = table.getByRole('row').filter({ has: page.getByText('code_0', { exact: true }) })
+  await expect(first.getByRole('cell').nth(scriptIndex)).toHaveText('')
+  await table.getByRole('columnheader').first().hover()
+  const guide = first.locator('.object-tree-guide').last()
+  const initialPaint = await guide.evaluate(el => getComputedStyle(el).backgroundColor)
+  await openTheme(page)
+  const drawer = page.getByRole('dialog', { name: '主题设置' })
+  await drawer.locator('[data-accent="THEME_BLUE"]').click()
+  await drawer.locator('[data-action="save"]').click()
+  await table.getByRole('columnheader').first().hover()
+  await expect(guide).toHaveCSS('background-color', /^rgba\(38, 57, 233, 0\.\d+\)$/)
+  expect(await guide.evaluate(el => getComputedStyle(el).backgroundColor)).not.toBe(initialPaint)
+  await first.getByRole('cell').nth(1).hover()
+  await expect(guide).toHaveCSS('background-color', 'rgb(38, 57, 233)')
+  await expect(objectRow.locator('.object-tree-guide')).toHaveCSS('background-color', 'rgb(38, 57, 233)')
+  await expect(other.locator('.object-tree-guide')).not.toHaveCSS('background-color', 'rgb(38, 57, 233)')
+  await table.getByRole('button', { name: '下一页' }).click()
+  const last = table.getByRole('row').filter({ has: page.getByText('code_20', { exact: true }) })
+  await expect(last.getByRole('cell').nth(scriptIndex)).toHaveText('alias_20')
+  await expect(table.getByText('code_0', { exact: true })).toHaveCount(0)
+  await last.getByRole('button', { name: '编辑', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '编辑对象字段', exact: true })
+  await expect(dialog.getByRole('textbox', { name: /字段编码/ })).toHaveValue('code_20')
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await table.getByRole('button', { name: '上一页' }).click()
+  await expect(table.getByText('code_0', { exact: true })).toBeVisible()
   harness.assertClean()
 })
 

@@ -42,16 +42,65 @@
             <el-form-item label="邮箱授权码 / SMTP 密码"><el-input v-model="mailPassword" type="password" show-password autocomplete="new-password" :placeholder="mailPasswordConfigured ? '已设置，留空保留' : '请输入邮箱授权码'" /><small>填写替换，留空保留；授权码不在浏览器持久保存。</small></el-form-item>
             <el-button :disabled="!canTestMail" @click="openMailTest">发送测试邮件</el-button><small v-if="mailResult" role="status">{{ mailResult }}</small>
           </el-form>
-          <div class="mail-preview"><div class="mail-preview-heading"><small>邮件效果预览</small><el-select v-model="mailTemplate" size="small"><el-option label="密码重置" value="reset" /><el-option label="注册验证" value="verify" /><el-option label="系统通知" value="notice" /></el-select></div><article class="mail-letter"><header><strong>{{ mailPreview.title }}</strong><div class="mail-brand"><img :src="brand.logoUrl" :alt="brand.systemName" /><div><b>{{ brand.systemName }}</b><small>{{ brand.subtitle }}</small></div></div></header><p>尊敬的{{ mailTemplate === 'notice' ? '管理员' : '用户' }}：</p><p>{{ mailPreview.text }}</p><div v-if="mailPreview.highlight" class="mail-highlight">{{ mailPreview.highlight }}</div><span v-if="mailPreview.action" class="preview-button">{{ mailPreview.action }}</span><p v-if="mailPreview.action" class="mail-note">若非您本人操作，请忽略此邮件。请勿转发验证或重置链接。</p><footer><span>上海衡枢真信科技有限公司</span><a href="https://www.hengshucredit.com" target="_blank" rel="noopener noreferrer">www.hengshucredit.com</a></footer></article></div>
+          <div class="mail-preview">
+            <div class="mail-preview-heading">
+              <small>邮件效果预览</small>
+              <el-select v-model="mailTemplate" size="small" aria-label="邮件预览类型">
+                <el-option label="密码重置" value="reset" />
+                <el-option label="注册验证" value="verify" />
+                <el-option label="系统通知" value="notice" />
+                <el-option label="数据账单" value="billing" />
+              </el-select>
+            </div>
+            <article class="mail-letter">
+              <header><strong>{{ mailPreview.title }}</strong><div class="mail-brand"><img :src="brand.logoUrl" :alt="brand.systemName" /><div><b>{{ brand.systemName }}</b><small>{{ brand.subtitle }}</small></div></div></header>
+              <p>尊敬的{{ mailPreview.recipient || '用户' }}：</p>
+              <p>{{ mailPreview.text }}</p>
+              <template v-if="mailTemplate === 'billing'">
+                <h3 class="bill-heading">CNY 账单</h3>
+                <div class="bill-scroll" role="region" aria-label="账单明细" tabindex="0">
+                  <table>
+                    <thead><tr><th v-for="label in ['月份', '产品', '请求次数', '调用次数', '计费次数', '计费单价', '账单费用']" :key="label" scope="col">{{ label }}</th></tr></thead>
+                    <tbody>
+                      <tr class="bill-total"><th scope="row">本期合计</th><td>—</td><td>1500</td><td>1520</td><td>1450</td><td>—</td><td>364.50</td></tr>
+                      <tr class="bill-month"><th scope="row">2026-10</th><td>月度合计</td><td>1500</td><td>1520</td><td>1450</td><td>—</td><td>364.50</td></tr>
+                      <tr><th scope="row">2026-10</th><td>身份核验</td><td>1000</td><td>1010</td><td>960</td><td>0.15</td><td>144.00</td></tr>
+                      <tr><th scope="row">2026-10</th><td>企业查询</td><td>500</td><td>510</td><td>490</td><td>0.45</td><td>220.50</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="mail-note">请求次数按各产品的日汇总累加。</p>
+              </template>
+              <div v-if="mailPreview.highlight" class="mail-highlight">{{ mailPreview.highlight }}</div>
+              <span v-if="mailPreview.action" class="preview-button">{{ mailPreview.action }}</span>
+              <p v-if="mailPreview.action" class="mail-note">若非您本人操作，请忽略此邮件。请勿转发验证或重置链接。</p>
+              <footer>
+                <p>如有任何问题，欢迎随时沟通。</p>
+                <div class="mail-signature">
+                  <p>顺颂商祺！</p>
+                  <a href="mailto:hscredit@hengshucredit.com">hscredit@hengshucredit.com</a><br>
+                  <span>上海衡枢真信科技有限公司</span>
+                </div>
+                <div class="mail-brand-line">
+                  <span>HENGSHU CREDIT · 鉴真伪，斟信用，衡风险，枢定策</span>
+                  <a href="https://www.hengshucredit.com" target="_blank" rel="noopener noreferrer">www.hengshucredit.com</a>
+                </div>
+              </footer>
+            </article>
+          </div>
         </div>
       </el-tab-pane>
       <el-tab-pane lazy label="登录与安全" name="access">
-        <el-alert v-if="managed.access" title="访问策略由部署环境覆盖，请先移除环境覆盖再通过页面维护。" type="info" :closable="false" />
+        <el-alert v-if="managed.access" title="注册和密码找回配置由部署环境管理。单点登录仍可在此配置。" type="info" :closable="false" />
         <el-form v-if="form.access" label-position="top" class="access-form" :disabled="!writable">
-          <el-form-item label="允许新用户注册"><el-switch v-model="form.access.registrationEnabled" /><small>验证邮箱后激活，由管理员分配业务权限。</small></el-form-item>
-          <el-form-item label="允许通过邮箱找回密码"><el-switch v-model="form.access.passwordRecoveryEnabled" /></el-form-item>
-          <el-form-item label="控制台访问地址"><el-input v-model="form.access.baseUrl" placeholder="https://engine.example.com" /><small>用于注册验证和密码重置邮件中的链接。</small></el-form-item>
-          <div class="settings-pair"><el-form-item label="注册验证有效期（分钟）"><el-input-number v-model="form.access.verificationTtlMinutes" :min="5" :max="1440" /></el-form-item><el-form-item label="密码重置有效期（分钟）"><el-input-number v-model="form.access.passwordResetTtlMinutes" :min="5" :max="1440" /></el-form-item></div>
+          <el-form-item label="单点登录">
+            <el-switch v-model="form.access.singleSessionEnabled" aria-label="单点登录" />
+            <small>开启后，每个账号仅保留最近一次登录。其他浏览器或设备需重新登录。</small>
+          </el-form-item>
+          <el-form-item label="允许新用户注册"><el-switch v-model="form.access.registrationEnabled" :disabled="managed.access" /><small>验证邮箱后激活，由管理员分配业务权限。</small></el-form-item>
+          <el-form-item label="允许通过邮箱找回密码"><el-switch v-model="form.access.passwordRecoveryEnabled" :disabled="managed.access" /></el-form-item>
+          <el-form-item label="控制台访问地址"><el-input v-model="form.access.baseUrl" :disabled="managed.access" placeholder="https://engine.example.com" /><small>用于注册验证和密码重置邮件中的链接。</small></el-form-item>
+          <div class="settings-pair"><el-form-item label="注册验证有效期（分钟）"><el-input-number v-model="form.access.verificationTtlMinutes" :disabled="managed.access" :min="5" :max="1440" /></el-form-item><el-form-item label="密码重置有效期（分钟）"><el-input-number v-model="form.access.passwordResetTtlMinutes" :disabled="managed.access" :min="5" :max="1440" /></el-form-item></div>
           <dismissible-guidance guide-id="system.recovery" label="恢复码说明">
             超级管理员的服务器一次性恢复码不受邮箱设置影响。
           </dismissible-guidance>
@@ -77,6 +126,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { getSystemSettings, saveSystemBrand, uploadSystemAsset, testSystemMail, getSystemSettingsHistory } from '@/api/systemSettings'
 import { createResourceDraft, saveGovernanceDraft, submitGovernanceRequest, getWorkspaceDraft } from '@/api/governance'
@@ -94,6 +144,7 @@ const clone = value => JSON.parse(JSON.stringify(value))
 const groups = { brand: 1, mail: 2, access: 3, codes: 4 }
 
 export default {
+  mixins: [pageTabState('tab', vm => ['brand','mail','access','codes', ...(vm.canAudit ? ['history'] : [])])],
   name: 'SystemSettings',
   components: { DismissibleGuidance, NavigationBrand, LoginPage, WatermarkSettings, FontSettings },
   data: () => ({ fontBusy: false, fontValid: true, tabLoading: false, tabError: '', tabRequestId: 0, imageAccept: BRAND_IMAGE_ACCEPT, brandImageFields: [{ id: 'logoId', url: 'logoUrl', label: '系统 Logo' }, { id: 'faviconId', url: 'faviconUrl', label: '浏览器图标' }], tab: 'brand', form: {}, saved: {}, drafts: {}, effectiveAccess: {}, catalog: [], managed: {}, history: [], historyPage: 1, historyTotal: 0, brand: systemBrand, loading: false, saving: false, mailPassword: '', assetPreviews: {}, codeSearch: '', codeGroup: '', codePage: 1, previewCode: '000000', testDialog: false, testRecipient: '', testing: false, mailResult: '', mailTemplate: 'reset', codeGroups: [{ value: '0', label: '成功' }, { value: '1', label: '请求参数' }, { value: '2', label: '规则与模型' }, { value: '3', label: '身份与权限' }, { value: '4', label: '执行与限流' }, { value: '5', label: '资源与额度' }, { value: '6', label: '外部调用' }, { value: '7', label: '治理与发布' }, { value: '9', label: '系统异常' }] }),
@@ -105,7 +156,7 @@ export default {
     hasApprovalView() { return hasPermission('approval:view') },
     draft() { return this.drafts[this.tab] },
     configurationUnavailable() { return this.loading || this.tabLoading || Boolean(this.tabError) },
-    writable() { return !this.configurationUnavailable && this.canEdit && !this.managed[this.tab] && (!this.draft || this.draft.status === 'EDITING') },
+    writable() { return !this.configurationUnavailable && this.canEdit && (this.tab === 'access' || !this.managed[this.tab]) && (!this.draft || this.draft.status === 'EDITING') },
     dirty() { return this.tab !== 'history' && (JSON.stringify(this.form[this.tab]) !== JSON.stringify(this.saved[this.tab]) || (this.tab === 'mail' && Boolean(this.mailPassword))) },
     watermarkPreviewConfig() { return this.tab === 'brand' && this.canEdit && this.dirty ? this.form.brand : null },
     logoPreview() { return this.assetPreviews.logoId || resolveBrandImages(this.form.brand).logoUrl },
@@ -115,7 +166,14 @@ export default {
     filteredCodes() { const q = this.codeSearch.trim().toLowerCase(); return this.catalog.filter(row => (!this.codeGroup || row.code.startsWith(this.codeGroup)) && (!q || [row.code, row.message, this.mappingValue(row.code, 'code'), this.mappingValue(row.code, 'message')].some(value => String(value).toLowerCase().includes(q)))) },
     visibleCodes() { return this.filteredCodes.slice((this.codePage - 1) * 10, this.codePage * 10) },
     mappingPreview() { const row = this.catalog.find(item => item.code === this.previewCode) || { code: '000000', message: '成功', httpStatus: 200 }; const original = { success: row.code === '000000', code: row.code, message: row.message }; const external = this.form.codes?.enabled ? { ...original, code: this.mappingValue(row.code, 'code') || row.code, message: this.mappingValue(row.code, 'message') || row.message } : original; return { original: JSON.stringify(original, null, 2), external: JSON.stringify(external, null, 2), httpStatus: row.httpStatus } },
-    mailPreview() { return { reset: { title: '密码重置通知', text: '我们收到了您的密码重置请求，请点击下方按钮设置新密码。', highlight: `链接有效期：${this.effectiveAccess.passwordResetTtlMinutes || 30} 分钟`, action: '设置新密码' }, verify: { title: '账户邮箱验证', text: '请验证您的邮箱以完成账户激活，之后由管理员为您分配业务权限。', highlight: `链接有效期：${this.effectiveAccess.verificationTtlMinutes || 30} 分钟`, action: '验证邮箱并激活' }, notice: { title: '系统配置变更通知', text: '系统配置已更新并生效，请登录控制台查看变更记录。' } }[this.mailTemplate] },
+    mailPreview() {
+      return {
+        reset: { title: '密码重置通知', text: '我们收到了您的密码重置请求，请点击下方按钮设置新密码。', highlight: `链接有效期：${this.effectiveAccess.passwordResetTtlMinutes || 30} 分钟`, action: '设置新密码' },
+        verify: { title: '账户邮箱验证', text: '请验证您的邮箱以完成账户激活，之后由管理员为您分配业务权限。', highlight: `链接有效期：${this.effectiveAccess.verificationTtlMinutes || 30} 分钟`, action: '验证邮箱并激活' },
+        notice: { title: '系统配置变更通知', recipient: '管理员', text: '系统配置已更新并生效，请登录控制台查看变更记录。' },
+        billing: { title: '2026-10 数据服务账单', recipient: '示例项目团队', text: '您好！随信附上示例项目从 2026-10-01 到 2026-10-31 已汇总的数据服务账单，共 2 项产品，结算币种为 CNY。请核对下列费用，逐日明细见附件。' },
+      }[this.mailTemplate]
+    },
   },
   watch: {
     watermarkPreviewConfig: { deep: true, immediate: true, handler(value) { setWatermarkPreview(value) } },
@@ -167,6 +225,9 @@ export default {
         const snapshot = draft?.draftSnapshotJson ? parseMetadataResponse(draft.draftSnapshotJson) : effective[tab]
         this.effectiveAccess = clone(effective.access)
         this.managed = effective.deploymentManaged || {}
+        if (tab === 'access' && snapshot.singleSessionEnabled === undefined) {
+          snapshot.singleSessionEnabled = effective.access.singleSessionEnabled ?? false
+        }
         this.form[tab] = snapshot; this.saved[tab] = clone(snapshot)
         this.drafts[tab] = draft?.draftSnapshotJson ? draft : state && ['EDITING', 'PENDING'].includes(state.requestStatus)
           ? { id: state.requestId, status: state.requestStatus === 'EDITING' && !state.owned ? 'LOCKED' : state.requestStatus } : null
@@ -231,13 +292,27 @@ export default {
 .settings-pair > * { min-width: 0; }
 .mail-preview-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
 .mail-preview-heading .el-select { width: 140px; }
-.mail-letter { border: 1px solid var(--tianshu-border-subtle); border-radius: 0; padding: 20px; font-size: 13px; line-height: 1.8; }
-.mail-letter header { display: flex; justify-content: space-between; gap: 18px; align-items: center; border-bottom: 2px solid var(--el-color-primary); padding-bottom: 16px; }
+.mail-preview { min-width: 0; }
+.bill-heading { margin: 16px 0 6px; font-size: inherit; }
+.bill-scroll { overflow-x: auto; }
+.bill-scroll table { min-width: 100%; border-collapse: collapse; white-space: nowrap; line-height: 1.5; }
+.bill-scroll th, .bill-scroll td { padding: 5px; border-bottom: 1px solid var(--tianshu-border-subtle); }
+.bill-scroll thead { background: var(--el-color-primary); color: var(--tianshu-brand-foreground); }
+.bill-scroll tbody th, .bill-scroll tbody td:first-of-type { text-align: left; }
+.bill-scroll tbody th { font-weight: inherit; }
+.bill-scroll td { text-align: right; font-variant-numeric: tabular-nums; }
+.bill-total, .bill-month { font-weight: bold; }
+.bill-total { background: var(--tianshu-primary-soft-bg); }
+.bill-month { background: var(--tianshu-bg-soft); }
+.mail-letter { border: 1px solid var(--tianshu-border-subtle); border-radius: 0; padding: 20px; font-size: 12px; line-height: 1.7; }
+.mail-letter header { display: flex; justify-content: space-between; gap: 18px; align-items: center; border-bottom: 2px solid var(--el-color-primary); padding-bottom: 6px; }
+.mail-letter header > strong { font-size: 15px; }
 .mail-brand { display: flex; gap: 8px; align-items: center; font-size: 12px; }
-.mail-brand small { font-size: 11px; margin: 0; }
+.mail-brand small { font-size: 12px; margin: 0; }
 .mail-highlight { padding: 10px; border-left: 3px solid var(--el-color-primary); background: var(--tianshu-primary-soft-bg); }
 .mail-note { color: var(--tianshu-text-tertiary); font-size: 12px; }
-.mail-letter footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--tianshu-border-subtle); padding-top: 12px; font-size: 11px; color: var(--tianshu-text-tertiary); }
+.mail-signature { border-top: 2px solid var(--el-color-primary); padding: 0 0 18px; font-size: 12px; line-height: 1.7; }
+.mail-brand-line { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--tianshu-border-subtle); padding-top: 12px; font-size: 12px; color: var(--tianshu-text-tertiary); }
 .mail-letter a { color: var(--el-color-primary); }
 .code-toolbar { margin-top: 14px; gap: 16px; }
 .code-filters, .code-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

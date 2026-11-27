@@ -50,6 +50,9 @@ public interface TransferProjectResourceMapper {
             UNION ALL
             SELECT 'FIELD_VALIDATION', id FROM rule_field_validation
             WHERE project_id = #{projectId} AND scope = 'PROJECT' AND status != -1
+            UNION ALL
+            SELECT 'BILLING_CONFIG', id FROM rule_billing_config
+            WHERE project_id = #{projectId} AND scope = 'PROJECT' AND status != -1
             ORDER BY resource_type, resource_id
             """)
     @ConstructorArgs({

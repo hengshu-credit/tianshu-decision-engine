@@ -1076,7 +1076,7 @@
           label="接口测试"
           name="test"
         >
-          <div class="tab-section">
+          <div class="tab-section api-test-section">
             <div class="section-toolbar">
               <div>
                 <div class="section-title">API 调用测试</div>
@@ -1092,6 +1092,7 @@
                 <el-button size="small" @click="regenerateTestParams"
                   >生成测试 JSON</el-button
                 >
+                <el-button v-permission="'datasource:edit'" size="small" @click="setDefaultSample">保存默认输入</el-button>
                 <el-button size="small" @click="loadSavedSample"
                   >加载已存样例</el-button
                 >
@@ -1145,7 +1146,7 @@
                 <div class="field-help">取消仅停止后续步骤，已经发出的供应商请求及已产生的费用不会撤销。</div>
               </div>
             </section>
-            <resource-test-cases v-if="form.id" :endpoint="'/rule/datasource/api-config/'+form.id+'/test-cases'" :params="invokeParamsText" :outcome="invokeSnapshotChanged ? null : invokeResultText" @apply="value => { invokeParamsText = value; invokeResultText = ''; selectedSampleId = '' }" />
+            <resource-test-cases kind="API" :owner="{ id: form.id, projectId: resolveDatasourceProjectId(form.datasourceId) }" v-if="form.id" :endpoint="'/rule/datasource/api-config/'+form.id+'/test-cases'" :params="invokeParamsText" :outcome="invokeSnapshotChanged ? null : invokeResultText" @apply="value => { invokeParamsText = value; invokeResultText = ''; selectedSampleId = '' }" />
             <el-form-item v-if="form.executionConfig" label="选择测试样例">
               <el-select v-model="selectedSampleId" clearable filterable placeholder="选择已保存样例" @change="selectExecutionSample">
                 <el-option v-for="sample in executionSamples" :key="sample.id" :value="sample.id" :label="sample.name" />
@@ -1214,6 +1215,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import ResourceTestCases from '@/components/common/ResourceTestCases.vue'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { reservedCodeRule, reservedCodeError } from '@/utils/reservedContentCode'
@@ -1263,11 +1265,9 @@ import ResponseConditionTreeEditor from '@/components/common/ResponseConditionTr
 import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import {
-  collectOperandInputPaths,
-  sampleValueForVarType,
-  setPathValue,
+  apiDefaultInput,
 } from '@/utils/testParamTemplate'
-import { routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, routeProjectId } from '@/utils/projectContext'
 import { trialStatusLabel, trialStatusType } from '@/utils/apiTrialStatus'
 
 export default {
@@ -1401,7 +1401,7 @@ export default {
     }
   },
   name: 'ApiDetail',
-  mixins: [configurationDraftMixin(vm => ({ form: vm.form, apiAuthConfig: vm.apiAuthConfig, scriptVariableRows: vm.scriptVariableRows, cacheKeyRows: vm.cacheKeyRows, successConditionRoot: vm.successConditionRoot, exceptionConditionRoot: vm.exceptionConditionRoot, retryConditionRoot: vm.retryConditionRoot, tokenFailureMode: vm.tokenFailureMode, tokenFailureConditionRoot: vm.tokenFailureConditionRoot, billingConfig: vm.billingConfig, payloadCapture: vm.payloadCapture })), workspaceTabTitleMixin(vm => vm.form.apiName)],
+  mixins: [pageTabState('activeConfigTab', vm => [...vm.configTabs.map(t => t.name), ...vm.executionTabs.concat(vm.executionPolicyTabs).map(t => 'execution.' + t.name), 'execution.steps']), configurationDraftMixin(vm => ({ form: vm.form, apiAuthConfig: vm.apiAuthConfig, scriptVariableRows: vm.scriptVariableRows, cacheKeyRows: vm.cacheKeyRows, successConditionRoot: vm.successConditionRoot, exceptionConditionRoot: vm.exceptionConditionRoot, retryConditionRoot: vm.retryConditionRoot, tokenFailureMode: vm.tokenFailureMode, tokenFailureConditionRoot: vm.tokenFailureConditionRoot, billingConfig: vm.billingConfig, payloadCapture: vm.payloadCapture })), workspaceTabTitleMixin(vm => vm.form.apiName)],
   components: { ResourceTestCases, DismissibleGuidance, RemoteFilterSelect,
     ProtocolPathPicker,
     ApiRequestSampleEditor,
@@ -1587,7 +1587,7 @@ export default {
   activated() {
     const resuming = !this.routeActive
     this.routeActive = true
-    if (resuming && (this.initializing || this.initializationError)) this.initializeRoute()
+    if (resuming && (this.initializing || this.initializationError || this.form.id && !this.configurationHasUnsavedChanges)) this.initializeRoute()
   },
   deactivated() {
     this.routeActive = false
@@ -1666,13 +1666,9 @@ export default {
         await this.loadDatasourceOptions()
         if (!this.isCurrentInitialization(requestId)) return
         this.form = this.emptyForm()
-        this.activeConfigGroup = 'business'
-        if (this.$route.query?.tab === 'billing') {
-          this.activeConfigGroup = 'reliability'
-          this.activeConfigTab = 'billing'
-        } else {
-          this.activeConfigTab = 'auth'
-        }
+        const requested = this.$route.query?.tab
+        this.activeConfigTab = this.rememberedPageTab?.() || (['billing','test','execution.samples'].includes(requested) ? requested : 'auth')
+        this.syncConfigGroupForTab(this.activeConfigTab)
         this.invokeResultText = ''
         this.requestPreviewText = ''
         this.previewToken = ''
@@ -1694,6 +1690,11 @@ export default {
           return
         }
         await this.loadDetail(requestId)
+        const sample = this.executionSamples?.find(item => String(item.id) === this.$route.query?.sampleId)
+        if (this.isCurrentInitialization(requestId) && sample) {
+          this.selectedSampleId = sample.id
+          this.selectExecutionSample()
+        }
       } catch (error) {
         if (this.isCurrentInitialization(requestId)) this.initializationError = error.message || '无法读取接口配置，请重试'
       } finally {
@@ -1839,7 +1840,7 @@ export default {
 
       this.apiPickerVars = []; this.apiPickerFunctions = []
       if (projectId == null || projectId === '') return
-      const catalog = await loadApiReferenceCatalog(Number(projectId) || 0)
+      const catalog = await loadApiReferenceCatalog(normalizeProjectId(projectId) || 0)
       if (requestId !== this.apiPickerRequestId) return
       this.apiPickerVars = catalog.vars; this.apiPickerFunctions = catalog.functions
       if (catalog.errors.length) this.$message.warning(catalog.errors.join('；'))
@@ -2258,6 +2259,7 @@ export default {
     },
     handleSave() {
       if (this.initializing || this.initializationError) return
+      if (this.skipUnchangedConfiguration(this.form.id)) return
       this.$refs.form.validate(async (valid) => {
         if (!valid) return
         let data
@@ -2301,7 +2303,20 @@ export default {
       this.syncStructuredConfigToForm()
       this.invokeParamsText = this.buildApiInvokeParamTemplate(this.form)
     },
-    loadSavedSample() { if (this.selectedSampleId) this.selectExecutionSample(); else this.regenerateTestParams() },
+    loadSavedSample() {
+      if (this.selectedSampleId) this.selectExecutionSample()
+      else if (this.form.testSampleParams) this.invokeParamsText = typeof this.form.testSampleParams === 'string'
+        ? this.form.testSampleParams : this.stringifyJson(this.form.testSampleParams)
+      else this.regenerateTestParams()
+    },
+    setDefaultSample() {
+      try {
+        this.parseTestParams()
+        this.form.testSampleParams = this.invokeParamsText.trim() || '{}'
+        this.selectedSampleId = ''
+        this.$message.success('默认输入已更新，请保存接口草稿')
+      } catch (error) { this.$message.error(error.message) }
+    },
     selectExecutionSample() {
       const sample = this.executionSamples.find(item => item.id === this.selectedSampleId)
       if (sample) this.invokeParamsText = JSON.stringify(sample.params, null, 2)
@@ -2319,19 +2334,8 @@ export default {
       } catch (error) { this.$message.error(error.message || '测试参数不是合法 JSON') }
     },
     buildApiInvokeParamTemplate(row) {
-      const sample = {}
-      const execution = JSON.parse(row.executionConfig)
-      const auth = this.parseConfigForTemplate(row.authApiConfig)
-      const paths = new Set(collectOperandInputPaths([execution.requestFields, execution.requestBranches, execution.steps, auth]))
-      paths.forEach(path => setPathValue(sample, path, this.sampleValueForPath(path)))
-      return this.stringifyJson(sample)
+      return this.stringifyJson(apiDefaultInput(row, this.apiPickerVars))
     },
-    sampleValueForPath(path) {
-      const normalized = String(path || '').replace(/^\$\./, '')
-      const field = this.findFieldForSamplePath(normalized)
-      return sampleValueForVarType(field && field.varType)
-    },
-    findFieldForSamplePath(path) { return this.apiPickerVars.find(field => field.varCode === String(path || '').replace(/^\$\./, '')) },
     captureTestSignature() {
       return JSON.stringify([this.form, this.invokeParamsText, this.apiAuthConfig, this.scriptVariableRows, this.cacheKeyRows,
         this.successConditionRoot, this.exceptionConditionRoot, this.retryConditionRoot, this.tokenFailureMode,
@@ -2679,6 +2683,9 @@ export default {
   }
   .tab-section {
     padding: 12px 0 4px;
+  }
+  .api-test-section > .el-alert {
+    margin-bottom: 12px;
   }
   .query-toolbar {
     margin-top: 18px;

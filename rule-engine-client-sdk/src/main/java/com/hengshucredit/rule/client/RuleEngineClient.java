@@ -114,7 +114,6 @@ public class RuleEngineClient {
             try {
                 if (!config.isServerSideExecution()) {
                     // 本地执行模式才下载规则、函数并订阅 Redis。
-                    syncFunctions();
                     fullSync();
                     redisSubscriber.setFunctionRegistrar(functionRegistrar);
                     redisSubscriber.start();
@@ -123,7 +122,7 @@ public class RuleEngineClient {
                         t.setDaemon(true);
                         return t;
                     });
-                    scheduler.scheduleAtFixedRate(this::fullSync,
+                    scheduler.scheduleAtFixedRate(this::syncOnHeartbeat,
                             config.getHeartbeatIntervalMs(), config.getHeartbeatIntervalMs(), TimeUnit.MILLISECONDS);
                 }
                 lifecycleState = LifecycleState.STARTED;
@@ -459,7 +458,16 @@ public class RuleEngineClient {
         }
     }
 
-    private void fullSync() {
+    private void syncOnHeartbeat() {
+        try {
+            fullSync();
+        } catch (ProjectClientAuthenticationException error) {
+            log.warn("SDK 心跳同步鉴权失败，将在下一周期重试", error);
+        }
+    }
+
+    private synchronized void fullSync() {
+        syncFunctions();
         try {
             List<CachedRule> rules = httpSyncClient.fetchAll();
             if (rules == null) {

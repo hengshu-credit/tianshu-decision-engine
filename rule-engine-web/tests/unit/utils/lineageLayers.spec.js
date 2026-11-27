@@ -78,3 +78,17 @@ test('循环中的节点同层分开，所有坐标有限，单节点也能最�
   result.positions.forEach(point => expect(Number.isFinite(point.row)).toBe(true))
   expect(lineageLayout(['current'], [], 'current').positions.get('current')).toEqual({ layer: 0, row: 0 })
 })
+
+test('项目直接成员就近排列，直达多项深层资源的边可复用同一空通道', () => {
+  const links = [['project', 'rule'], ['rule', 'model'], ['project', 'independent']]
+  for (let i = 0; i < 12; i++) links.push(['project', 'v' + i], ['model', 'v' + i])
+  const nodes = [...new Set(links.flat())]
+  const edges = links.map(([fromId, toId]) => ({ key: fromId + '-' + toId, fromId, toId }))
+  const layout = lineageLayout(nodes, edges, 'project')
+  expect(layout.positions.get('independent').layer).toBe(1)
+  expect(layout.positions.get('v0').layer).toBe(3)
+  for (let i = 0; i < 12; i++) expect(layout.routes.get('project-v' + i)).toEqual(layout.routes.get('project-v0'))
+  const rows = [...layout.positions.values()].map(node => node.row)
+  expect(Math.max(...rows) - Math.min(...rows)).toBe(11)
+  expect(lineageLayout(nodes.toReversed(), edges.toReversed(), 'project')).toEqual(layout)
+})

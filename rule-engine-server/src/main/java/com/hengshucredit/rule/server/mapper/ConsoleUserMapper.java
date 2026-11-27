@@ -24,6 +24,26 @@ public interface ConsoleUserMapper extends BaseMapper<ConsoleUser> {
             """)
     void recordLoginTime(@Param("id") Long id, @Param("time") LocalDateTime time);
 
+    @Select("SELECT config_json FROM rule_system_setting WHERE id=3")
+    String accessSettingsJson();
+
+    // 在登录事务的账户安全锁内递增序号，同一次成功登录只签发一个序号。
+    @Insert("""
+            INSERT INTO console_user_session_state(user_id, latest_sequence, minimum_sequence)
+            VALUES(#{id}, 1, CASE WHEN #{single} THEN 1 ELSE 0 END)
+            ON DUPLICATE KEY UPDATE
+              minimum_sequence=CASE WHEN #{single} THEN latest_sequence+1 ELSE minimum_sequence END,
+              latest_sequence=latest_sequence+1
+            """)
+    void advanceLoginSequence(@Param("id") Long id, @Param("single") boolean single);
+
+    record SessionRange(long latestSequence, long minimumSequence) {
+        public static final SessionRange LEGACY = new SessionRange(0, 0);
+    }
+
+    @Select("SELECT latest_sequence, minimum_sequence FROM console_user_session_state WHERE user_id=#{id}")
+    SessionRange sessionRange(Long id);
+
     record LoginActivity(Long userId, LocalDateTime lastLoginTime) {}
 
     @Select("""

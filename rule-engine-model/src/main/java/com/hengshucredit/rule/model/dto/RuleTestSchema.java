@@ -17,4 +17,6 @@ public class RuleTestSchema {
     private List<String> diagnostics = new ArrayList<>();
     private RuleTestExecutionIdentity executionIdentity;
     private String modelJson;
+    private boolean generatedExamples;
+    private boolean savedDefault;
 }

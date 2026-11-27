@@ -1,8 +1,9 @@
 import request from './request'
+import { metadataResponse } from '@/utils/metadataResponse'
 import { createResourceDraft } from './governance'
 
 export function listBillingConfigs(params) {
-  return request({ url: '/rule/billing/config/list', method: 'get', params })
+  return request({ ...metadataResponse, url: '/rule/billing/config/list', method: 'get', params })
 }
 
 export function getApiBillingPolicy(apiId) {
@@ -41,12 +42,15 @@ export function deleteBillingConfigDraft(data) {
   })
 }
 
+export function listTraceCharges(params) {
+  return request({ ...metadataResponse, url: '/rule/billing/record/by-trace', method: 'get', params })
+}
 export function listBillingRecords(params) {
   return request({ url: '/rule/billing/record/list', method: 'get', params })
 }
 
 export function listBillingSummaries(params) {
-  return request({ url: '/rule/billing/summary/list', method: 'get', params })
+  return request({ ...metadataResponse, url: '/rule/billing/summary/list', method: 'get', params })
 }
 
 export function refreshBillingSummary(data) {
@@ -59,4 +63,8 @@ export function getBillingSummaryRefreshTask(taskId) {
 
 export function getLatestBillingSummaryRefresh(params) {
   return request({ url: '/rule/billing/summary/refresh', method: 'get', params })
+}
+
+export function sendBillingStatement(summaryId, period = null) {
+  return request.post('/rule/billing/summary/' + encodeURIComponent(summaryId) + '/send', period, { timeout: 60000 })
 }

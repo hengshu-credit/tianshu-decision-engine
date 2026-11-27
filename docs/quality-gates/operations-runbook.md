@@ -51,17 +51,23 @@ mysql --host $env:MYSQL_HOST --port $env:MYSQL_PORT `
 
 备份包含二进制决策制品，必须保留 `--hex-blob`，并由 mysqldump 的 `--result-file` 写文件，避免 PowerShell 或 UTF-8 文本转换损坏 BLOB。恢复库须预先单独创建，不能覆盖源库。恢复后必须核对：逐表行数和内容校验、规则制品摘要、发布版本、变量/模型 ID 引用、实验版本、执行日志分区和账单汇总。项目加密主密钥须单独备份并保持一致。Redis 需要单独导出项目推送相关键或重新触发全量同步，不能只恢复 MySQL。
 
-Windows Docker 本地验证可使用容器内部管道，避免宿主机大文件重定向导致恢复中断：
+完整恢复演练覆盖管理库和独立 SFTP。暂停应用、导入器及上传方写入，在同一维护窗口取得数据库备份和 SFTP 卷备份。归档从卷根打包，保留顶层 `host-key` 和完整 `files/`。把卷归档还原到空卷，在隔离地址启动同版本 SFTP，配置演练专用服务密码，并连接演练库。门禁通过独立 SSH 会话从该地址冷读，指纹应取自切换前可信部署记录。卷归档含私钥及业务文件，请存放在受控备份目录。
+
+下面的 Docker 门禁从已停写的源库生成本次 SQL 快照并还原到新的数据库。若演练使用已有 SQL 备份，先将该备份导入隔离的源实例，并将 `-Database` 指向它。运行端需要 PowerShell、Docker、Python 3.9 或更高版本及 Paramiko。通过环境分别注入 `MYSQL_ROOT_PASSWORD` 和 `TIANSHU_RESTORE_SFTP_PASSWORD`。
 
 ```powershell
-$env:MYSQL_ROOT_PASSWORD = '<local-secret>'
 .\scripts\quality-gates\run-docker-backup-restore-gate.ps1 `
   -DockerContainer rule-engine-mysql `
   -Database rule_engine `
-  -RestoreDatabase rule_engine_restore_gate
+  -RestoreDatabase rule_engine_restore_gate `
+  -SftpBackupArchive 'D:\backup\sftp-volume.tar' `
+  -RestoredSftpHost 127.0.0.1 -RestoredSftpPort 3222 `
+  -SftpHostFingerprint $env:ENGINE_SFTP_HOST_FINGERPRINT
 ```
 
-运行门禁前暂停业务写入，保证原库计数/校验和与备份处于同一稳定状态。脚本拒绝源库与目标库同名以及已存在的目标库；仅创建全新的临时恢复库。逐表核对行数与 CHECKSUM 后，清理本次创建的恢复库和临时 dump；报告写入 `target/quality-gates/backup-restore-summary.json`，不保存密码。在线持续写入场景应使用可重复读取的专用备份快照进行同等校验。
+完整结果的 `scope` 为 `DATABASE_AND_SFTP`。门禁核对原库和恢复库的逐表数据、备份与恢复端的 SSH 主机指纹、整个服务根目录的文件清单和 SHA-256，再逐条核对恢复库中模型原件、冻结包、台账 PNG 和待检文件的引用与内容。使用外部 SFTP 服务时，卷归档需要采用同样的文件布局和受支持的主机密钥格式。仅检查数据库时显式传入 `-DatabaseOnly`，报告会标记 `DATABASE_ONLY`。
+
+脚本拒绝源库与目标库同名以及已存在的目标库；仅创建全新的临时恢复库。逐表核对行数与 CHECKSUM 后，清理本次创建的恢复库和临时 dump；报告写入 `target/quality-gates/backup-restore-summary.json`，不保存密码。在线持续写入场景应使用可重复读取的专用备份快照进行同等校验。
 
 ## 3. 真实环境浏览器 E2E
 

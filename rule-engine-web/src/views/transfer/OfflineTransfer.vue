@@ -1,13 +1,6 @@
 <template>
   <div class="uiue-list-page transfer-page">
-    <header class="page-header">
-      <div>
-        <span class="page-eyebrow">CROSS ENVIRONMENT</span>
-        <h1>离线配置迁移</h1>
-        <dismissible-guidance tag="p" guide-id="transfer.intro" label="离线配置迁移说明">按血缘导出配置，上传到其他环境后预检冲突并确认导入。名单记录、日志和账单不会进入配置包。</dismissible-guidance>
-      </div>
-      <el-tag type="info" effect="plain">配置包即时生成</el-tag>
-    </header>
+    <dismissible-guidance tag="p" guide-id="transfer.intro" label="离线配置迁移说明">按血缘导出配置，上传到其他环境后预检冲突并确认导入。名单记录、日志和账单不会进入配置包。</dismissible-guidance>
 
     <el-tabs v-model="activeTab" class="transfer-tabs" @tab-change="onTabChange">
       <el-tab-pane label="配置迁移" name="transfer">
@@ -18,7 +11,10 @@
             <span class="card-kicker">EXPORT</span>
             <h2>导出配置</h2>
           </div>
-          <el-tag size="small" type="info">按血缘带出上游</el-tag>
+          <div class="export-badges">
+            <el-tag size="small" type="info" effect="plain">配置包即时生成</el-tag>
+            <el-tag size="small" type="info">按血缘带出上游</el-tag>
+          </div>
         </div>
         <p class="card-help">按名称或编码搜索要迁移的资源，可添加多个。系统会按血缘一并导出所依赖的配置。</p>
         <div v-for="(root, index) in roots" :key="root.key" class="root-row">
@@ -51,15 +47,22 @@
           <el-button size="small" :disabled="exporting" @click="addRoot">添加根资源</el-button>
           <el-button v-permission="'transfer:export'" type="primary" :loading="exporting" @click="exportPackage">生成并下载配置包</el-button>
         </div>
-        <section v-if="exportLineageRoots.length" class="inline-lineage-panel">
+        <transfer-activity :activity="exportActivity" :active="pageActive" />
+        <section v-if="selectedExportRoot" class="inline-lineage-panel">
           <div class="inline-lineage-toolbar">
-            <strong>导出内容血缘</strong>
-            <el-select v-model="selectedExportRootKey" size="small" aria-label="选择导出内容血缘" style="width: 250px">
+            <strong>源环境当前血缘</strong>
+            <el-select :model-value="selectedExportRoot.key" size="small" aria-label="选择导出内容血缘" style="width: 250px" @update:model-value="selectedExportRootKey = $event">
               <el-option v-for="item in exportLineageRoots" :key="item.key" :label="item.label" :value="item.key" />
             </el-select>
           </div>
-          <lineage-graph v-if="exportLineageGraph" embedded :initial-graph="exportLineageGraph" />
-          <el-empty v-else-if="!exportLineageLoading" description="该内容暂无可用血缘" />
+          <p v-if="selectedExportRoot.versionSelection?.versionMode === 'FIXED'" class="card-help">图中版本来自源环境当前配置。生成配置包后，可在导入预检核对所选历史版本的依赖。</p>
+          <p v-if="packageLineageOnly(selectedExportRoot)" class="card-help">请在配置包的导入预检中查看此类资源的依赖。</p>
+          <p v-else-if="selectedExportRoot.lineageLoading" role="status">正在读取源环境血缘…</p>
+          <el-alert v-else-if="selectedExportRoot.lineageError" :title="selectedExportRoot.lineageError" type="warning" :closable="false">
+            <el-button link @click="loadExportLineage(selectedExportRoot)">重新加载血缘</el-button>
+          </el-alert>
+          <lineage-graph v-else-if="exportLineageGraph" embedded :initial-graph="exportLineageGraph" />
+          <el-empty v-else description="该内容暂无可用血缘" />
         </section>
       </article>
 
@@ -74,9 +77,27 @@
         <el-upload drag :auto-upload="false" :show-file-list="false" accept=".zip" :disabled="applying" :on-change="selectFile">
           <div class="upload-copy">
             <strong>{{ importFile ? importFile.name : '拖入配置包，或点击选择 ZIP' }}</strong>
-            <span>只接受 TIANSHU_RESOURCE_TRANSFER 配置包</span>
+            <span>选择离线配置包，或选择以 .project-set.zip 结尾的项目合集</span>
           </div>
         </el-upload>
+        <section v-if="isProjectSet" class="import-options">
+          <p>按包内编码新建项目。预检列出各项目的配置数量和冲突，确认后统一导入。</p>
+          <div v-for="project in setResult?.projects || []" :key="project.code">
+            <strong>{{ project.code }}</strong> · {{ project.resources }} 个资源 · {{ project.settings }} 项附属配置 · {{ project.exampleRecords || 0 }} 条预置名单记录
+            <span v-if="project.installationBound"> · 已配置本安装凭据</span>
+            <p v-if="project.issues.length && !setResult.applied">{{ project.issues.join('，') }}</p>
+          </div>
+          <el-checkbox v-if="setResult?.publicationCount && !setResult.applied" v-model="restoreAfterImport" :disabled="applying">执行固定用例并恢复源端已发布的规则和实验（{{ setResult.publicationCount }} 项）</el-checkbox>
+          <p v-if="setResult?.publicationCount && !setResult.applied && restoreAfterImport">回归使用目标环境的外数和名单，可能发生调用费用和名单写入。</p>
+          <p v-if="setResult?.applied" role="status">项目合集已导入</p>
+          <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" />
+          <div class="card-actions">
+            <el-button v-permission="'transfer:import'" :loading="previewing" :disabled="applying" @click="reviewSet(false)">预检项目合集</el-button>
+            <el-button v-if="!setResult?.applied" v-permission="'transfer:import'" type="primary" :loading="applying" :disabled="!setResult?.ready || previewing" @click="reviewSet(true)">导入项目合集</el-button>
+            <el-button v-else-if="activationIndex < (setResult.steps?.length || 0)" v-permission="'transfer:import'" type="primary" :loading="applying" @click="resumeActivation">继续验证发布</el-button>
+          </div>
+        </section>
+        <template v-else>
         <el-form :disabled="applying" class="import-options">
           <div class="import-options__target">
             <div class="import-field">
@@ -129,11 +150,18 @@
           </div>
         </el-form>
         <p class="import-hint">项目级导入请选择目标项目，或勾选“导入时新建项目”；全局导入会把项目级资源转换为全局范围。修改文件或选项后需重新预览冲突。</p>
+        <el-alert v-if="preview?.modelScanIssue" :title="preview.modelScanIssue" type="error" :closable="false" />
+        <p v-if="options.publishRules && preview?.ruleCaseCount" class="import-hint">
+          所选规则携带 {{ preview.ruleCaseCount }} 个固定用例。确认后先导入草稿和用例，再逐条回归、审批发布。回归可能调用已配置的外部服务。
+        </p>
         <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" />
         <div class="card-actions">
           <el-button v-permission="'transfer:import'" :disabled="!importFile || applying" :loading="previewing" @click="previewPackage">预览冲突</el-button>
-          <el-button v-permission="'transfer:import'" type="primary" :disabled="!hasCurrentPreview || applying" :loading="applying" @click="applyPackage">确认导入</el-button>
+          <el-button v-if="pendingPublication" v-permission="'transfer:import'" type="primary" :loading="applying" @click="resumeActivation">继续验证发布</el-button>
+          <el-button v-else v-permission="'transfer:import'" type="primary" :disabled="!hasCurrentPreview || applying" :loading="applying" @click="applyPackage">确认导入</el-button>
         </div>
+        </template>
+        <transfer-activity :activity="importActivity" :active="pageActive" :has-result="!!importResult && !importActivity?.preview" @show-result="resultVisible = true" />
       </article>
     </section>
 
@@ -163,6 +191,7 @@
             <el-checkbox :value="item.key">
               {{ item.resourceCode || item.key }} · {{ item.resourceType }}
             </el-checkbox>
+            <span v-if="item.pageSettingCount">附属配置 {{ item.pageSettingCount }} 项</span>
             <el-tag v-if="item.recommendedAction === 'REUSE'" size="small" type="success">系统建议复用</el-tag>
             <span v-if="item.existingResourceKey" class="resource-reuse-target">目标候选：{{ item.existingResourceKey }}</span>
             <el-select
@@ -171,6 +200,7 @@
               size="small"
               class="resource-action-select"
               aria-label="迁移处理方式"
+              @change="explicitActionKeys.add(item.key)"
             >
               <el-option v-for="action in resourceActionOptions(item)" :key="action.value" :label="action.label" :value="action.value" />
             </el-select>
@@ -200,7 +230,10 @@
       <section v-if="preview.versionAssociations?.length" class="version-associations">
         <h3>版本依赖映射</h3>
         <p>逐项选择目标环境已有的已发布版本及字段。版本号和数字 ID 相同不代表同一内容；选择后需重新预检。导入不会覆盖所选目标版本。</p>
-        <transfer-version-binding-row v-for="source in preview.versionAssociations" :key="source.referenceKey" :source="source" :model-value="versionBindingsDraft[source.referenceKey] || {}" :disabled="applying || previewing" @update:model-value="versionBindingsDraft[source.referenceKey] = $event" />
+        <div v-for="source in preview.versionAssociations" :key="source.referenceKey">
+          <span v-if="source.includedModel">使用随包模型的固定版本和对应输出字段 · {{ source.label }}</span>
+          <transfer-version-binding-row v-else :source="source" :model-value="versionBindingsDraft[source.referenceKey] || {}" :disabled="applying || previewing" @update:model-value="versionBindingsDraft[source.referenceKey] = $event" />
+        </div>
       </section>
       <el-table :data="preview.conflicts || []" size="small" class="transfer-table">
         <el-table-column prop="resourceType" label="资源类型" width="150" />
@@ -224,14 +257,35 @@
       </el-tab-pane>
       <el-tab-pane lazy label="迁移日志" name="logs">
         <section class="transfer-card transfer-log-card">
-          <div class="card-heading">
-            <div>
-              <span class="card-kicker">AUDIT LOG</span>
-              <h2>迁移日志</h2>
-            </div>
-            <el-button size="small" @click="loadLogs">刷新</el-button>
+          <div class="uiue-search-container uiue-filter-toolbar">
+            <el-form inline size="small" @submit.prevent @keyup.enter="searchLogs">
+              <el-form-item label="操作类型">
+                <el-select v-model="logFilters.operationType" clearable placeholder="全部操作">
+                  <el-option label="导入" value="IMPORT" /><el-option label="导出" value="EXPORT" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="状态">
+                <el-select v-model="logFilters.status" clearable placeholder="全部状态">
+                  <el-option label="成功" value="SUCCESS" /><el-option label="失败" value="FAILED" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="关键词" class="log-keyword">
+                <remote-filter-select v-model:value="logFilters.keyword" allow-free-input
+                  :fetch-options="fetchLogOptions" :option-fields="['operator', 'packageDigest', 'errorMessage']"
+                  placeholder="操作人、包摘要、资源或日志内容" />
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="searchLogs">查询</el-button>
+                <el-button @click="resetLogFilters">重置</el-button>
+              </el-form-item>
+            </el-form>
+            <div class="uiue-btn-bar"><div class="btn-right">
+              <el-button size="small" :loading="logsLoading" @click="loadLogs">刷新</el-button>
+            </div></div>
           </div>
-          <el-table :aria-busy="logsLoading" :data="logs" size="small" class="transfer-table">
+          <el-alert v-if="logLoadError" :title="logLoadError" type="error" :closable="false" show-icon />
+          <el-table :aria-busy="logsLoading" :data="logs" size="small" class="transfer-table"
+            :empty-text="logLoadError || (logsLoading ? '正在加载…' : '暂无匹配的迁移日志')">
             <el-table-column prop="operationType" label="操作" width="100">
               <template #default="{ row }">{{ row.operationType === 'EXPORT' ? '导出' : '导入' }}</template>
             </el-table-column>
@@ -246,19 +300,19 @@
               <template #default="{ row }"><el-button link type="primary" size="small" @click="openLogDetail(row)">查看</el-button></template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="logPageNum" v-model:page-size="logPageSize" :total="logTotal" size="small" layout="total, prev, pager, next" @current-change="loadLogs" />
+          <el-pagination :current-page="logPageNum" :page-size="logPageSize" :total="logTotal" size="small" layout="total, prev, pager, next" @current-change="changeLogPage" />
         </section>
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog v-model="resultVisible" title="导入结果" width="620px">
+    <el-dialog v-if="pageActive" v-model="resultVisible" title="导入结果" width="620px">
       <el-alert type="success" :closable="false" title="配置已导入">
-        {{ appliedOptions?.publishRules ? '规则已按所选策略发布。' : '规则保存为目标环境草稿。' }}其他资源已通过治理流程导入生效；复用、覆盖和新建明细见下方结果。
+        {{ pendingPublication ? '配置已保存，规则发布尚未完成，可继续验证发布。' : appliedOptions?.publishRules ? '规则已按所选策略发布。' : '规则保存为目标环境草稿。' }}其他资源已通过治理流程导入生效；复用、覆盖和新建明细见下方结果。
       </el-alert>
       <pre class="result-json">{{ JSON.stringify(importResult, null, 2) }}</pre>
     </el-dialog>
-    <el-dialog v-model="logDetailVisible" title="迁移日志详情" width="900px">
-      <el-alert v-if="logDetail" :type="logDetail.status === 'SUCCESS' ? 'success' : 'warning'" :closable="false" :title="`${logDetail.operationType === 'EXPORT' ? '导出' : '导入'} · ${logDetail.status}`" />
+    <el-dialog v-if="pageActive" v-model="logDetailVisible" title="迁移日志详情" width="900px">
+      <el-alert v-if="logDetail" :description="logDetail.errorMessage || undefined" :type="logDetail.status === 'SUCCESS' ? 'success' : 'warning'" :closable="false" :title="`${logDetail.operationType === 'EXPORT' ? '导出' : '导入'} · ${logDetail.status}`" />
       <pre v-if="logDetail" class="result-json">{{ logDetail.contentJson || '{}' }}</pre>
       <section class="log-lineage-section">
         <div class="inline-lineage-toolbar"><strong>本次迁移血缘</strong><span v-if="!logLineageLoading && !logLineage?.nodes?.length">日志中没有可用血缘，缺失内容已跳过。</span></div>
@@ -270,12 +324,13 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import TransferVersionBindingRow from '@/components/transfer/TransferVersionBindingRow.vue'
 import ResourceVersionSelect from '@/components/common/ResourceVersionSelect.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { exportResourceTransfer, importResourceTransfer, previewResourceTransfer, listTransferResources, listTransferResourceFields, listTransferLogs, getTransferLog, getTransferLogLineage } from '@/api/transfer'
+import { transferProjectSet, exportResourceTransfer, importResourceTransfer, previewResourceTransfer, listTransferResources, listTransferResourceFields, listTransferLogs, getTransferLog, getTransferLogLineage } from '@/api/transfer'
 import { getLineageGraph } from '@/api/lineage'
 import { listProjects } from '@/api/project'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
@@ -283,6 +338,9 @@ import LineageGraph from '@/views/lineage/LineageGraph.vue'
 import TransferAssociationPanel from '@/components/transfer/TransferAssociationPanel.vue'
 import { hasPermission } from '@/security/permissionState'
 import { resourceViewPermission } from '@/security/pickerAccess'
+import TransferActivity from '@/components/transfer/TransferActivity.vue'
+import { startActivity, recordAction, endActivity } from '@/api/transferTask'
+import { restorePublishedStep } from '@/utils/restoreProjectSet'
 
 const RESOURCE_TYPES = [
   { value: 'PROJECT', label: '项目' },
@@ -296,26 +354,40 @@ const RESOURCE_TYPES = [
   { value: 'EXTERNAL_API', label: '外数 API' },
   { value: 'LIST_LIBRARY', label: '名单配置' },
   { value: 'MODEL', label: '模型' },
-  { value: 'EXPERIMENT', label: '分流实验' }
+  { value: 'EXPERIMENT', label: '分流实验' },
+  { value: 'FIELD_VALIDATION', label: '字段校验规则' },
+  { value: 'BILLING_CONFIG', label: '计费项' }
 ]
+
+const emptyLogFilters = () => ({ operationType: '', status: '', keyword: '' })
 
 const LINEAGE_TYPES = { DATABASE: 'DB', SFTP: 'SFTP', EXTERNAL_DATASOURCE: 'DATASOURCE', EXTERNAL_API: 'API', LIST_LIBRARY: 'LIST' }
 
-const newRoot = (key, fetch) => ({ key, resourceType: 'RULE', resourceId: '', versionSelection: { versionMode: 'LATEST', versionId: null }, versionLabel: '最新版（当前生产）', loadError: '', requestId: 0, fetchOptions: params => fetch(key, params) })
+const newRoot = (key, fetch) => ({
+  key, resourceType: 'RULE', resourceId: '', versionSelection: { versionMode: 'LATEST', versionId: null },
+  versionLabel: '最新版（当前生产）', loadError: '', requestId: 0, fetchOptions: params => fetch(key, params),
+  lineageRequestId: 0, lineageGraph: null, lineageLoading: false, lineageError: '',
+})
 
 export default {
+  created() { if (this.activeTab === 'logs') this.loadLogs() },
+  mixins: [pageTabState('activeTab', ['transfer', 'logs'])],
   name: 'OfflineTransfer',
-  components: { DismissibleGuidance, RemoteFilterSelect, LineageGraph, TransferAssociationPanel, TransferVersionBindingRow, ResourceVersionSelect },
+  components: { TransferActivity, DismissibleGuidance, RemoteFilterSelect, LineageGraph, TransferAssociationPanel, TransferVersionBindingRow, ResourceVersionSelect },
   data() {
     return {
       roots: [newRoot(1, this.fetchRootOptionsByKey)],
       nextRootKey: 2,
       exporting: false,
+      exportActivity: null,
+      importActivity: null,
+      pageActive: true,
       exportOnlySelected: false,
       exportError: '',
       previewing: false,
       applying: false,
       importFile: null,
+      setResult: null, restoreAfterImport: true, activationIndex: 0,
       preview: null,
       previewFile: null,
       previewOptionsSignature: '',
@@ -326,14 +398,13 @@ export default {
       resultVisible: false,
       activeTab: 'transfer',
       logs: [], logsLoading: false, logTotal: 0, logPageNum: 1, logPageSize: 20,
+      logFilters: emptyLogFilters(), appliedLogFilters: {}, logRequestId: 0, logLoadError: '',
       logDetail: null,
       logDetailVisible: false,
       logLineage: null,
       logLineageLoading: false,
       selectedLineageRoot: '',
       selectedExportRootKey: '',
-      exportLineageGraphs: {},
-      exportLineageLoading: false,
       options: {
         targetScope: 'PROJECT', targetProjectId: '', createProject: false,
         projectCode: '', projectName: '', publishRules: false,
@@ -342,17 +413,21 @@ export default {
       },
       selectedResourceKeysDraft: [],
       resourceActionsDraft: {},
+      explicitActionKeys: new Set(),
       resourceBindingsDraft: {},
       fieldBindingsDraft: {},
       versionBindingsDraft: {},
     }
   },
   computed: {
+    activationSteps() { return this.isProjectSet ? this.setResult?.steps || [] : this.importResult?.publicationSteps || [] },
+    pendingPublication() { return this.activationIndex < this.activationSteps.length },
+    isProjectSet() { return this.importFile?.name?.toLowerCase().endsWith('.project-set.zip') },
     resourceTypes() { return RESOURCE_TYPES.filter(item => hasPermission(resourceViewPermission(item.value))) },
     optionsSignature() { return JSON.stringify(this.normalizedOptions()) },
     hasCurrentPreview() {
       return Boolean(this.preview && !this.previewing && this.importFile === this.previewFile
-        && this.optionsSignature === this.previewOptionsSignature && !this.preview.missingFunctionLibraries?.length
+        && this.optionsSignature === this.previewOptionsSignature && !this.preview.missingFunctionLibraries?.length && !this.preview.modelScanIssue
         && (this.preview.versionAssociations || []).every(row => row.valid))
     },
     previewFunctionJars() {
@@ -368,8 +443,12 @@ export default {
         label: `${item.resourceType} · ${item.resourceId} · ${item.versionLabel || '最新版（当前生产）'}`,
       }))
     },
+    selectedExportRoot() {
+      return this.roots.find(root => root.resourceId && root.key === this.selectedExportRootKey)
+        || this.roots.find(root => root.resourceId)
+    },
     exportLineageGraph() {
-      return this.exportLineageGraphs[this.selectedExportRootKey] || null
+      return this.selectedExportRoot?.lineageGraph || null
     },
     offlineLineageGraph() {
       if (!this.preview || !this.selectedLineageRoot) return null
@@ -404,23 +483,66 @@ export default {
     }
   },
   watch: {
-    options: { deep: true, flush: 'sync', handler() { this.invalidatePreview() } }
+    options: { deep: true, flush: 'sync', handler() { this.invalidatePreview() } },
+    'options.variablePolicy': { flush: 'sync', handler() { this.clearSuggestedActions(true) } },
+    'options.resourcePolicy': { flush: 'sync', handler() { this.clearSuggestedActions(false) } }
   },
-  beforeUnmount() { this.invalidatePreview() },
+  activated() { this.pageActive = true },
+  deactivated() {
+    this.pageActive = false
+    this.resultVisible = false
+    this.logDetailVisible = false
+  },
+  beforeUnmount() {
+    this.exportActivity?.controller.abort()
+    this.importActivity?.controller.abort()
+    this.importFile = null
+    this.invalidatePreview()
+    this.logRequestId++
+  },
   methods: {
     reservedCodeError,
     onTabChange(tab) { if (tab === 'logs') this.loadLogs() },
+    logQuery(keyword) {
+      return {
+        operationType: this.logFilters.operationType || undefined,
+        status: this.logFilters.status || undefined,
+        keyword: keyword.trim() || undefined,
+      }
+    },
+    fetchLogOptions({ query, pageNum, pageSize }) {
+      return listTransferLogs({ ...this.logQuery(query), pageNum, pageSize, summaryOnly: true })
+    },
+    searchLogs() {
+      this.appliedLogFilters = this.logQuery(this.logFilters.keyword)
+      this.logPageNum = 1
+      return this.loadLogs()
+    },
+    resetLogFilters() {
+      this.logFilters = emptyLogFilters()
+      return this.searchLogs()
+    },
+    changeLogPage(page) {
+      if (page === this.logPageNum) return
+      this.logPageNum = page
+      return this.loadLogs()
+    },
     async loadLogs() {
+      const requestId = ++this.logRequestId
+      this.logLoadError = ''
       this.logsLoading = true
       try {
-        const response = await listTransferLogs({ pageNum: this.logPageNum, pageSize: this.logPageSize })
+        const response = await listTransferLogs({ ...this.appliedLogFilters, pageNum: this.logPageNum, pageSize: this.logPageSize, summaryOnly: true })
+        if (requestId !== this.logRequestId) return
         const data = response.data || {}
         this.logs = data.records || []
         this.logTotal = data.total || 0
       } catch (error) {
+        if (requestId !== this.logRequestId) return
+        this.logLoadError = error.message || '迁移日志加载失败，请刷新重试'
         this.logs = []
         this.logTotal = 0
-      } finally { this.logsLoading = false }
+      } finally { if (requestId === this.logRequestId) this.logsLoading = false }
     },
     async openLogDetail(row) {
       this.logDetailVisible = true
@@ -445,40 +567,41 @@ export default {
       root.loadError = ''
       root.requestId += 1
       this.exportError = ''
+      this.loadExportLineage(root)
     },
     onRootSelectionChange(root) {
       root.versionSelection = { versionMode: 'LATEST', versionId: null }
       root.versionLabel = '最新版（当前生产）'
       this.exportError = ''
-      if (!root.resourceId) return
-      if (this.roots.some(other => other !== root && other.resourceType === root.resourceType
+      if (root.resourceId && this.roots.some(other => other !== root && other.resourceType === root.resourceType
         && String(other.resourceId) === String(root.resourceId))) {
         root.resourceId = ''
         ElMessage.warning('该资源已添加，请选择其他资源')
       }
-      this.selectedExportRootKey = root.key
-      this.loadExportLineage(root)
+      if (root.resourceId) this.selectedExportRootKey = root.key
+      return this.loadExportLineage(root)
+    },
+    packageLineageOnly(root) {
+      return ['BILLING_CONFIG', 'FIELD_VALIDATION', 'EXPERIMENT'].includes(root.resourceType)
     },
     async loadExportLineage(root) {
-      if (!root || !root.resourceId) return
-      this.exportLineageLoading = true
+      const requestId = ++root.lineageRequestId
+      root.lineageGraph = null
+      root.lineageError = ''
+      root.lineageLoading = Boolean(root.resourceId) && !this.packageLineageOnly(root)
+      if (!root.lineageLoading) return
       try {
         const response = await getLineageGraph({
           nodeType: LINEAGE_TYPES[root.resourceType] || root.resourceType,
-          nodeId: Number(root.resourceId),
+          nodeId: root.resourceId,
           direction: 'ALL',
           maxDepth: 2,
         })
-        const graph = response.data || null
-        if (graph && root.versionLabel && root.versionSelection?.versionMode === 'FIXED') {
-          const nodeKey = `${LINEAGE_TYPES[root.resourceType] || root.resourceType}:${root.resourceId}`
-          const patchNode = node => node?.id === nodeKey ? { ...node, versionLabel: root.versionLabel } : node
-          this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: { ...graph, startNode: patchNode(graph.startNode), nodes: (graph.nodes || []).map(patchNode) } }
-        } else this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: graph }
+        if (requestId === root.lineageRequestId) root.lineageGraph = response.data?.startNode ? response.data : null
       } catch (error) {
-        this.exportLineageGraphs = { ...this.exportLineageGraphs, [root.key]: null }
+        if (requestId === root.lineageRequestId) root.lineageError = error?.message || '源环境血缘读取失败'
       } finally {
-        this.exportLineageLoading = false
+        if (requestId === root.lineageRequestId) root.lineageLoading = false
       }
     },
     fetchRootOptionsByKey(key, params) {
@@ -510,7 +633,6 @@ export default {
     onRootVersionChange(root, selection) {
       if (!root || !selection) return
       root.versionLabel = selection.label || (selection.versionMode === 'LATEST' ? '最新版（当前生产）' : `指定 v${selection.version || selection.versionId}`)
-      this.loadExportLineage(root)
     },
     resourceVersionLabel(item) {
       if (!item) return ''
@@ -519,6 +641,12 @@ export default {
       return version == null ? '' : `指定 v${version}`
     },
     invalidatePreview() {
+      if (this.importActivity?.preview && this.importActivity.status === 'running') {
+        this.importActivity.controller.abort()
+        this.importActivity = null
+      } else if (this.preview && this.importActivity?.preview && !this.importActivity.controller.signal.aborted) {
+        endActivity(this.importActivity, 'warning', '导入选项已更改，请重新预检')
+      }
       this.previewRequestId += 1
       this.preview = null
       this.previewFile = null
@@ -526,11 +654,25 @@ export default {
       this.previewError = ''
       this.previewing = false
     },
+    clearSuggestedActions(variables) {
+      // 切换默认策略时丢弃旧预检自动回填的建议，保留用户逐项指定的处理方式。
+      for (const key of Object.keys(this.resourceActionsDraft)) {
+        if (key.startsWith('VARIABLE:') === variables && !this.explicitActionKeys.has(key)) delete this.resourceActionsDraft[key]
+      }
+    },
     selectFile(upload) {
+      this.resultVisible = false
+      this.importResult = null
+      this.setResult = null
+      this.activationIndex = 0
+      this.importActivity?.controller.abort()
+      this.importActivity = null
+      this.restoreAfterImport = true
       this.importFile = upload?.raw || null
       this.selectedLineageRoot = ''
       this.selectedResourceKeysDraft = []
       this.resourceActionsDraft = {}
+      this.explicitActionKeys.clear()
       this.resourceBindingsDraft = {}
       this.fieldBindingsDraft = {}
       this.versionBindingsDraft = {}
@@ -563,17 +705,83 @@ export default {
         return
       }
       this.exporting = true
+      const activity = this.exportActivity = startActivity('导出配置')
       try {
-        const response = await exportResourceTransfer(roots, { includeDependencies: !this.exportOnlySelected })
+        const response = await exportResourceTransfer(roots, { includeDependencies: !this.exportOnlySelected }, activity)
+        activity.controller.signal.throwIfAborted()
         const url = URL.createObjectURL(response.data)
         const anchor = document.createElement('a')
         anchor.href = url
         anchor.download = 'tianshu-resource-transfer.zip'
         anchor.click()
         URL.revokeObjectURL(url)
+        endActivity(activity, 'success', '导出完成，已开始下载配置包')
       } catch (error) {
+        if (activity.controller.signal.aborted) return
         this.exportError = error.message || '配置包生成失败，请重试'
+        endActivity(activity, 'failed', this.exportError)
       } finally { this.exporting = false }
+    },
+    async resumeActivation() {
+      if (this.applying) return
+      this.applying = true
+      this.previewError = ''
+      const activity = this.importActivity = startActivity('继续验证发布', false, this.importActivity)
+      try {
+        await this.runActivation(activity, 0)
+        endActivity(activity, 'success', this.isProjectSet ? `已恢复 ${this.activationIndex} 项发布状态` : `已完成 ${this.activationIndex} 项验证发布`)
+        if (!this.isProjectSet) this.resultVisible = this.pageActive
+      } catch (error) {
+        if (activity.controller.signal.aborted) return
+        this.previewError = '配置已导入，发布未完成：' + (error.message || '请核对失败步骤')
+        endActivity(activity, 'failed', this.previewError)
+      } finally { this.applying = false }
+    },
+    async runActivation(activity, start) {
+      const steps = this.activationSteps
+      for (; this.activationIndex < steps.length; this.activationIndex++) {
+        const step = steps[this.activationIndex]
+        const state = `验证发布 ${this.activationIndex + 1}/${steps.length} · ${step.code}`
+        const percent = start + (99 - start) * this.activationIndex / steps.length
+        recordAction(activity, percent, state)
+        await restorePublishedStep(step, detail => recordAction(activity, percent, `${state} · ${detail}`))
+      }
+    },
+    async reviewSet(apply) {
+      if (!this.isProjectSet || this.previewing || this.applying) return
+      const file = this.importFile
+      const digest = apply ? this.setResult?.digest : null
+      if (apply && (!digest || !this.setResult.ready || this.setResult.applied)) return
+      this.previewError = ''
+      if (apply) this.applying = true
+      else { this.previewing = true; this.setResult = null }
+      let activity
+      try {
+        const restore = apply && this.restoreAfterImport && this.setResult?.publicationCount > 0
+        if (apply) await ElMessageBox.confirm(restore ? '新建项目后，将在本环境运行启用的固定用例并审批发布。回归会按配置实际调用外数和名单。确认继续？' : '将按清单新建所有项目，规则保存为草稿。确认导入？', '确认导入项目合集', { type: 'warning' })
+        if (file !== this.importFile) return
+        activity = this.importActivity = startActivity(apply ? '导入项目合集' : '预检项目合集', !apply, apply ? this.importActivity : null)
+        const response = await transferProjectSet(file, digest, activity, restore ? 75 : 98)
+        activity.controller.signal.throwIfAborted()
+        this.setResult = response.data
+        this.activationIndex = 0
+        if (restore) await this.runActivation(activity, 75)
+        const conflicts = this.setResult.projects.reduce((total, project) => total + project.issues.length, 0)
+        const message = apply ? (restore ? `项目合集已导入，已恢复 ${this.activationIndex} 项发布状态` : '项目合集已导入')
+          : this.setResult.applied ? '预检完成，已找回原导入记录' : conflicts ? `预检完成，有 ${conflicts} 项问题待处理` : '预检通过，可以导入项目合集'
+        endActivity(activity, !apply && !this.setResult.applied && conflicts ? 'warning' : 'success', message)
+      } catch (error) {
+        if (file === this.importFile && error !== 'cancel' && error !== 'close' && !activity?.controller.signal.aborted) {
+          if (!this.setResult?.applied) this.setResult = null
+          this.previewError = error.message || '项目合集处理失败'
+          endActivity(activity, 'failed', this.previewError)
+        }
+      } finally {
+        if (file === this.importFile && (!activity || this.importActivity === activity)) {
+          this.applying = false
+          this.previewing = false
+        }
+      }
     },
     async previewPackage() {
       if (this.applying || !this.importFile) return
@@ -588,9 +796,14 @@ export default {
       const options = this.normalizedOptions()
       const signature = JSON.stringify(options)
       this.previewing = true
+      const activity = this.importActivity = startActivity('预览冲突', true)
       try {
-        const response = await previewResourceTransfer(file, options)
-        if (requestId !== this.previewRequestId || file !== this.importFile || signature !== this.optionsSignature) return
+        const response = await previewResourceTransfer(file, options, activity)
+        if (requestId !== this.previewRequestId || file !== this.importFile) return
+        if (signature !== this.optionsSignature) {
+          endActivity(activity, 'warning', '导入选项已更改，请重新预览冲突')
+          return
+        }
         if (!response.data?.packageDigest) throw new Error('预检未返回有效的配置包摘要，请重新预览冲突')
         this.preview = response.data
         this.selectedResourceKeysDraft = (response.data.selectedResourceKeys
@@ -607,14 +820,20 @@ export default {
         this.previewFile = file
         // 服务端回填的资源选择和处理策略属于本次预检结果；后续手工修改仍使签名失效。
         this.previewOptionsSignature = this.optionsSignature
+        const count = this.preview.conflictCount || 0
+        endActivity(activity, this.preview.modelScanIssue || count ? 'warning' : 'success',
+          this.preview.modelScanIssue || (count ? `预检完成，发现 ${count} 项冲突` : '预检完成，请核对导入选项'))
       } catch (error) {
-        if (requestId === this.previewRequestId) this.previewError = error.message || '预检失败，请重新预览冲突'
+        if (requestId === this.previewRequestId) {
+          this.previewError = error.message || '预检失败，请重新预览冲突'
+          endActivity(activity, 'failed', this.previewError)
+        }
       } finally {
         if (requestId === this.previewRequestId) this.previewing = false
       }
     },
     async applyPackage() {
-      if (this.applying) return
+      if (this.applying || this.pendingPublication) return
       if (this.preview?.resources?.length && !this.selectedResourceKeysDraft.length) {
         ElMessage.warning('请至少选择一项要导入的内容')
         return
@@ -629,7 +848,9 @@ export default {
       const requestId = this.previewRequestId
       const projectHint = options.targetScope === 'GLOBAL' ? '全局范围'
         : options.createProject ? `新项目「${options.projectName || options.projectCode}」` : '所选项目'
-      const ruleHint = options.publishRules ? '规则将按选项发布，固定依赖使用预检确认的目标版本' : '规则只创建目标环境草稿'
+      const verify = options.publishRules && this.preview.ruleCaseCount > 0
+      const ruleHint = verify ? `先保存草稿和 ${this.preview.ruleCaseCount} 个固定用例，在目标环境运行启用用例并审批发布。回归可能实际调用外数、写入名单`
+        : options.publishRules ? '规则将按选项发布，固定依赖使用预检确认的目标版本' : '规则只创建目标环境草稿'
       this.applying = true
       try {
         await ElMessageBox.confirm(`确认导入到${projectHint}？普通资源将通过治理流程导入生效，${ruleHint}。`, '确认导入', { type: 'warning' })
@@ -639,13 +860,22 @@ export default {
         }
         this.resultVisible = false
         this.importResult = null
-        this.importResult = (await importResourceTransfer(file, options)).data
+        const activity = this.importActivity = startActivity('导入配置', false, this.importActivity)
+        this.activationIndex = 0
+        const response = verify ? await importResourceTransfer(file, options, activity, true)
+          : await importResourceTransfer(file, options, activity)
+        this.importResult = response.data
+        activity.controller.signal.throwIfAborted()
         this.appliedOptions = options
-        this.resultVisible = true
         this.invalidatePreview()
+        if (verify) await this.runActivation(activity, 75)
+        endActivity(activity, 'success', this.activationIndex ? `配置已导入，已完成 ${this.activationIndex} 项验证发布` : '导入完成，已保存处理结果')
+        this.resultVisible = this.pageActive
       } catch (error) {
-        if (error === 'cancel' || error === 'close') return
+        if (error === 'cancel' || error === 'close' || this.importActivity?.controller.signal.aborted) return
         this.invalidatePreview()
+        this.previewError = this.importResult ? '配置已导入，发布未完成：' + (error.message || '请核对失败步骤') : error.message || '导入失败'
+        endActivity(this.importActivity, 'failed', this.previewError)
         if (!error.requestErrorNotified) ElMessage.error(error.message || '导入失败，请核对目标环境后重新预览冲突')
       } finally { this.applying = false }
     },
@@ -728,9 +958,10 @@ export default {
 </script>
 
 <style scoped>
+.export-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .transfer-page { padding-bottom: 36px; }
 .transfer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.transfer-card { background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color-light); border-radius: 14px; padding: 20px; box-shadow: 0 8px 28px rgba(15, 23, 42, .05); }
+.transfer-card { min-width: 0; background: var(--el-bg-color-overlay); border: 1px solid var(--el-border-color-light); border-radius: 14px; padding: 20px; box-shadow: 0 8px 28px rgba(15, 23, 42, .05); }
 .export-card { min-width: 0; container: export-card / inline-size; }
 .export-card .card-heading, .export-card .card-actions, .export-card .inline-lineage-toolbar { flex-wrap: wrap; }
 .export-card .inline-lineage-toolbar :deep(.el-select) { max-width: 100%; }
@@ -739,6 +970,13 @@ export default {
 .transfer-tabs { margin-top: 4px; }
 .transfer-tabs :deep(.el-tabs__content) { overflow: visible; }
 .transfer-log-card { margin-top: 12px; }
+.transfer-log-card .log-keyword { width: 320px; max-width: 100%; }
+.transfer-log-card .el-form-item :deep(.el-select) { width: 120px; }
+@media (max-width: 560px) {
+  .transfer-log-card .el-form-item { width: 100%; }
+  .transfer-log-card .el-form-item :deep(.el-select) { width: 100%; }
+  .transfer-log-card .el-form-item :deep(.el-form-item__label) { width: 5em; justify-content: flex-start; }
+}
 .transfer-log-card .el-pagination { display: flex; justify-content: flex-end; margin-top: 14px; }
 .card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .card-kicker { color: var(--el-color-primary); font-size: 11px; letter-spacing: .12em; font-weight: 700; }

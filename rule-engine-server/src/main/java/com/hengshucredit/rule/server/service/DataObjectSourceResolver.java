@@ -179,10 +179,12 @@ public class DataObjectSourceResolver {
                 : snapshotFields.stream().filter(field -> object.getId().equals(field.getObjectId())).toList();
         if (!fields.isEmpty()) {
             List<RuleDefinitionInputField> inputs = new ArrayList<>();
+            var fieldsById = DataObjectScriptPath.index(fields);
             for (var field : fields) {
-                String code = firstText(field.getScriptName(), field.getVarCode());
+                String path = DataObjectScriptPath.resolve(root, field, fieldsById::get);
+                if (path == null) continue;
                 RuleDefinitionInputField input = new RuleDefinitionInputField(); input.setVarId(field.getId()); input.setRefType("DATA_OBJECT");
-                input.setScriptName(code.equals(root) || code.startsWith(root + ".") ? code : root + "." + code); inputs.add(input);
+                input.setScriptName(path); inputs.add(input);
             }
             VariableResolveOptions wholeOptions = new VariableResolveOptions();
             org.springframework.beans.BeanUtils.copyProperties(options, wholeOptions);

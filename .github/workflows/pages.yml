@@ -36,27 +36,37 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Upload manual
+        id: manual
         uses: actions/upload-pages-artifact@v3
         with:
           name: github-pages-${{ github.run_attempt }}
           path: docs
 
-      - name: Wait for uploaded manual to be discoverable
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT_NAME: github-pages-${{ github.run_attempt }}
-        run: |
-          for attempt in {1..12}; do
-            count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$ARTIFACT_NAME" \
-              --jq '[.artifacts[] | select(.expired == false)] | length')
-            if [[ "$count" == 1 ]]; then exit 0; fi
-            sleep 5
-          done
-          echo "::error::Uploaded manual $ARTIFACT_NAME did not become visible for run $GITHUB_RUN_ID"
-          exit 1
-
-      - name: Deploy to GitHub Pages
+      - name: Deploy uploaded manual
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/github-script@v8
+        timeout-minutes: 10
+        env:
+          ARTIFACT_ID: ${{ steps.manual.outputs.artifact_id }}
+          BUILD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         with:
-          artifact_name: github-pages-${{ github.run_attempt }}
+          script: |
+            const artifact = Number(process.env.ARTIFACT_ID)
+            if (!Number.isSafeInteger(artifact) || artifact <= 0) throw new Error('Upload returned no artifact ID')
+            const { data } = await github.rest.repos.createPagesDeployment({
+              ...context.repo, artifact_id: artifact, pages_build_version: process.env.BUILD_SHA,
+              oidc_token: await core.getIDToken()
+            })
+            const deployment = data.id || process.env.BUILD_SHA
+            for (;;) {
+              const { data: report } = await github.request('GET /repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}', {
+                ...context.repo, pages_deployment_id: deployment
+              })
+              if (report.status === 'succeed') break
+              if (['deployment_failed', 'deployment_perms_error', 'deployment_content_failed',
+                   'deployment_cancelled', 'deployment_lost'].includes(report.status)) {
+                throw new Error('Pages deployment ' + deployment + ': ' + report.status)
+              }
+              await new Promise(resolve => setTimeout(resolve, 5000))
+            }
+            core.setOutput('page_url', data.page_url)

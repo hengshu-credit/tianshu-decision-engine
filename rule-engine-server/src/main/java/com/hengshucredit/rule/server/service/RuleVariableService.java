@@ -216,8 +216,10 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
             if (root == null) root = trimToNull(object.getObjectCode());
             if (root != null) map.put(refKey("DATA_OBJECT_ROOT", object.getId()), root);
         }
-        for (RuleDataObjectField f : listObjectFields(projectId)) {
-            String scriptName = buildObjectFieldScriptName(f, objectMap);
+        var fields = listObjectFields(projectId);
+        var fieldsById = DataObjectScriptPath.index(fields);
+        for (RuleDataObjectField f : fields) {
+            String scriptName = RuleFieldAnalyzer.buildObjectFieldScriptName(f, objectMap, fieldsById);
             if (f.getId() != null && scriptName != null) {
                 map.put(refKey("DATA_OBJECT", f.getId()), scriptName);
             }
@@ -331,25 +333,6 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         } else {
             wrapper.eq(scopeColumn, SCOPE_GLOBAL);
         }
-    }
-
-    private String buildObjectFieldScriptName(RuleDataObjectField field, Map<Long, RuleDataObject> objectMap) {
-        String fieldScript = trimToNull(field.getScriptName());
-        if (fieldScript == null) {
-            fieldScript = trimToNull(field.getVarCode());
-        }
-        if (fieldScript == null) {
-            return null;
-        }
-        RuleDataObject object = objectMap.get(field.getObjectId());
-        String objectScript = object != null ? trimToNull(object.getScriptName()) : null;
-        if (objectScript == null && object != null) {
-            objectScript = trimToNull(object.getObjectCode());
-        }
-        if (objectScript == null || fieldScript.equals(objectScript) || fieldScript.startsWith(objectScript + ".")) {
-            return fieldScript;
-        }
-        return objectScript + "." + fieldScript;
     }
 
     private String resolveVariableScriptName(RuleVariable v) {

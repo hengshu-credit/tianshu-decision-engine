@@ -17,7 +17,13 @@ import java.util.Set;
 
 /** 无网络、无鉴权副作用的请求绑定。调用身份只取决于配置和生效的请求字段。 */
 public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, Object> values,
-                                     Map<String, Object> params, String identity, String legacyIdentity) {
+                                     Map<String, Object> params, String identity, String legacyIdentity,
+                                     String responseCacheIdentity) {
+    public ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, Object> values,
+                                  Map<String, Object> params, String identity, String legacyIdentity) {
+        this(config, values, params, identity, legacyIdentity, identity);
+    }
+
     public ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, Object> values,
                                   Map<String, Object> params, String identity) {
         this(config, values, params, identity, identity);
@@ -154,7 +160,6 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
         transport.put("url", source.getBaseUrl());
         transport.put("authType", source.getAuthType());
         transport.put("tokenTtl", source.getTokenCacheSeconds());
-        Map<String, Object> references = new LinkedHashMap<>();
         JSONObject spec = specification(config);
         Map<String, Object> responseReferences = new LinkedHashMap<>();
         for (String branch : List.of("responseBranches", "exceptionBranches", "billingBranches", "retryBranches")) {
@@ -169,12 +174,16 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
         // 响应侧受管引用在模型中用冻结路径求值，普通 API 按其既有协议上下文处理。
         if (!responseReferences.isEmpty() && FrozenExternalApiScope.invocation() != null)
             transport.put("frozenResponseReferences", responseReferences);
-        collectBoundReferences(spec, paths, params, references);
-        for (String auth : java.util.Arrays.asList(config.getAuthApiConfig(), source.getAuthConfig())) {
-            if (auth != null && auth.contains("\"refId\"") && auth.trim().startsWith("{"))
-                collectBoundReferences(JSON.parseObject(auth), paths, params, references);
+        // prepare() signed the final fields. An unused default or overridden field cannot change a response.
+        String cacheIdentity = null;
+        if (config.getResponseCacheSeconds() != null && config.getResponseCacheSeconds() > 0) {
+            var responseSpec = new LinkedHashMap<String, Object>(spec);
+            responseSpec.remove("requestFields");
+            transport.put("references", transportReferences(responseSpec, source, paths));
+            cacheIdentity = transportIdentity(transport, signer);
         }
-        transport.put("references", references);
+        // Preserve the exact checkpoint calculation for orders accepted before this optimization.
+        transport.put("references", transportReferences(spec, source, paths));
         String key = transportIdentity(transport, signer);
         transport.put("plan", legacyIdentity);
         String oldKey = identity.equals(legacyIdentity) ? key : transportIdentity(transport, signer);
@@ -182,7 +191,18 @@ public record ExternalApiRequestPlan(RuleExternalApiConfig config, Map<String, O
         if (signedParams.get("__apiAuthIdentity") instanceof String auth) {
             signedParams.put("__apiAuthIdentity", signer.sign("external-api-auth-identity", auth));
         }
-        return new ExternalApiRequestPlan(config, values, signedParams, key, oldKey);
+        return new ExternalApiRequestPlan(config, values, signedParams, key, oldKey, cacheIdentity != null ? cacheIdentity : key);
+    }
+
+    private Map<String, Object> transportReferences(Map<String, Object> spec, RuleExternalDatasource source,
+                                                    Map<String, String> paths) {
+        Map<String, Object> references = new LinkedHashMap<>();
+        collectBoundReferences(spec, paths, params, references);
+        for (String auth : java.util.Arrays.asList(config.getAuthApiConfig(), source.getAuthConfig())) {
+            if (auth != null && auth.contains("\"refId\"") && auth.trim().startsWith("{"))
+                collectBoundReferences(JSON.parseObject(auth), paths, params, references);
+        }
+        return references;
     }
 
     private String transportIdentity(Map<String, Object> transport, LocalModelBindingSignature signer) {

@@ -77,6 +77,8 @@ public class VariableSourceResolver {
 
     @Resource
     private SftpConnectPools sftpConnectPools;
+    @Resource
+    private com.hengshucredit.rule.server.sftp.EngineSftpFiles engineSftpFiles;
 
     @Resource
     private SftpFileCache sftpFileCache;
@@ -737,6 +739,7 @@ public class VariableSourceResolver {
         copy.setDryRun(source.isDryRun());
         copy.setOfflineReplay(source.isOfflineReplay());
         copy.setForceRefreshSource(source.isForceRefreshSource());
+        copy.setExplainTestValue(source.isExplainTestValue());
         copy.setRequiredNamesUpstreamOnly(source.isRequiredNamesUpstreamOnly());
         copy.setVariableReferencePaths(source.getVariableReferencePaths());
         copy.setDerivedReferencePaths(source.getDerivedReferencePaths());
@@ -981,11 +984,16 @@ public class VariableSourceResolver {
             } else {
                 value = resolveListVariable(variable, config, resolvedParams, effectiveOptions);
             }
+            if (effectiveOptions.isExplainTestValue()) {
+                effectiveOptions.recordSourceState("VARIABLE", variable.getId(), "SOURCE_VALUE",
+                        value == null ? "EMPTY" : "PRESENT");
+            }
             if (value == null) {
                 value = parseDefaultValue(variable);
             }
             resolvedParams.put(scriptName, normalizeSourceValue(variable, value, effectiveOptions));
         } catch (Exception e) {
+            if (e instanceof com.hengshucredit.rule.server.security.ConsoleAccessDeniedException denied) throw denied;
             ExecutionCapacityException capacity = ExecutionCapacityException.find(e);
             if (capacity != null) throw capacity;
             if (e instanceof RuleRuntimeCallLogService.HistoryLogWriteException failure) throw failure;
@@ -1766,9 +1774,9 @@ public class VariableSourceResolver {
             throw new IllegalArgumentException("变量不存在");
         }
         String varSource = variable.getVarSource();
-        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)
+        if (!"INPUT".equals(varSource) && !"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)
                 && !"SFTP".equals(varSource) && !"DERIVED".equals(varSource)) {
-            throw new IllegalArgumentException("仅支持测试 API、数据库、名单、SFTP、衍生变量");
+            throw new IllegalArgumentException("该来源不支持变量在线测试");
         }
         String scriptName = resolveScriptName(variable);
         if (!hasText(scriptName)) {
@@ -1776,9 +1784,17 @@ public class VariableSourceResolver {
         }
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setForceRefreshSource(true);
+        options.setExplainTestValue(true);
         options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList(scriptName)));
         Map<String, Object> params = inputParams == null ? new LinkedHashMap<>() : new LinkedHashMap<>(inputParams);
-        Map<String, Object> resolved = resolve(variable.getProjectId(), params, options);
+        Map<String, Object> resolved;
+        if ("INPUT".equals(varSource)) {
+            resolved = new LinkedHashMap<>(params);
+            options.recordSourceState("VARIABLE", variableId, "SOURCE_VALUE", !params.containsKey(scriptName)
+                    ? "ABSENT" : params.get(scriptName) == null ? "EMPTY" : "PRESENT");
+        } else {
+            resolved = resolve(variable.getProjectId(), params, options);
+        }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("variableId", variable.getId());
         result.put("varCode", variable.getVarCode());
@@ -1786,6 +1802,7 @@ public class VariableSourceResolver {
         result.put("varSource", varSource);
         result.put("inputParams", params);
         result.put("resolvedValue", resolved.get(scriptName));
+        result.put("sourceEvidence", options.getSourceStates().getOrDefault("VARIABLE:" + variableId, Map.of()));
         result.put("resolvedParams", resolved);
         if (options.getInvocationCache() != null) result.put("externalCalls", options.getInvocationCache().completedApiCalls());
         return result;
@@ -2007,6 +2024,7 @@ public class VariableSourceResolver {
             List<Map<String, Object>> rows = dbConnectPools.query(datasourceId, sql, queryParams,
                     maxRows, queryOptions.queryTimeoutSeconds(), queryOptions.maxContentBytes());
             if (options.isCaptureDatabasePreview()) options.setDatabasePreviewRows(rows);
+            if (options.isExplainTestValue()) options.recordSourceState("VARIABLE", variable.getId(), "ROW_COUNT", rows == null ? 0 : rows.size());
             options.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "SUCCESS");
             options.recordSourceState("VARIABLE", variable.getId(), "DATA_STATE",
                     rows == null || rows.isEmpty() ? "NO_DATA" : "HAS_DATA");
@@ -2038,15 +2056,24 @@ public class VariableSourceResolver {
     private Object resolveSftpVariable(RuleVariable variable, Map<String, Object> config,
                                        Map<String, Object> params, VariableResolveOptions options) throws Exception {
         Long datasourceId = longValue(config.get("sftpDatasourceId"));
-        if (datasourceId == null) throw new IllegalArgumentException("SFTP变量缺少 sftpDatasourceId");
+        boolean internal = Boolean.TRUE.equals(config.get("engineSftp"));
+        Long project = options.getExecutionProjectId() != null ? options.getExecutionProjectId() : variable.getProjectId();
+        if (internal && (datasourceId != null || project == null || project <= 0))
+            throw new IllegalArgumentException("内置 SFTP 需要明确的执行项目");
+        if (!internal && (datasourceId == null || datasourceId <= 0)) throw new IllegalArgumentException("SFTP变量缺少 sftpDatasourceId");
+        // 外部数据源 ID 为正。内置文件以执行项目隔离，包括跨规则及根规则内的缓存。
+        Long cacheNamespace = internal ? Long.valueOf(-project) : datasourceId;
         Object path = config.get("remotePath");
         Object configuredPath = path instanceof Map<?, ?>
                 ? ExternalApiRequestPlan.evaluate(path, params, sourceReferencePaths(variable, options))
                 : parseConfiguredValue(path, params);
-        String remotePath = stringValue(configuredPath).trim();
+        String evaluatedPath = stringValue(configuredPath).trim();
+        // 账户归属必须在根执行缓存、跨请求缓存及远端访问之前验证。
+        String remotePath = internal ? engineSftpFiles.projectPath(project, evaluatedPath) : evaluatedPath;
         if (!hasText(remotePath)) throw new IllegalArgumentException("SFTP变量缺少远端文件路径");
         String fileAddress = stringValue(parseConfiguredValue(config.get("fileAddress"), params)).trim();
         boolean uploadEnabled = hasText(fileAddress);
+        if (internal && uploadEnabled) throw new IllegalArgumentException("内置 SFTP 由上传方写入文件，请提供项目文件路径");
         String uploadRemotePath = stringValue(parseConfiguredValue(config.get("uploadRemotePath"), params)).trim();
         if (uploadEnabled && !hasText(uploadRemotePath)) uploadRemotePath = remotePath;
         String outputFormat = stringValue(config.get("outputFormat"));
@@ -2059,11 +2086,15 @@ public class VariableSourceResolver {
         int uploadTimeoutMs = intConfig(config.get("uploadTimeoutMs"), 30000, 100, 300000);
         long start = System.currentTimeMillis();
         RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
-                "SFTP", resolveRuntimeProjectId(variable), datasourceId, resolveScriptName(variable));
+                "SFTP", internal ? project : resolveRuntimeProjectId(variable), datasourceId, resolveScriptName(variable));
         RuleSftpDatasource datasource = null;
         String normalizedPath = remotePath;
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("sftpDatasourceId", datasourceId);
+        if (internal) {
+            request.put("engineSftp", true);
+            request.put("projectId", project);
+        }
         request.put("remotePath", normalizedPath);
         request.put("targetVariable", resolveScriptName(variable));
         request.put("outputFormat", outputFormat);
@@ -2080,22 +2111,24 @@ public class VariableSourceResolver {
             AtomicBoolean executionCacheHit = new AtomicBoolean();
             AtomicBoolean runtimeCacheHit = new AtomicBoolean();
             SftpFileCache.Lookup preliminary = sftpFileCache == null
-                    ? null : sftpFileCache.get(sftpFileCache.key(datasourceId, remotePath), cacheSeconds);
+                    ? null : sftpFileCache.get(sftpFileCache.key(cacheNamespace, remotePath), cacheSeconds);
             SftpFileCache.LoadResult loaded;
             if (preliminary != null) {
                 loaded = new SftpFileCache.LoadResult(preliminary.content(), true, false);
             } else {
-                datasource = sftpConnectPools.connectionConfig(datasourceId);
-                normalizedPath = sftpConnectPools.remotePath(remotePath, datasource);
+                if (!internal) {
+                    datasource = sftpConnectPools.connectionConfig(datasourceId);
+                    normalizedPath = sftpConnectPools.remotePath(remotePath, datasource);
+                }
                 request.put("remotePath", normalizedPath);
                 String resolvedPath = normalizedPath;
-                String cacheKey = sftpFileCache == null ? null : sftpFileCache.key(datasourceId, resolvedPath);
+                String cacheKey = sftpFileCache == null ? null : sftpFileCache.key(cacheNamespace, resolvedPath);
                 String resolvedUploadPath = uploadEnabled
                         ? sftpConnectPools.remotePath(uploadRemotePath, datasource) : null;
                 RuleSftpDatasource effectiveDatasource = datasource;
                 request.put("uploadRemotePath", resolvedUploadPath);
                 // 以最终远端文件路径作为根执行键；上传型变量与只读型变量也能复用同一文件。
-                String executionKey = "SFTP_EXECUTION:" + datasourceId + ":" + resolvedPath;
+                String executionKey = "SFTP_EXECUTION:" + cacheNamespace + ":" + resolvedPath;
                 java.util.concurrent.Callable<byte[]> loader = () -> {
                     if (sftpFileCache != null && cacheSeconds > 0) {
                         SftpFileCache.Lookup cachedBeforeUpload = sftpFileCache.get(cacheKey, cacheSeconds);
@@ -2111,18 +2144,11 @@ public class VariableSourceResolver {
                                 retryCount, retryBackoffMs, retryBackoffMultiplier);
                         uploadedBytes.set(source.length);
                     }
-                    if (sftpFileCache == null) {
-                        SftpConnectPools.ReadResult read = sftpConnectPools.readFileWithRetry(datasourceId,
-                                resolvedPath, retryCount, retryBackoffMs, retryBackoffMultiplier);
-                        actualRetryCount.set(read.retryCount());
-                        return read.content();
-                    }
-                    SftpFileCache.LoadResult cachedLoad = sftpFileCache.load(cacheKey, cacheSeconds, () -> {
-                        SftpConnectPools.ReadResult read = sftpConnectPools.readFileWithRetry(datasourceId,
-                                resolvedPath, retryCount, retryBackoffMs, retryBackoffMultiplier);
-                        actualRetryCount.set(read.retryCount());
-                        return read.content();
-                    });
+                    java.util.concurrent.Callable<byte[]> read = () -> internal
+                            ? engineSftpFiles.readProject(project, resolvedPath)
+                            : readSftpFile(datasourceId, resolvedPath, retryCount, retryBackoffMs, retryBackoffMultiplier, actualRetryCount);
+                    if (sftpFileCache == null) return read.call();
+                    SftpFileCache.LoadResult cachedLoad = sftpFileCache.load(cacheKey, cacheSeconds, read);
                     runtimeCacheHit.set(cachedLoad.cacheHit() || cachedLoad.shared());
                     return cachedLoad.content();
                 };
@@ -2143,10 +2169,10 @@ public class VariableSourceResolver {
             String dataOrigin = sameExecutionHit ? "EXECUTION_CACHE"
                     : cacheHit ? "CACHE" : uploadEnabled ? "UPLOADED_REALTIME" : "REALTIME";
             if (sftpFileCache != null && cacheSeconds > 0 && !remotePath.equals(normalizedPath)) {
-                sftpFileCache.put(sftpFileCache.key(datasourceId, remotePath), content, cacheSeconds);
+                sftpFileCache.put(sftpFileCache.key(cacheNamespace, remotePath), content, cacheSeconds);
             }
             if (sftpFileCache != null && cacheSeconds > 0 && sameExecutionHit) {
-                sftpFileCache.put(sftpFileCache.key(datasourceId, normalizedPath), content, cacheSeconds);
+                sftpFileCache.put(sftpFileCache.key(cacheNamespace, normalizedPath), content, cacheSeconds);
             }
             options.recordSourceState("VARIABLE", variable.getId(), "CACHE_CONFIGURED", cacheSeconds > 0 ? "TRUE" : "FALSE");
             options.recordSourceState("VARIABLE", variable.getId(), "CACHE_STATE", cacheState);
@@ -2185,6 +2211,15 @@ public class VariableSourceResolver {
             Map<String, Object> failureResponse = new LinkedHashMap<>();
             failureResponse.put("status", "FAILED");
             failureResponse.put("phase", uploadEnabled ? "UPLOAD_AND_READ" : "READ");
+            if (options.isExplainTestValue()) {
+                for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+                    if (cause instanceof java.nio.file.NoSuchFileException
+                            || cause instanceof com.jcraft.jsch.SftpException missing && missing.id == com.jcraft.jsch.ChannelSftp.SSH_FX_NO_SUCH_FILE) {
+                        options.recordSourceState("VARIABLE", variable.getId(), "FILE_STATE", "NOT_FOUND");
+                        break;
+                    }
+                }
+            }
             failureResponse.put("errorType", e.getClass().getSimpleName());
             logVariableSource("SFTP", "SFTP_VARIABLE_READ", variable, datasourceId, request,
                     failureResponse, e.getMessage(), System.currentTimeMillis() - start, runtimeTrace);
@@ -2443,6 +2478,7 @@ public class VariableSourceResolver {
             log.setDatasourceId(targetId);
             Map<String, Object> request = requestBody instanceof Map<?, ?> raw
                     ? parseNestedMap(raw) : Collections.emptyMap();
+            if (Boolean.TRUE.equals(request.get("engineSftp"))) log.setProjectId(longValue(request.get("projectId")));
             Object path = request.get("remotePath");
             RuleSftpDatasource datasource = null;
             try { datasource = sftpConnectPools == null || targetId == null ? null : sftpConnectPools.cachedDatasource(targetId); }

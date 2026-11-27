@@ -1,6 +1,6 @@
 <template>
   <section v-show="visible" ref="panel" class="fp-panel" :class="{ 'fp-panel--compact': width < 680, 'fp-panel--narrow': width < 520, 'fp-panel--editor': editorMode, 'fp-panel--embedded': embedded }" :role="embedded ? 'complementary' : 'dialog'" :aria-label="embedded ? '天枢决策引擎内容选择器' : '内容选择器'" :style="[embedded ? {} : { width: width + 'px', height: height + 'px' }, tableStyle]">
-    <header class="fp-header" @pointerdown="startMotion($event, 'move')">
+    <header v-if="!hideHeader" class="fp-header" @pointerdown="startMotion($event, 'move')">
       <strong>{{ embedded ? '天枢决策引擎内容选择器' : editorMode ? ({ LITERAL: '调整阈值', PATH: '写入路径', EXPRESSION: '组合表达式' })[editorKind] : '内容选择器' }}</strong>
       <div v-if="editorMode || manualKinds.length || expression" class="fp-actions" role="toolbar" aria-label="配置面板" @pointerdown.stop>
         <button v-if="editorMode" type="button" @click="$emit('back')">返回内容</button>
@@ -84,14 +84,15 @@ import { API_PICKER_CATEGORIES } from '@/utils/pickerCategories'
 
 const categoryMeta = {
   ...Object.fromEntries(API_PICKER_CATEGORIES.map(item => [item.key, [item.label, item.icon]])),
-  selected: ['已选内容', '✓'], recent: ['最近使用', '◷'], all: ['全部内容', '⊞'], standalone: ['变量', '{}'], constant: ['常量', 'C'], object: ['数据对象', '◇'], model: ['模型', 'M'], function: ['函数 / 方法', 'ƒ'], operator: ['操作符', '∑'], external: ['外数 API', '↗'], rule: ['规则', 'R'], list: ['名单', '[]'], database: ['数据库', '▤'], sftp: ['SFTP', '↗'],
+  selected: ['已选内容', '✓'], recent: ['最近使用', '◷'], all: ['全部内容', '⊞'], standalone: ['变量', '{}'], constant: ['常量', 'C'], object: ['数据对象', '◇'], model: ['模型', 'M'], function: ['函数 / 方法', 'ƒ'], operator: ['操作符', '∑'], external: ['外数 API', '↗'], rule: ['规则', 'R'], mock: ['MOCK 规则', 'M'], list: ['名单', '[]'], database: ['数据库', '▤'], sftp: ['SFTP', '↗'],
 }
 export default {
   name: 'FieldPickerPanel',
   setup() { return { fieldId: useId() } },
   components: { FieldPickerRow },
   props: {
-    embedded: Boolean,
+    embedded: Boolean, hideHeader: Boolean,
+    columnLabels: { type: Object, default: null },
     items: { type: Array, default: () => [] }, selectedKey: { type: String, default: '' },
     selectedKeys: { type: Array, default: () => [] }, recentKeys: { type: Array, default: () => [] },
     query: { type: String, default: '' }, category: { type: String, default: 'all' },
@@ -105,7 +106,7 @@ export default {
   emits: ['category', 'search', 'select', 'manual', 'expression', 'close', 'back', 'move', 'resize', 'page-size'],
   data() { return { expanded: new Set(), selectedGroup: '', page: 1, pageSize: normalizeFieldPageSize(this.initialPageSize), scrollTop: 0, viewportHeight: 300, viewportWidth: 0, panelClientWidth: this.width, layoutObserver: null, preview: null, motion: null, locatePending: true, rowHeight: FIELD_ROW_HEIGHT, lastConfirmKey: '', lastConfirmAt: 0 } },
   computed: {
-    columns() { return FIELD_PICKER_COLUMNS },
+    columns() { return this.columnLabels ? FIELD_PICKER_COLUMNS.map(column => ({ ...column, label: this.columnLabels[column.key] || column.label })) : FIELD_PICKER_COLUMNS },
     columnWidths() { return fitFieldColumnWidths(preferredFieldColumnWidths.value, this.viewportWidth ? this.viewportWidth - 16 : 0) },
     tableStyle() {
       // 让浏览器直接填满当前容器，不等待 ResizeObserver 回填上一帧的像素宽度。

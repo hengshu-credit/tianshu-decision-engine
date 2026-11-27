@@ -18,6 +18,57 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class GovernanceApprovalServiceTest {
+    @Test public void unchangedSaveSubmitAndApprovalKeepProductionVersion() {
+        TestService service = new TestService();
+        service.resource.setId(5L);
+        service.resource.setResourceType("VARIABLE");
+        service.resource.setResourceId(7L);
+        service.resource.setEffectiveStatus("ACTIVE");
+        service.resource.setEffectiveVersionId(3L);
+        service.latestVersion.setId(3L);
+        service.latestVersion.setEffectiveStatus("ACTIVE");
+        String original = "{\"id\":7,\"options\":[],\"varCode\":\"Age\",\"updateBy\":\"operator\"}";
+        service.latestVersion.setSnapshotJson(original);
+        service.effectiveSnapshot = ResourceSnapshot.ofJson(original);
+        var draft = new GovernanceDraftRequest();
+        draft.setResourceType("VARIABLE"); draft.setResourceId(7L); draft.setAction("UPDATE");
+        draft.setSnapshotJson("{\"varCode\":\"Age\",\"description\":null,\"id\":7}");
+        assertNoChange(() -> service.createDraft(draft, "owner"));
+        Assert.assertTrue(service.createImportDraft(draft, "owner").isEmpty());
+        Assert.assertEquals(0, service.insertRequestCalls);
+        Assert.assertTrue(service.events.isEmpty());
+
+        draft.setSnapshotJson("{\"id\":7,\"varCode\":\"AgeEdited\"}");
+        var saved = service.createDraft(draft, "owner");
+        service.preflight(saved.getId(), "owner");
+        int events = service.events.size();
+        service.saveDraft(saved.getId(), draft, "owner");
+        Assert.assertEquals(events, service.events.size());
+        Assert.assertNotNull(service.request.getValidationReportJson());
+        service.saveDraftSnapshot(saved.getId(), original, "owner");
+        assertNoChange(() -> service.submit(saved.getId(), new GovernanceSubmitRequest(), "owner"));
+        Assert.assertEquals("EDITING", service.request.getStatus());
+
+        // A request submitted before the guard existed, or a concurrent NEW reaching the same content.
+        service.request.setSubmittedSnapshotJson(original);
+        service.request.setStatus("PENDING");
+        assertNoChange(() -> service.approve(saved.getId(), new GovernanceReviewRequest(), "reviewer"));
+        Assert.assertTrue(service.versions.isEmpty());
+        Assert.assertEquals(Long.valueOf(3), service.resource.getEffectiveVersionId());
+    }
+
+    @Test public void configurationEqualityPreservesCredentialsReferencesAndArrayOrder() {
+        var left = new ResourceSnapshot("{\"sourceConfig\":\"{\\\"b\\\":2,\\\"a\\\":1}\",\"refs\":[1,2]}", "ACTIVE", "cipher1", "digest");
+        var formatted = new ResourceSnapshot("{\"refs\":[1,2],\"sourceConfig\":\"{ \\\"a\\\":1,\\\"b\\\":2}\"}", "ACTIVE", "cipher2", "digest");
+        Assert.assertTrue(ResourceSnapshot.sameConfiguration("VARIABLE", left, formatted));
+        Assert.assertFalse(ResourceSnapshot.sameConfiguration("VARIABLE", left, new ResourceSnapshot(formatted.snapshotJson(), "ACTIVE", "new", "rotated")));
+        Assert.assertFalse(ResourceSnapshot.sameConfiguration("VARIABLE", left, new ResourceSnapshot(formatted.snapshotJson().replace("[1,2]", "[2,1]"), "ACTIVE", "cipher2", "digest")));
+    }
+
+    private static void assertNoChange(Runnable write) {
+        Assert.assertEquals("GOVERNANCE_NO_CHANGES", Assert.assertThrows(GovernanceApprovalService.GovernanceStateException.class, write::run).getCode());
+    }
+
     @Test
     public void everyDraftSaveInvalidatesPreflightUntilCheckedAgain() {
         for (String entrypoint : List.of("createDraft", "saveDraft", "saveDraftSnapshot")) {
@@ -1045,6 +1096,12 @@ public class GovernanceApprovalServiceTest {
                     && activeResourceKey.equals(
                     staleActiveRequest.getActiveResourceKey())
                     ? staleActiveRequest : null;
+        }
+
+        @Override
+        public List<GovernedResourceVersion> versions(String type, Long id) {
+            return java.util.stream.Stream.of(oldVersion, latestVersion)
+                    .filter(v -> v.getId() != null && type.equals(v.getResourceType()) && id.equals(v.getResourceId())).toList();
         }
 
         @Override

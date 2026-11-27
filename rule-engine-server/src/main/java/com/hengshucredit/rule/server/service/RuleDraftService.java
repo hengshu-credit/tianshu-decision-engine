@@ -13,6 +13,7 @@ import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.model.enums.RuleRevisionState;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.artifact.RuleDependencyClosureService;
+import com.hengshucredit.rule.server.artifact.RulePreflightValidationService;
 import com.hengshucredit.rule.server.artifact.RuleSchemaService;
 import com.hengshucredit.rule.server.artifact.Sha256Digests;
 import com.hengshucredit.rule.server.common.RuleGovernanceException;
@@ -82,6 +83,17 @@ public class RuleDraftService {
     @Transactional
     protected RuleDraftSaveResponse saveInternal(
             RuleDraftSaveRequest request, CompileResult precompiled) {
+        return saveInternal(request, precompiled, Set.of());
+    }
+
+    /** 导入同一事务内新建的草稿组。保留上游未发布的诊断，正式预检与发布仍使用完整门禁。 */
+    @Transactional
+    public RuleDraftSaveResponse saveImportedDraft(RuleDraftSaveRequest request, Set<Long> newDrafts) {
+        return saveInternal(request, null, Set.copyOf(newDrafts));
+    }
+
+    private RuleDraftSaveResponse saveInternal(RuleDraftSaveRequest request, CompileResult precompiled,
+                                                Set<Long> newDrafts) {
         requireSaveContract(request);
         RuleDefinition definition = loadDefinition(request.getDefinitionId());
         if (definition == null) {
@@ -97,6 +109,9 @@ public class RuleDraftService {
         if (!RuleRevisionState.DRAFT.name().equals(revision.getState())) {
             throw governance(409, "FROZEN_REVISION_WRITE_REJECTED",
                     "只能保存 DRAFT 状态的规则修订");
+        }
+        if (!request.getLockVersion().equals(revision.getLockVersion())) {
+            throw governance(409, "DRAFT_LOCK_CONFLICT", "草稿已被其他会话修改，请刷新后重试");
         }
         requireLocalNamespace(definition, revision);
         ResourceCodeValidation.requireValid(ResourceCodeValidation.designer(definition.getModelType(), request.getModelJson()));
@@ -123,11 +138,14 @@ public class RuleDraftService {
                     request.getRevisionId()));
         }
 
+        boolean sameModel = CanonicalJson.sameDocument(revision.getModelJson(), request.getModelJson());
         revision.setModelJson(request.getModelJson());
         RuleDependencyClosureService.DependencyClosure dependencies =
                 resolveDependencies(definition, revision, fields);
         for (RuleValidationIssue issue : dependencies.getIssues()) {
-            if (Set.of("INACTIVE_DEPENDENCY", "MODEL_VERSION_MISSING", "DEPENDENCY_NOT_FOUND").contains(issue.getCode())) {
+            boolean importedDraft = "INACTIVE_DEPENDENCY".equals(issue.getCode()) && "RULE".equals(issue.getResourceType())
+                    && issue.getResourceId() != null && newDrafts.contains(issue.getResourceId());
+            if (!importedDraft && Set.of("INACTIVE_DEPENDENCY", "MODEL_VERSION_MISSING", "DEPENDENCY_NOT_FOUND").contains(issue.getCode())) {
                 throw governance(400, "UPSTREAM_NOT_PUBLISHED", "不能引用未发布或不可用的上游内容：" + issue.getMessage());
             }
         }
@@ -164,9 +182,14 @@ public class RuleDraftService {
         revision.setModelJson(request.getModelJson());
         revision.setCompiledScript(compileResult.getCompiledScript());
         revision.setCompiledType(compileResult.getCompiledType());
+        boolean sameOpenApi = CanonicalJson.sameDocument(revision.getOpenApiConfigJson(), openApiConfigJson);
         revision.setOpenApiConfigJson(openApiConfigJson);
         revision.setInputSchemaJson(schemas.getInputSchemaJson());
         revision.setOutputSchemaJson(schemas.getOutputSchemaJson());
+        if (compileSuccess && (revision.getLockVersion() == 0 || sameModel && sameOpenApi)) {
+            lifecycleService.requirePublicationChange(revision, dependencies.getDependencyDigest(),
+                    RulePreflightValidationService.fieldDigest(fields));
+        }
         revision.setContentDigest(contentDigest(
                 definition, revision, dependencies.getDependencyDigest()));
         revision.setValidationReportDigest(

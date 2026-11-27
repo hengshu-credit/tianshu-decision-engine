@@ -15,6 +15,7 @@ function createContext(overrides = {}) {
     rulesRequestId: 0,
     refsRequestId: 0,
     markConfigurationSaved: vi.fn(),
+    skipUnchangedConfiguration: vi.fn(() => false),
     $set(target, key, value) { target[key] = value },
     $forceUpdate: vi.fn(),
     $message: { success: vi.fn(), error: vi.fn() },

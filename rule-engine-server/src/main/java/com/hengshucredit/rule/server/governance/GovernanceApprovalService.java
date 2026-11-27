@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.governance;
 
+import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.server.service.BuiltinFunctionCatalog;
 
 import com.alibaba.fastjson.JSON;
@@ -35,6 +36,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -242,6 +244,28 @@ public class GovernanceApprovalService {
     @Transactional
     public GovernanceApprovalRequest createDraft(GovernanceDraftRequest draft,
                                                  String actor) {
+        return createDraft(draft, actor, false);
+    }
+
+    /** A mixed import keeps processing changed resources when an entry already matches production. */
+    @Transactional
+    public Optional<GovernanceApprovalRequest> createImportDraft(GovernanceDraftRequest draft, String actor) {
+        return Optional.ofNullable(createDraft(draft, actor, true));
+    }
+
+    /** 创建待发布实验工作区，允许同一迁移事务中新建的规则草稿作为暂未发布的上游。 */
+    @Transactional
+    public GovernanceApprovalRequest createImportedExperimentWorkspace(GovernanceDraftRequest draft, String actor, Set<Long> ruleDrafts) {
+        if (!"EXPERIMENT".equals(draft.getResourceType()) || !"CREATE".equals(draft.getAction()) || draft.getResourceId() != null)
+            throw new IllegalArgumentException("仅支持新建实验工作区");
+        return createDraft(draft, actor, true, Set.copyOf(ruleDrafts));
+    }
+
+    private GovernanceApprovalRequest createDraft(GovernanceDraftRequest draft, String actor, boolean importing) {
+        return createDraft(draft, actor, importing, Set.of());
+    }
+
+    private GovernanceApprovalRequest createDraft(GovernanceDraftRequest draft, String actor, boolean importing, Set<Long> ruleDrafts) {
         if (draft == null) {
             throw new IllegalArgumentException("审批草稿不能为空");
         }
@@ -355,7 +379,9 @@ public class GovernanceApprovalService {
                     "当前资源已有其他生命周期动作的编辑中申请，请先取消该申请");
         }
         if (active != null) {
-            normalized = saveWorkspace(active, normalized, applicant);
+            if (importing && matchesProduction(active, normalized, resource)) return null;
+            if (unchangedDraft(active, normalized, draft.getChangeSummary())) return active;
+            normalized = saveWorkspace(active, normalized, applicant, ruleDrafts);
             active.setDraftSnapshotJson(normalized.snapshotJson());
             active.setSnapshotDigest(
                     Sha256Digests.text(normalized.snapshotJson()));
@@ -365,7 +391,7 @@ public class GovernanceApprovalService {
             active.setChangeSummary(draft.getChangeSummary());
             invalidateDraftPreflight(active);
             persistRequest(active);
-            saveDraftDependencies(active, normalized);
+            saveDraftDependencies(active, normalized, ruleDrafts);
             appendEvent(active, "SAVE_DRAFT", active.getStatus(),
                     actor, draft.getChangeSummary(), null);
             return active;
@@ -400,13 +426,20 @@ public class GovernanceApprovalService {
         request.setSecretDigest(normalized.secretDigest());
         request.setChangeSummary(draft.getChangeSummary());
         request.setApplicant(applicant);
-        normalized = saveWorkspace(request, normalized, applicant);
+        // Explicit historical reuse opens an editable workspace for the selected business line.
+        if (!"REUSE".equals(request.getRestoreMode()) || Objects.equals(request.getSourceVersionId(), resource.getEffectiveVersionId())) {
+            if (matchesProduction(request, normalized, resource)) {
+                if (importing) return null;
+                throw noProductionChange();
+            }
+        }
+        normalized = saveWorkspace(request, normalized, applicant, ruleDrafts);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSnapshotDigest(Sha256Digests.text(normalized.snapshotJson()));
         request.setSecretPayloadCiphertext(normalized.secretPayloadCiphertext());
         request.setSecretDigest(normalized.secretDigest());
         insertRequest(request);
-        saveDraftDependencies(request, normalized);
+        saveDraftDependencies(request, normalized, ruleDrafts);
         appendEvent(request, "CREATE_DRAFT", null, actor,
                 draft.getChangeSummary(), null);
         return request;
@@ -436,6 +469,7 @@ public class GovernanceApprovalService {
                         firstNotBlank(draft.getSecretDigest(),
                                 request.getSecretDigest())));
         if (consoleResources != null) request.setProjectId(consoleResources.draftProject(request.getResourceType(), request.getResourceId(), normalized.snapshotJson()));
+        if (unchangedDraft(request, normalized, draft.getChangeSummary())) return request;
         normalized = saveWorkspace(request, normalized, actor);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSnapshotDigest(
@@ -462,6 +496,7 @@ public class GovernanceApprovalService {
         requireResourcePermission(request.getResourceType(), "edit");
         ResourceSnapshot normalized = normalize(request, snapshotJson);
         if (consoleResources != null) request.setProjectId(consoleResources.draftProject(request.getResourceType(), request.getResourceId(), normalized.snapshotJson()));
+        if (unchangedDraft(request, normalized, request.getChangeSummary())) return request;
         normalized = saveWorkspace(request, normalized, actor);
         request.setDraftSnapshotJson(normalized.snapshotJson());
         request.setSecretPayloadCiphertext(
@@ -497,6 +532,17 @@ public class GovernanceApprovalService {
     public GovernanceApprovalRequest submit(Long requestId,
                                             GovernanceSubmitRequest submit,
                                             String actor) {
+        return submit(requestId, submit, actor, null);
+    }
+
+    /** Used only by the native rule submission, immediately after its locked preflight. */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.MANDATORY)
+    public GovernanceApprovalRequest submitReviewedRule(Long requestId, GovernanceSubmitRequest submit, String actor,
+                                                         RuleRevision reviewed) {
+        return submit(requestId, submit, actor, java.util.Objects.requireNonNull(reviewed));
+    }
+
+    private GovernanceApprovalRequest submit(Long requestId, GovernanceSubmitRequest submit, String actor, RuleRevision reviewed) {
         GovernanceApprovalRequest request = requireMutableRequest(requestId);
         requireResourcePermission(request.getResourceType(), "submit");
         requireStatus(request, GovernanceRequestStatus.EDITING);
@@ -511,7 +557,8 @@ public class GovernanceApprovalService {
         if ("CREATE".equals(request.getAction()) && (request.getResourceId() == null || request.getResourceId() <= 0)) {
             normalized = saveWorkspace(request, normalized, actor);
         }
-        GovernancePreflightReport report = evaluate(request, normalized);
+        requireProductionChange(request, normalized, findResource(request.getResourceType(), request.getResourceId()));
+        GovernancePreflightReport report = reviewed == null ? evaluate(request, normalized) : evaluate(request, normalized, reviewed);
         if (!report.valid()) {
             throw new GovernanceStateException(
                     "GOVERNANCE_PREFLIGHT_FAILED",
@@ -580,6 +627,7 @@ public class GovernanceApprovalService {
 
         ResourceSnapshot snapshot = normalize(request,
                 request.getSubmittedSnapshotJson());
+        requireProductionChange(request, snapshot, resource);
         GovernancePreflightReport currentReport = evaluate(request, snapshot);
         if (!currentReport.valid()
                 || (!deleting && !safeEquals(request.getDependencyDigest(),
@@ -1175,10 +1223,15 @@ public class GovernanceApprovalService {
     protected GovernancePreflightReport evaluate(
             GovernanceApprovalRequest request,
             ResourceSnapshot snapshot) {
-        GovernedResourceAdapter adapter =
-                requireAdapter(request.getResourceType());
-        List<GovernanceIssue> issues = new ArrayList<>(
-                adapter.validate(snapshot, request.getAction()));
+        return evaluate(request, snapshot, null);
+    }
+
+    private GovernancePreflightReport evaluate(GovernanceApprovalRequest request, ResourceSnapshot snapshot,
+                                                RuleRevision reviewed) {
+        GovernedResourceAdapter adapter = requireAdapter(request.getResourceType());
+        List<GovernanceIssue> issues = new ArrayList<>(reviewed != null && adapter instanceof RuleGovernedResourceAdapter rules
+                ? rules.validateSubmitted(snapshot, request.getAction(), reviewed)
+                : adapter.validate(snapshot, request.getAction()));
         for (var issue : codeIssues(request, snapshot))
             issues.add(GovernanceIssue.error("RESERVED_CONTENT_CODE", issue.message(), request.getResourceType(),
                     request.getResourceId(), issue.path()));
@@ -1467,6 +1520,35 @@ public class GovernanceApprovalService {
         return normalize(request, snapshotJson);
     }
 
+    private boolean unchangedDraft(GovernanceApprovalRequest request, ResourceSnapshot snapshot, String summary) {
+        return Objects.equals(request.getChangeSummary(), summary)
+                && Objects.equals(request.getSecretDigest(), snapshot.secretDigest())
+                && CanonicalJson.sameDocument(request.getDraftSnapshotJson(), snapshot.snapshotJson());
+    }
+
+    private void requireProductionChange(GovernanceApprovalRequest request, ResourceSnapshot candidate, GovernedResource resource) {
+        if (matchesProduction(request, candidate, resource)) throw noProductionChange();
+    }
+
+    private GovernanceStateException noProductionChange() {
+        return new GovernanceStateException("GOVERNANCE_NO_CHANGES", "配置与目标生效版本一致，无需生成草稿或发布新版本");
+    }
+
+    private boolean matchesProduction(GovernanceApprovalRequest request, ResourceSnapshot candidate, GovernedResource resource) {
+        if (resource == null || resource.getEffectiveVersionId() == null || "CREATE".equals(request.getAction())) return false;
+        Long baselineId = resource.getEffectiveVersionId();
+        if ("OVERWRITE".equals(request.getPublishMode())) baselineId = request.getExpectedTargetSnapshotId();
+        else if ("REUSE".equals(request.getRestoreMode())) {
+            baselineId = versionHead(request.getResourceType(), request.getResourceId(), request.getSourceVersionId()).getId();
+        }
+        GovernedResourceVersion baseline = findVersion(baselineId);
+        if (baseline == null || baseline.getSnapshotJson() == null) return false;
+        String targetStatus = effectiveStatusFromSnapshot(candidate.snapshotJson());
+        if (!"UPDATE".equals(request.getAction()) || targetStatus == null) targetStatus = requestedEffectiveStatus(request);
+        return Objects.equals(baseline.getEffectiveStatus(), targetStatus)
+                && ResourceSnapshot.sameConfiguration(request.getResourceType(), ResourceVersionLines.snapshot(baseline), candidate);
+    }
+
     private void validateDraftTarget(GovernanceAction action,
                                      Long resourceId,
                                      GovernedResource resource) {
@@ -1507,6 +1589,10 @@ public class GovernanceApprovalService {
     }
 
     private ResourceSnapshot saveWorkspace(GovernanceApprovalRequest request, ResourceSnapshot snapshot, String actor) {
+        return saveWorkspace(request, snapshot, actor, Set.of());
+    }
+
+    private ResourceSnapshot saveWorkspace(GovernanceApprovalRequest request, ResourceSnapshot snapshot, String actor, Set<Long> ruleDrafts) {
         ResourceCodeValidation.requireValid(codeIssues(request, snapshot));
         GovernedResourceAdapter adapter = requireAdapter(request.getResourceType());
         if (!"CREATE".equals(request.getAction()) || !adapter.supportsDraftWorkspace()) return snapshot;
@@ -1514,7 +1600,7 @@ public class GovernanceApprovalService {
         boolean create = id == null || id <= 0;
         GovernedResource resource = create ? null : findResource(request.getResourceType(), id);
         if (!create && !isWorkspace(resource)) return snapshot;
-        checkDraftDependencies(request, snapshot);
+        checkDraftDependencies(request, snapshot, ruleDrafts);
         AppliedResource applied = adapter.apply(new ApprovalApplyContext(request.getId(), create ? null : id, 0,
                 create ? "DRAFT_CREATE" : "DRAFT_UPDATE", snapshot, actor, null));
         if (create) {
@@ -1539,10 +1625,17 @@ public class GovernanceApprovalService {
     }
 
     private GovernancePreflightReport checkDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot) {
+        return checkDraftDependencies(request, snapshot, Set.of());
+    }
+
+    private GovernancePreflightReport checkDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot, Set<Long> ruleDrafts) {
         if (dependencyService == null || Set.of("DELETE", "DISABLE").contains(request.getAction())) return null;
         GovernancePreflightReport report = dependencyService.preflight(request.getResourceType(), request.getResourceId(),
                 requireAdapter(request.getResourceType()).collectDependencies(snapshot), List.of());
-        if (!report.valid()) throw new GovernanceStateException("GOVERNANCE_DEPENDENCY_NOT_PUBLISHED", firstErrorMessage(report));
+        boolean onlyPendingRules = !ruleDrafts.isEmpty() && !report.errors().isEmpty() && report.errors().stream().allMatch(error ->
+                "RULE".equals(error.resourceType()) && error.resourceId() != null && ruleDrafts.contains(error.resourceId())
+                        && Set.of("DEPENDENCY_MISSING", "DEPENDENCY_INACTIVE", "DEPENDENCY_VERSION_MISSING").contains(error.code()));
+        if (!report.valid() && !onlyPendingRules) throw new GovernanceStateException("GOVERNANCE_DEPENDENCY_NOT_PUBLISHED", firstErrorMessage(report));
         return report;
     }
 
@@ -1552,7 +1645,11 @@ public class GovernanceApprovalService {
     }
 
     private void saveDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot) {
-        GovernancePreflightReport report = checkDraftDependencies(request, snapshot);
+        saveDraftDependencies(request, snapshot, Set.of());
+    }
+
+    private void saveDraftDependencies(GovernanceApprovalRequest request, ResourceSnapshot snapshot, Set<Long> ruleDrafts) {
+        GovernancePreflightReport report = checkDraftDependencies(request, snapshot, ruleDrafts);
         if (report != null) persistDependencies(request, report, null);
     }
 

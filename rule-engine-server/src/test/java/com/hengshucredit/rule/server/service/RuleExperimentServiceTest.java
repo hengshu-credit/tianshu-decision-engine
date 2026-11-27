@@ -27,6 +27,20 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class RuleExperimentServiceTest {
+    @Test
+    public void experimentOrderReplayPreservesSharedBusinessValues() {
+        var group = new com.hengshucredit.rule.model.dto.RuleExperimentGroupResult();
+        var nullable = java.util.Collections.singletonMap("score", (Object)null);
+        group.setResult(Map.of("first", nullable, "second", nullable));
+        group.setGroupCode("PLUS_70");
+        var experiment = new com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult();
+        experiment.setProductionGroup(group);
+        experiment.setSuccess(true);
+        var restored = RuleExperimentExecutionStateService.readResult(RuleExperimentExecutionStateService.writeResult(experiment));
+        assertEquals(group.getGroupCode(), restored.getProductionGroup().getGroupCode());
+        assertEquals(group.getResult(), restored.getProductionGroup().getResult());
+        assertTrue(restored.isSuccess());
+    }
 
     private RuleExperimentService service;
 

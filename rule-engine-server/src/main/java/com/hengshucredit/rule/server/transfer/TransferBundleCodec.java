@@ -20,13 +20,22 @@ public final class TransferBundleCodec {
     }
 
     byte[] encode(TransferBundle bundle, Map<String,TransferFunctionLibraries.Library> libraries) {
+        return zip.encode(archive(bundle, libraries));
+    }
+
+    void encodeTo(TransferBundle bundle, Map<String,TransferFunctionLibraries.Library> libraries, java.io.OutputStream sink)
+            throws java.io.IOException {
+        zip.encodeTo(archive(bundle, libraries), sink);
+    }
+
+    private DecisionArtifactPackage archive(TransferBundle bundle, Map<String,TransferFunctionLibraries.Library> libraries) {
         bundle.resources().forEach(TransferVersionReferences::descriptors);
         validate(bundle);
         DecisionArtifactPackage archive = new DecisionArtifactPackage();
         archive.putMetadata("packageKind", PACKAGE_KIND);
         boolean includesModels = bundle.resources().stream()
                 .anyMatch(r -> r.key().startsWith("MODEL:") && r.configuration().get("modelContent") instanceof String);
-        archive.putMetadata("resourceFormatVersion", !libraries.isEmpty() ? "3" : includesModels ? "2" : "1");
+        archive.putMetadata("resourceFormatVersion", bundle.resources().stream().anyMatch(r -> !r.pageSettings().isEmpty() || r.configuration().containsKey("_transferSourceModelVersion") || r.configuration().containsKey("_transferSourceGovernedSnapshot")) ? "4" : !libraries.isEmpty() ? "3" : includesModels ? "2" : "1");
         archive.putMetadata("roots", bundle.roots());
         archive.putMetadata("warnings", bundle.warnings());
         Set<String> attached = new LinkedHashSet<>();
@@ -34,8 +43,7 @@ public final class TransferBundleCodec {
             var configuration = new LinkedHashMap<>(resource.configuration());
             if (resource.key().startsWith("MODEL:") && configuration.get("modelContent") instanceof String content) {
                 String binary = binaryPath(resource.key());
-                byte[] original = java.util.Base64.getDecoder().decode(content);
-                archive.addComponent(binary, "application/octet-stream", original);
+                archive.addBase64Component(binary, "application/octet-stream", content);
                 configuration.remove("modelContent");
                 configuration.put("_transferModelFile", binary);
             }
@@ -46,18 +54,39 @@ public final class TransferBundleCodec {
                 configuration.put("_transferFunctionJar", lib.digest());
             }
             var row = new TransferBundle.Resource(resource.key(), configuration, resource.references(),
-                    resource.requiredEnvironmentFields(), resource.versionReferences());
+                    resource.requiredEnvironmentFields(), resource.versionReferences(), resource.pageSettings());
             archive.addComponent(path(resource.key()), "application/json", CanonicalJson.writeBytes(row));
         }
-        return zip.encode(archive);
+        return archive;
     }
 
     public Decoded decode(byte[] bytes) {
-        var decoded = zip.decode(bytes);
+        return decode(bytes, false);
+    }
+
+    /** 上传包的所有条目均验证摘要，大模型在实际导入该资源时才展开。 */
+    public Decoded decodeDeferred(byte[] bytes) {
+        return decode(bytes, true);
+    }
+
+    private Decoded decode(byte[] bytes, boolean deferred) {
+        return decode(zip.decodeRuntime(bytes), deferred);
+    }
+
+    public Decoded decodeDeferred(java.nio.file.Path file) {
+        return decode(file, true);
+    }
+
+    Decoded decode(java.nio.file.Path file, boolean deferred) {
+        return decode(zip.decodeTransferFile(file), deferred);
+    }
+
+    private Decoded decode(DecisionArtifactPackageCodec.DecodedPackage decoded, boolean deferred) {
+        Map<String,DecisionArtifactPackage.Component> modelFiles = new LinkedHashMap<>();
         var archive = decoded.getArtifactPackage();
         if (!PACKAGE_KIND.equals(archive.getMetadata().get("packageKind"))
-                || !Set.of("1","2","3").contains(archive.getMetadata().getOrDefault("resourceFormatVersion","")))
-            throw new IllegalArgumentException("请选择天枢离线配置迁移包（版本 1、2 或 3）");
+                || !Set.of("1","2","3","4").contains(archive.getMetadata().getOrDefault("resourceFormatVersion","")))
+            throw new IllegalArgumentException("请选择天枢离线配置迁移包（版本 1 至 4）");
         List<TransferBundle.Resource> resources = new ArrayList<>();
         Set<String> binaries = new LinkedHashSet<>();
         Map<String,TransferFunctionLibraries.Requirement> libraries = new LinkedHashMap<>();
@@ -83,7 +112,7 @@ public final class TransferBundleCodec {
             if (library != null) {
                 boolean bean = "BEAN".equals(configuration.get("implType"));
                 Object target = configuration.get(bean ? "implBeanName" : "implClass");
-                if (!"3".equals(archive.getMetadata().get("resourceFormatVersion")) || !key.startsWith("FUNCTION:")
+                if (!Set.of("3","4").contains(archive.getMetadata().get("resourceFormatVersion")) || !key.startsWith("FUNCTION:")
                         || (!bean && !"JAVA".equals(configuration.get("implType"))) || !(target instanceof String className) || className.isBlank()
                         || !(library instanceof String digest) || !digest.matches("[a-f0-9]{64}"))
                     throw new IllegalArgumentException("迁移函数 JAR 绑定无效：" + key);
@@ -102,11 +131,16 @@ public final class TransferBundleCodec {
                 var file = archive.getComponent(binary.toString());
                 if (file == null || !"application/octet-stream".equals(file.getMediaType())) throw new IllegalArgumentException("迁移模型原件缺失");
                 binaries.add(binary.toString());
-                configuration.put("modelContent", java.util.Base64.getEncoder().encodeToString(file.getContent()));
+                if (deferred) modelFiles.put(key, file);
+                else configuration.put("modelContent", java.util.Base64.getEncoder().encodeToString(file.getContent()));
             }
+            List<Map<String,Object>> settings = value.get("pageSettings") instanceof List<?> list
+                    ? list.stream().map(this::object).toList() : List.of();
+            if (!settings.isEmpty() && !"4".equals(archive.getMetadata().get("resourceFormatVersion")))
+                throw new IllegalArgumentException("此迁移包版本不支持附属配置");
             resources.add(new TransferBundle.Resource(key, configuration, references,
                     strings(value.get("requiredEnvironmentFields")), value.get("versionReferences") instanceof List<?> versions
-                        ? versions.stream().map(this::object).toList() : List.of()));
+                        ? versions.stream().map(this::object).toList() : List.of(), settings));
         }
         if (archive.getComponents().keySet().stream().anyMatch(p -> p.startsWith("model-files/") && !binaries.contains(p)))
             throw new IllegalArgumentException("迁移包包含未绑定的模型原件");
@@ -116,7 +150,7 @@ public final class TransferBundleCodec {
                 strings(archive.getMetadata().get("warnings")));
         bundle.resources().forEach(TransferVersionReferences::descriptors);
         validate(bundle);
-        return new Decoded(bundle, decoded.getPackageDigest(), Map.copyOf(libraries));
+        return new Decoded(bundle, decoded.getPackageDigest(), Map.copyOf(libraries), Map.copyOf(modelFiles));
     }
 
     private void validate(TransferBundle bundle) {
@@ -166,5 +200,5 @@ public final class TransferBundleCodec {
         return text;
     }
     private String optionalText(Object value) { return value == null ? null : requiredText(value); }
-    public record Decoded(TransferBundle bundle, String packageDigest, Map<String,TransferFunctionLibraries.Requirement> libraries) { }
+    public record Decoded(TransferBundle bundle, String packageDigest, Map<String,TransferFunctionLibraries.Requirement> libraries, Map<String,DecisionArtifactPackage.Component> modelFiles) { }
 }

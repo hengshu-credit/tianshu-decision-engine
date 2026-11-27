@@ -49,10 +49,15 @@ export default {
     },
     columns() {
       const records = this.node.children
-      if (!this.node.list || !records?.length || !records.every(row => row.children?.length && row.children.every(field => field.key))) return []
+      if (!this.node.list || !records?.length) return []
       const columns = new Map()
       for (const row of records) {
-        for (const field of row.children) columns.set(field.key, { key: field.key, title: field.title })
+        if (!row.children?.length) return []
+        for (const field of row.children) {
+          // 嵌套参数按记录纵向展示，避免在表格的窄列里再次排版键值对。
+          if (!field.key || field.children?.length || field.group) return []
+          columns.set(field.key, { key: field.key, title: field.title })
+        }
       }
       return [...columns.values()]
     },
@@ -63,7 +68,12 @@ export default {
       return { target: this.cell(this.node, 'targetOperand')?.operand, value: this.cell(this.node, 'valueOperand')?.operand }
     },
   },
-  watch: { node() { this.folded = false } },
+  watch: {
+    node: {
+      immediate: true,
+      handler(node) { this.folded = !!node.list && node.children?.length > 20 },
+    },
+  },
   methods: { cell(row, key) { return row.children.find(field => field.key === key) } },
 }
 </script>
@@ -72,7 +82,7 @@ export default {
 .config-group:first-child { margin-top: 0; border-top: 0; padding-top: 0; }
 .config-group--bare { border: 0; padding: 0; }
 .config-group-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 8px; padding: 0; border: 0; background: none; color: var(--tianshu-text-primary); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
-.config-group-content { display: grid; gap: 8px; }
+.config-group-content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .config-group-content > .config-group { margin: 0; padding: 8px 0 0 12px; border-top: 0; border-left: 2px solid var(--tianshu-border-subtle); }
 .config-value { display: grid; grid-template-columns: minmax(80px, 24%) minmax(0, 1fr); align-items: baseline; gap: 4px 12px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
 .config-value--bare { display: block; }
@@ -80,4 +90,8 @@ export default {
 .assignment-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 13px; line-height: 1.6; }
 .config-code { min-width: 0; margin: 0; padding: 8px 12px; background: var(--tianshu-bg-soft); border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .config-table { min-width: 0; max-width: 100%; }
+.config-group-title, .assignment-summary { overflow-wrap: anywhere; }
+@container version-panel (max-width: 420px) {
+  .config-value { grid-template-columns: minmax(0, 1fr); }
+}
 </style>

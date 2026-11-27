@@ -132,6 +132,21 @@ public class RuleDataObjectServiceTest {
     }
 
     @Test
+    public void importedRelativeNamesAndLocalAliasesKeepAllLevelsEvenWhenARootKeyRepeats() {
+        RuleDataObjectField parent = field(1L, null, "Request", "OBJECT");
+        RuleDataObjectField child = field(2L, 1L, "branch", "OBJECT");
+        child.setScriptName("Request.branch");
+        RuleDataObjectField leaf = field(3L, 2L, "Field_ID", "STRING");
+        leaf.setScriptName("Request.branch.Field_ID");
+        var fields = DataObjectScriptPath.index(List.of(parent, child, leaf));
+        assertEquals("Request.Request.branch.Field_ID", DataObjectScriptPath.resolve("Request", leaf, fields::get));
+        parent.setScriptName("renamed");
+        assertEquals("Alias.renamed.branch.Field_ID", DataObjectScriptPath.resolve("Alias", leaf, fields::get));
+        leaf.setScriptName("fieldAlias");
+        assertEquals("Alias.renamed.branch.fieldAlias", DataObjectScriptPath.resolve("Alias", leaf, fields::get));
+    }
+
+    @Test
     public void variableRowKeepsStableReferencedVariableId() {
         RuleDataObjectField field = field(8L, null, "age", "INTEGER");
         field.setRefVariableId(77L);

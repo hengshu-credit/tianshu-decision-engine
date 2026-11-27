@@ -7,6 +7,15 @@ import java.util.Map;
 import static org.junit.Assert.*;
 
 public class OfflineResourceReuseTest {
+    @org.junit.Test public void scriptReuseIgnoresOldClassButComparesTheEffectiveBody() {
+        var script = Map.<String,Object>of("implType", "SCRIPT", "funcCode", "echoSample", "implScript", "return value;");
+        var stored = new java.util.LinkedHashMap<>(script);
+        stored.put("implClass", "example.Old");
+        stored.put("implMethod", "echo");
+        assertEquals("IDENTICAL", TransferResourceComparison.conflict(TransferResourceType.FUNCTION, script, stored, "ACTIVE"));
+        stored.put("implScript", "return null;");
+        assertEquals("CONFIG_CONFLICT", TransferResourceComparison.conflict(TransferResourceType.FUNCTION, script, stored, "ACTIVE"));
+    }
     private static final TransferImportOptions REUSE = new TransferImportOptions(null, "GLOBAL", "REUSE", "REUSE", "_copy", false, null, null, Map.of());
 
     @BeforeClass public static void metadata() { OfflineProjectBindingTest.metadata(); }

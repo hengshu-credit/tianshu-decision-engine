@@ -2,6 +2,25 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
 
+test('模型字段数按实际数量显示数字进出，旧列表缺少汇总时读取对应详情', async ({ page }) => {
+  const apiData = createManagementApiData()
+  const list = apiData.get('/api/rule/model/list')
+  const current = list.records[0]
+  const legacy = { ...current, id: 42, modelCode: 'legacy_model', inputFieldCount: null, outputFieldCount: null }
+  const empty = { ...legacy, id: 43, modelCode: 'empty_model', inputFields: [], outputFields: [] }
+  list.records.push(legacy, empty)
+  list.total = list.records.length
+  apiData.set('/api/rule/model/42', { ...legacy, inputFields: [{ fieldName: 'image' }], outputFields: [{ fieldName: 'boxes' }] })
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const { assertClean, requests } = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+  await page.goto(`${origin}/#/model`)
+  for (const [code, count] of [['credit_score', '5进 / 2出'], ['legacy_model', '1进 / 1出'], ['empty_model', '0进 / 0出']]) {
+    await expect(page.getByRole('row').filter({ hasText: code }).getByRole('cell', { name: count, exact: true })).toBeVisible()
+  }
+  expect(requests.filter(r => /\/model\/\d+$/.test(new URL(r.url).pathname)).map(r => new URL(r.url).pathname)).toEqual(['/api/rule/model/42'])
+  assertClean()
+})
+
 const pages = [
   {
     name: '项目管理',
@@ -187,6 +206,18 @@ for (const pageCase of pages) {
       expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1)
       expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1)
     }).toPass()
+
+    const handle = dialog.getByRole('separator', { name: '拖拽调整弹窗大小' })
+    await expect(handle).toHaveCount(1)
+    const body = dialog.locator(':scope > .el-dialog__body')
+    expect(await body.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1)
+    expect(await body.evaluate(el => parseFloat(getComputedStyle(el).paddingTop))).toBeGreaterThanOrEqual(8)
+    const before = await dialog.boundingBox()
+    await handle.focus()
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowUp')
+    await expect.poll(async () => (await dialog.boundingBox()).width).toBeGreaterThan(before.width)
+    await expect.poll(async () => (await dialog.boundingBox()).height).toBeLessThan(before.height)
 
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()

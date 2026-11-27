@@ -36,3 +36,11 @@ export function readSftpDatasource(id, remotePath) {
 export function previewSftpLog(logId, options = {}) {
   return request({ url: `/rule/sftp/logs/${logId}/content`, method: 'get', responseType: 'blob', timeout: 0, signal: options.signal })
 }
+
+const engine = '/rule/sftp/engine'
+export const listEngineSftpAccounts = params => request.get(engine + '/accounts', { params })
+export const saveEngineSftpAccount = (id, data) => request.put(engine + '/accounts/' + id, data)
+export const getEngineSftpPolicy = () => request.get(engine + '/policy')
+export const saveEngineSftpPolicy = data => request.put(engine + '/policy', data)
+export const listEngineSftpBans = params => request.get(engine + '/bans', { params })
+export const unblockEngineSftp = data => request.post(engine + '/unblock', data)

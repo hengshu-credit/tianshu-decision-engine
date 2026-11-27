@@ -35,6 +35,7 @@ export function releaseSourceFiles(directory) {
     if (typeof file !== 'string' || path.posix.isAbsolute(file) || path.win32.isAbsolute(file)
       || file.includes('\\') || file.split('/').includes('..')) throw new Error('源码清单包含非法相对路径')
     if (file.split('/').some(part => part.startsWith('.env') && !part.endsWith('.example'))) return false
+    if (/^docker\/rule-engine-elasticsearch\/(data|logs|snapshots)\//.test(path.posix.normalize(file))) return false
     return existsSync(path.join(directory, file)) && statSync(path.join(directory, file)).isFile()
   }).sort()
 }
@@ -54,7 +55,7 @@ export function writeDeploymentReadme(sourceRoot, stageRoot) {
   writeFileSync(path.join(stageRoot, 'README-DEPLOY.md'), readFileSync(path.join(sourceRoot, 'docs', 'server-upload.md'), 'utf8')
     .replace('(release-packaging.md)', '(docs/release-packaging.md)')
     .replace('(blue-green-deployment-design.md)', '(docs/blue-green-deployment-design.md)')
-    .replace('(../docker/README.md)', '(docker/README.md)')
+    .replaceAll('(../docker/', '(docker/')
     .replace('(deployment-flat-legacy.md)', '(docs/deployment-flat-legacy.md)'))
 }
 
@@ -67,7 +68,7 @@ async function sha256(file) {
 export async function copyKycExample(root, stageRoot) {
   const kycSample = path.join('docker', 'rule-engine-mysql', 'kyc-example', '衡枢KYC-三项人脸规则.zip')
   if (existsSync(path.join(root, kycSample))) {
-    if (await sha256(path.join(root, kycSample)) !== 'dac328b23d76de7c0242707a10d2d13a881612a7517ba0b57b65b546ba44ec56') {
+    if (await sha256(path.join(root, kycSample)) !== '7ef5659681583e0007760d8d5b29a4712a1892d6e841cb7743251a6bc895a7b4') {
       throw new Error('衡枢 KYC 样例包摘要不匹配')
     }
     const target = path.join(stageRoot, kycSample)
@@ -85,7 +86,7 @@ function listFiles(directory) {
 
 async function main() {
   if (process.argv.includes('--help')) {
-    console.log('用法：node scripts/package-deployment.mjs [--with-tests]\nWindows: ./scripts/package-deployment.ps1\nmacOS/Linux: sh scripts/package-deployment.sh\n需要 Node.js 20.19+、Docker Linux 容器和现代 docker compose 或 docker-compose。\n输出 output/ 下的 ZIP、.zip.sha256 和统一入口 install-release.sh。')
+    console.log('用法：node scripts/package-deployment.mjs [--with-tests]\nWindows: ./scripts/package-deployment.ps1\nmacOS/Linux: sh scripts/package-deployment.sh\n需要 Node.js 20.19+、Docker Linux 容器和现代 docker compose 或 docker-compose。\n输出 output/ 下的 ZIP、.zip.sha256、install-release.sh 和 compose-down.sh。')
     return
   }
   for (const arg of process.argv.slice(2)) if (arg !== '--with-tests') throw new Error(`未知参数：${arg}`)
@@ -121,7 +122,8 @@ async function main() {
   await copyKycExample(root, stageRoot)
   copyDeploymentMigrations(sourceRoot, stageRoot)
   cpSync(path.join(sourceRoot, 'scripts/deploy.py'), path.join(stageRoot, 'deploy.py'))
-  cpSync(path.join(sourceRoot, 'scripts/install-release.sh'), path.join(stageRoot, 'install-release.sh'))
+  const entryScripts = ['install-release.sh', 'compose-down.sh']
+  for (const script of entryScripts) cpSync(path.join(sourceRoot, 'scripts', script), path.join(stageRoot, script))
   writeDeploymentReadme(sourceRoot, stageRoot)
   if (configRoot) for (const name of ['.env.server', '.env.client']) cpSync(path.join(configRoot, name), path.join(stageRoot, name))
   mkdirSync(runtimeRoot, { recursive: true })
@@ -170,8 +172,8 @@ async function main() {
   const digest = await sha256(archive)
   writeFileSync(`${archive}.sha256`, `${digest}  ${path.basename(archive)}\n`)
   const entry = path.join(outputRoot, 'install-release.sh')
-  cpSync(path.join(stageRoot, 'install-release.sh'), entry)
-  console.log(`\n部署包：${archive}\nSHA256：${digest}\n校验文件：${archive}.sha256\n部署与更新入口：${entry}\n在安装目录执行 bash install-release.sh ${path.basename(archive)}`)
+  for (const script of entryScripts) cpSync(path.join(stageRoot, script), path.join(outputRoot, script))
+  console.log(`\n部署包：${archive}\nSHA256：${digest}\n校验文件：${archive}.sha256\n部署与更新入口：${entry}\n停止入口：${path.join(outputRoot, 'compose-down.sh')}\n在安装目录执行 bash install-release.sh ${path.basename(archive)}`)
 }
 
 if (process.argv[1] && normalizedPath(process.argv[1]) === normalizedPath(fileURLToPath(import.meta.url))) {

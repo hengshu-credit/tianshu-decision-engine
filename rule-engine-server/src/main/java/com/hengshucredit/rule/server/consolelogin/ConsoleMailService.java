@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.consolelogin;
 
+import com.hengshucredit.rule.server.system.EngineMailFont;
+import com.hengshucredit.rule.server.system.MailTheme;
 import com.hengshucredit.rule.server.system.SystemBrandAssetService;
 import com.hengshucredit.rule.server.system.SystemSettingsService;
 import jakarta.annotation.Resource;
@@ -18,6 +20,7 @@ import java.util.regex.Pattern;
 
 @Service
 public class ConsoleMailService {
+    private static final String PLAIN_FOOTER = "\n\n如有任何问题，欢迎随时沟通。\n\n顺颂商祺！\nhscredit@hengshucredit.com\n上海衡枢真信科技有限公司\n\nHENGSHU CREDIT · 鉴真伪，斟信用，衡风险，枢定策\nhttps://www.hengshucredit.com";
     @Autowired(required = false) private JavaMailSender mailSender;
     @Autowired(required = false) private SystemSettingsService settings;
     @Autowired(required = false) private SystemBrandAssetService assets;
@@ -58,27 +61,69 @@ public class ConsoleMailService {
     private void send(String email, String title, String username, String text, String link, String action, int ttl, Map<String, Object> draft) {
         if (email == null || !email.matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+")) throw new IllegalArgumentException("收件邮箱格式无效");
         if (draft == null && !configured()) throw new IllegalStateException("通知邮箱尚未配置");
-        Map<String, Object> brand = settings == null ? Map.of("systemName", "天枢决策引擎", "subtitle", "天工开物，枢衡定策") : settings.publicBrand();
+        Map<String, Object> brand = settings == null ? Map.of("systemName", "天枢决策引擎", "subtitle", "天工开物，枢衡定策") : settings.get("brand");
+        EngineMailFont font = settings == null ? EngineMailFont.engineDefault() : settings.mailFont(brand);
         Map<String, Object> config = draft == null && settings != null ? settings.mail() : draft;
         JavaMailSender sender = config == null ? mailSender : sender(config);
         String from = config == null ? properties.getMail().getFrom() : (String) config.get("email");
         String name = (String) brand.get("systemName");
         String logoSource = "cid:tianshu-logo";
         if (settings != null) {
-            String url = (String) settings.get("brand").get("logoUrl");
-            if (url != null && !url.isEmpty()) {
+            String url = (String) brand.get("logoUrl");
+            if (url != null && !url.isEmpty() && String.valueOf(brand.getOrDefault("logoId", "")).isEmpty()) {
                 if (url.startsWith("/") && !baseUrl().isBlank()) logoSource = java.net.URI.create(baseUrl()).resolve(url).toString();
                 else if (!url.startsWith("/")) logoSource = url;
             }
         }
+        String plain = title + "\n\n尊敬的" + username + "：\n" + text
+                + (link == null ? "" : "\n" + link + "\n链接有效期：" + ttl + " 分钟") + PLAIN_FOOTER;
+        try {
+            deliver(sender, from, name, email, title, plain,
+                    html(name, (String) brand.get("subtitle"), title, username, text, link, action, ttl, logoSource, font, settings == null ? MailTheme.DEFAULT : settings.mailTheme()),
+                    font, "cid:tianshu-logo".equals(logoSource) && assets != null ? assets.logo() : null, null, null);
+        } catch (java.io.IOException error) {
+            throw new IllegalStateException("邮件模板读取失败", error);
+        }
+    }
+
+    public static boolean validBillRecipient(String email) {
+        if (email == null || email.length() > 254 || !email.matches("[^\\s@,;<>]+@[^\\s@,;<>]+\\.[^\\s@,;<>]+")) return false;
+        try {
+            new jakarta.mail.internet.InternetAddress(email, true).validate();
+            return true;
+        } catch (jakarta.mail.internet.AddressException invalid) {
+            return false;
+        }
+    }
+
+    public void sendStatement(SystemBrandAssetService.StatementBrand brand, String email, String title,
+                              String recipientName, String introduction, String plain, String tables,
+                              String filename, byte[] attachment) {
+        if (!validBillRecipient(email)) throw new IllegalArgumentException("请先在计费配置中设置有效的账单收件邮箱");
+        if (!configured()) throw new IllegalStateException("请先在系统设置中配置通知邮箱");
+        Map<String, Object> config = settings == null ? null : settings.mail();
+        try {
+            String body = renderNotification(brand.name(), brand.subtitle(), title, recipientName, introduction,
+                    tables, "cid:tianshu-logo", brand.font(), brand.theme());
+            deliver(config == null ? mailSender : sender(config),
+                    config == null ? properties.getMail().getFrom() : (String) config.get("email"),
+                    brand.name(), email, title, plain + PLAIN_FOOTER, body, brand.font(), brand.logo(), filename, attachment);
+        } catch (java.io.IOException error) {
+            throw new IllegalStateException("通知邮件模板读取失败", error);
+        }
+    }
+
+    private void deliver(JavaMailSender sender, String from, String name, String email, String title,
+                         String plain, String body, EngineMailFont font, byte[] inlineLogo, String filename, byte[] attachment) {
         try {
             var message = sender.createMimeMessage();
             var helper = new MimeMessageHelper(message, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED, StandardCharsets.UTF_8.name());
             helper.setFrom(from, name); helper.setTo(email); helper.setSubject(name + " · " + title);
-            String plain = title + "\n\n尊敬的" + username + "：\n" + text
-                    + (link == null ? "" : "\n" + link + "\n链接有效期：" + ttl + " 分钟") + "\n\n上海衡枢真信科技有限公司\nhttps://www.hengshucredit.com";
-            helper.setText(plain, html(name, (String) brand.get("subtitle"), title, username, text, link, action, ttl, logoSource));
-            if (assets != null && "cid:tianshu-logo".equals(logoSource)) helper.addInline("tianshu-logo", new ByteArrayResource(assets.logo()), "image/png");
+            helper.setText(plain, body);
+            if (inlineLogo != null) helper.addInline("tianshu-logo", new ByteArrayResource(inlineLogo), "image/png");
+            helper.addInline("tianshu-font", font.file(), font.mimeType());
+            if (attachment != null) helper.addAttachment(filename, new ByteArrayResource(attachment),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             sender.send(message);
         } catch (org.springframework.mail.MailException | jakarta.mail.MessagingException | java.io.IOException error) {
             throw new IllegalStateException("邮件发送失败，请检查服务器地址、端口、加密方式及授权码", error);
@@ -103,17 +148,28 @@ public class ConsoleMailService {
         return html(name, subtitle, title, username, text, link, action, ttl, "cid:tianshu-logo");
     }
     static String html(String name, String subtitle, String title, String username, String text, String link, String action, int ttl, String logoSource) throws java.io.IOException {
+        return html(name, subtitle, title, username, text, link, action, ttl, logoSource, EngineMailFont.engineDefault(), MailTheme.DEFAULT);
+    }
+
+    private static String html(String name, String subtitle, String title, String username, String text, String link,
+                               String action, int ttl, String logoSource, EngineMailFont font, MailTheme theme) throws java.io.IOException {
         if (!"cid:tianshu-logo".equals(logoSource)) SystemSettingsService.validateImageUrl(logoSource);
         if (link != null) {
             var uri = java.net.URI.create(link);
             if (!("https".equals(uri.getScheme()) || "http".equals(uri.getScheme())) || uri.getHost() == null || uri.getUserInfo() != null) throw new IllegalArgumentException("邮件操作链接无效");
         }
-        String button = link == null ? "" : "<p style=\"padding:10px 12px;background:#f3f3ff;border-left:3px solid #2934ea\">链接有效期：" + ttl
-                + " 分钟</p><p><a href=\"" + escape(link) + "\" style=\"display:block;padding:12px;background:#2934ea;color:#fff;text-align:center;text-decoration:none;border-radius:0\">"
-                + escape(action) + "</a></p><p style=\"font-size:12px;color:#657087\">若非您本人操作，请忽略此邮件。请勿向他人转发此链接。</p>";
+        String button = link == null ? "" : "<p style=\"padding:10px 12px;background:" + theme.month() + ";border-left:3px solid " + theme.accent() + "\">链接有效期：" + ttl
+                + " 分钟</p><p><a href=\"" + escape(link) + "\" style=\"display:block;padding:12px;background:" + theme.accent() + ";color:" + theme.onAccent() + ";text-align:center;text-decoration:none;border-radius:0\">"
+                + escape(action) + "</a></p><p style=\"font-size:12px;color:" + theme.muted() + "\">若非您本人操作，请忽略此邮件。请勿向他人转发此链接。</p>";
+        return renderNotification(name, subtitle, title, username, text, button, logoSource, font, theme);
+    }
+
+    private static String renderNotification(String name, String subtitle, String title, String username, String text,
+                                             String content, String logoSource, EngineMailFont font, MailTheme theme) throws java.io.IOException {
         String template = new ClassPathResource("brand/notification.html").getContentAsString(StandardCharsets.UTF_8);
-        Map<String, String> values = Map.of("name", escape(name), "subtitle", escape(subtitle), "title", escape(title),
-                "username", escape(username), "text", escape(text), "action", button, "logo", escape(logoSource));
+        Map<String, String> values = new java.util.HashMap<>(theme.templateColors());
+        values.putAll(Map.of("name", escape(name), "subtitle", escape(subtitle), "title", escape(title),
+                "username", escape(username), "text", escape(text), "action", content, "logo", escape(logoSource), "fontstyle", escape(font.inlineCss()), "fontface", font.faceCss()));
         Matcher matcher = Pattern.compile("\\{\\{([a-z]+)}}").matcher(template);
         StringBuffer result = new StringBuffer();
         while (matcher.find()) matcher.appendReplacement(result, Matcher.quoteReplacement(values.getOrDefault(matcher.group(1), "")));

@@ -13,6 +13,27 @@ import static org.junit.Assert.assertTrue;
 /** 项目级离线导入必须按显式项目绑定解析目标 ID，不能按名称猜测。 */
 public class OfflineResourceImportServiceTest {
     @Test
+    public void ruleVariableWithoutTypeUsesRemappedDeclarationOnceForSchemaAndDesigner() {
+        var variable = new OfflineResourceTransferServiceTest.StubAdapter("VARIABLE", Map.of("varType", "LIST"), List.of());
+        var service = new OfflineResourceImportService();
+        ReflectionTestUtils.setField(service, "adapterRegistry",
+                new com.hengshucredit.rule.server.governance.GovernedResourceAdapterRegistry(List.of(variable)));
+        var config = Map.<String,Object>of(
+                "inputFieldsJson", List.of(Map.of("refType", "VARIABLE", "varId", 9, "fieldType", "?")),
+                "outputFieldsJson", List.of(Map.of("refType", "VARIABLE", "varId", 9, "fieldType", "OBJECT")),
+                "content", Map.of("modelJson", "{\"operand\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":9}}"));
+        var paths = List.of("/inputFieldsJson/0/varId", "/outputFieldsJson/0/varId", "/content/modelJson/@json/operand/refId");
+        var rule = new TransferBundle.Resource("RULE:1", config,
+                paths.stream().map(path -> new TransferBundle.Reference(path, "VARIABLE:9", null)).toList(), List.of());
+        var target = TransferBundle.copyConfiguration(config);
+        ReflectionTestUtils.invokeMethod(service, "rewriteReferences", target, rule, Map.of(), Map.of("VARIABLE:9", 603L), Map.of(), Map.of());
+        for (var path : paths) assertEquals(603L, ((Number)TransferJsonPath.read(target, path)).longValue());
+        assertEquals("LIST", TransferJsonPath.read(target, "/inputFieldsJson/0/fieldType"));
+        assertEquals("OBJECT", TransferJsonPath.read(target, "/outputFieldsJson/0/fieldType"));
+        assertEquals("LIST", TransferJsonPath.read(target, "/content/modelJson/@json/operand/valueType"));
+        assertEquals(List.of(603L), variable.loaded);
+    }
+    @Test
     public void unavailableAttachedFunctionStopsImportBeforeCreatingTheProject() {
         var service = new OfflineResourceImportService();
         ReflectionTestUtils.setField(service, "functionLibraries", new TransferFunctionLibraries("no-deployed-jars"));

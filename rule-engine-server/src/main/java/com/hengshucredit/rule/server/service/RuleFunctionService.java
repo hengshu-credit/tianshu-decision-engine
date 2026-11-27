@@ -318,6 +318,17 @@ public class RuleFunctionService {
             throw new IllegalArgumentException("Function not found");
         }
         if (!Integer.valueOf(1).equals(function.getStatus()) && nativeFunctions != null) nativeFunctions.requireNativePermission(function);
+        return executeFunctionTest(function, params);
+    }
+
+    public Map<String, Object> testScript(RuleFunction function, Map<String, Object> params) {
+        if (!"SCRIPT".equals(function.getImplType())) throw new IllegalArgumentException("当前配置必须为脚本函数");
+        String reserved = ReservedContentCode.error(function.getFuncCode());
+        if (reserved != null) throw new IllegalArgumentException(reserved);
+        return executeFunctionTest(function, params);
+    }
+
+    private Map<String, Object> executeFunctionTest(RuleFunction function, Map<String, Object> params) {
         Map<String, Object> context = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
         String implType = function.getImplType() == null ? "SCRIPT" : function.getImplType().trim().toUpperCase();
         RuleResult ruleResult;
@@ -392,7 +403,7 @@ public class RuleFunctionService {
     }
 
     public void update(RuleFunction func) {
-        functionMapper.updateById(func);
+        functionMapper.updateImplementation(func);
         saveVersionSnapshot(func.getId(), "update");
     }
 
@@ -432,7 +443,7 @@ public class RuleFunctionService {
         }
         RuleFunction restored = JSON.parseObject(snapshot.getFunctionJson(), RuleFunction.class);
         restored.setId(functionId);
-        functionMapper.updateById(restored);
+        functionMapper.updateImplementation(restored);
         saveVersionSnapshot(functionId, "rollback to v" + version);
         return functionMapper.selectById(functionId);
     }

@@ -92,7 +92,7 @@ public class FunctionMethodCatalogService {
                 "Java/Spring Bean 实现需要原生函数、账户管理和角色管理权限，且不能受项目范围或全局只读限制");
     }
 
-    private boolean isPlatformBinding(RuleFunction function) {
+    public static boolean isPlatformBinding(RuleFunction function) {
         Method platform = com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry.managementMethod(function.getFuncCode());
         if (platform == null || !"JAVA".equals(function.getImplType()) || !platform.getDeclaringClass().getName().equals(function.getImplClass())) return false;
         try { return AggregateBuiltinFunctionRegistry.isManagementMethod(function.getFuncCode(), FunctionParameterContract.resolveMethod(platform.getDeclaringClass(), function.getImplMethod(), function.getFuncCode(), function.getParamsJson())); }

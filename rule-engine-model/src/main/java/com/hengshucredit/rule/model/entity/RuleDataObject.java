@@ -15,11 +15,21 @@ public class RuleDataObject {
     private String scope;
     private String objectCode;
     private String objectLabel;
-    /** 脚本中的对象引用名（默认驼峰，如 taxRequest） */
+    /** 脚本中的对象引用名，未指定时使用原样的对象编码。 */
     private String scriptName;
+    public String getScriptName() {
+        return scriptName == null || scriptName.isBlank() ? objectCode : scriptName;
+    }
+
     private String objectType;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long mockRuleId;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String exampleMode;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String exampleCaseBinding;
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String exampleValue;
     /** 仅引用型叶子字段可按需取值；默认关闭。 */
     private Boolean lazyLoadReferences;
     private String sourceType;

@@ -1,11 +1,6 @@
 <template>
   <div class="uiue-list-page experiment-page uiue-compact-workbench management-list-page">
-    <div class="page-head">
-      <div>
-        <h2>分流实验</h2>
-        <guidance-group guide-id="experiment.intro" label="分流实验说明" :items="experimentGuidance" />
-      </div>
-    </div>
+    <guidance-group guide-id="experiment.intro" label="分流实验说明" :items="experimentGuidance" />
 
     <div class="uiue-search-container uiue-filter-toolbar">
       <el-form :inline="true" size="small" @keyup.enter="handleQuery">
@@ -989,20 +984,6 @@ export default {
 .execution-group-reason, .execution-group-output { flex-basis: 100%; overflow-wrap: anywhere; }
 .execution-group-output { margin: 8px 0; max-height: 160px; overflow: auto; white-space: pre-wrap; }
 .experiment-page {
-  .page-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 14px;
-  }
-
-  h2 {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--tianshu-text-primary);
-  }
-
   .group-tag {
     margin-right: 4px;
     margin-bottom: 4px;

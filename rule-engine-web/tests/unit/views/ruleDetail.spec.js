@@ -944,11 +944,22 @@ describe('RuleDetail — 辅助方法', () => {
 
     expect(display).toEqual({
       isDataObject: true,
+      refType: 'DATA_OBJECT', refId: 88, valueType: 'DOUBLE',
       objectLabel: '评分字段',
       objectCode: 'score_f1_fields',
       fieldLabel: 'HYBASE_X115',
       fieldPath: 'score_f1_fields.HYBASE_X115',
     })
+  })
+
+  test('迁移字段按目标变量 ID 解析类型，保留冻结和缺少目录时的字段声明', () => {
+    wrapper.vm.buildVarOptions([{ id: 602, varCode: 'documentImage', varLabel: '证件照原图', varType: 'STRING' },
+      { id: 603, varCode: 'documentFaces', varLabel: '证件照五点', varType: 'LIST' }], [])
+    const field = { refType: 'VARIABLE', varId: 603, fieldName: 'documentImage', fieldType: '?' }
+    expect(wrapper.vm.fieldHierarchyDisplay(field)).toMatchObject({ refId: 603, valueType: 'LIST', fieldPath: 'documentFaces' })
+    expect(wrapper.vm.fieldHierarchyDisplay({ ...field, varId: 90, fieldType: 'NUMBER' }).valueType).toBe('NUMBER')
+    expect(wrapper.vm.fieldHierarchyDisplay({ ...field, varId: 90 }).valueType).toBe('')
+    expect(wrapper.vm.fieldHierarchyDisplay({ ...field, versionMode: 'FIXED', fieldType: 'BOOLEAN' }).valueType).toBe('BOOLEAN')
   })
 })
 
@@ -1317,6 +1328,18 @@ describe('RuleDetail — 测试弹窗', () => {
     expect(wrapper.vm.testVisible).toBe(true)
     expect(definitionApi.getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'RULE', targetId: 1, executionSource: { sourceType: 'REVISION', sourceId: '5', lockVersion: 0 } })
     expect(JSON.parse(wrapper.vm.testJsonStr)).toEqual({ bankcard: { bank_card_no: '6222' } })
+  })
+
+  test('未编译工作区仍从用例目录共用的规则输入读取精确 JSON', async () => {
+    await wrapper.setData({ lifecycleRevisionId: null, revisions: [] })
+    const source = wrapper.vm.selectedTestExecutionSource
+    expect(source.sourceType).toBe('WORKSPACE')
+    definitionApi.getRuleTestSchema.mockRejectedValueOnce(new Error('当前工作区未编译'))
+      .mockResolvedValueOnce({ data: { savedDefault: true, sampleParams: {}, sampleParamsJson: '{"amount":9007199254740993}' } })
+    await wrapper.vm.openTestDialog()
+    expect(wrapper.vm.testMode).toBe('json')
+    expect(wrapper.vm.testJsonStr).toBe('{"amount":9007199254740993}')
+    expect(wrapper.vm.testExecutionSource).toEqual(source)
   })
 
   test('testMode 默认为 manual', () => {

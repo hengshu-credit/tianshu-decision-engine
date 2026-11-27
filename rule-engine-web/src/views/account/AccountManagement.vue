@@ -1,42 +1,15 @@
 <template>
   <div class="uiue-list-page account-page management-list-page">
-    <header class="page-header">
-      <div>
-        <span class="page-eyebrow">CONSOLE ACCESS</span>
-        <h1>账户管理</h1>
-        <dismissible-guidance tag="p" guide-id="accounts.intro" label="账户管理说明">通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</dismissible-guidance>
-      </div>
-      <div class="uiue-btn-bar account-actions">
-        <div class="btn-right">
-      <table-column-settings v-model="tableColumnOrders[activeTab === 'accounts' ? 'accountColumns' : 'roleColumns']" :key="activeTab"
-        v-if="activeTab !== 'logs'"
-        :columns="activeTab === 'accounts' ? accountColumns : roleColumns"
-        :storage-key="`tianshu:table-columns:account-management-${activeTab}`"
-      />
-      <el-button
-        v-if="activeTab === 'accounts'"
-        v-permission="'account:manage'"
-        type="primary"
-        @click="openAccountDialog()"
-      >
-        新增账户
-      </el-button>
-      <el-button
-        v-else-if="activeTab === 'roles'"
-        v-permission="'role:manage'"
-        type="primary"
-        @click="openRoleDialog()"
-      >
-        新增角色
-      </el-button>
-        </div>
-      </div>
-    </header>
+    <dismissible-guidance tag="p" guide-id="accounts.intro" label="账户管理说明">通过角色批量授权，并可对单个账户设置额外允许或明确拒绝。</dismissible-guidance>
 
     <section class="content-card management-table-region">
       <el-tabs class="management-table-region" v-model="activeTab">
         <el-tab-pane v-if="canViewAccounts" class="management-table-region" label="账户" name="accounts">
-          <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="accounts" row-key="id">
+          <account-list-toolbar keyword-placeholder="用户名、显示名称或邮箱" :roles="canLoadRoleOptions ? roles : null" @query="accountQuery = $event">
+            <table-column-settings v-model="tableColumnOrders.accountColumns" :columns="accountColumns" storage-key="tianshu:table-columns:account-management-accounts" />
+            <el-button v-permission="'account:manage'" type="primary" size="small" @click="openAccountDialog()">新增账户</el-button>
+          </account-list-toolbar>
+          <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="filteredAccounts" row-key="id">
             <template v-for="columnKey in (tableColumnOrders.accountColumns || accountColumns.map(column => column.key))" :key="columnKey">
             <el-table-column v-if="columnKey === 'account'" label="账户" min-width="180">
               <template #default="{ row }">
@@ -143,7 +116,11 @@
         </el-tab-pane>
 
         <el-tab-pane lazy v-if="canViewRoles" class="management-table-region" label="角色" name="roles">
-          <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="roles" row-key="id">
+          <account-list-toolbar keyword-placeholder="角色名称或编码" @query="roleQuery = $event">
+            <table-column-settings v-model="tableColumnOrders.roleColumns" :columns="roleColumns" storage-key="tianshu:table-columns:account-management-roles" />
+            <el-button v-permission="'role:manage'" type="primary" size="small" @click="openRoleDialog()">新增角色</el-button>
+          </account-list-toolbar>
+          <el-table class="management-table" show-overflow-tooltip :aria-busy="loading" :data="filteredRoles" row-key="id">
             <template v-for="columnKey in (tableColumnOrders.roleColumns || roleColumns.map(column => column.key))" :key="columnKey">
             <el-table-column v-if="columnKey === 'roleName'" prop="roleName" label="角色名称" min-width="180" />
             <el-table-column v-if="columnKey === 'roleCode'" prop="roleCode" label="角色编码" min-width="160" />
@@ -219,6 +196,16 @@
         </el-form-item>
         <el-form-item v-if="!accountForm.id || canResetAccountPassword(accountForm)" :label="accountForm.id ? '新密码（留空不修改）' : '初始密码'">
           <el-input v-model="accountForm.password" type="password" show-password />
+        </el-form-item>
+        <el-form-item v-if="!accountForm.id || canResetAccountPassword(accountForm)" label="SFTP 上传账户">
+          <el-select v-model="sftpAction">
+            <el-option :label="accountForm.id ? '保留当前设置' : '不开通'" value="keep" />
+            <el-option label="开通或更换公钥" value="enable" />
+            <el-option v-if="accountForm.id" label="关闭 SFTP 登录" value="disable" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="sftpAction === 'enable'" label="上传方 SSH 公钥">
+          <el-input v-model="sftpPublicKey" type="textarea" placeholder="粘贴上传方提供的单行 OpenSSH 公钥" />
         </el-form-item>
         <el-form-item v-if="canAssignPermissions" label="角色">
           <el-select v-model="accountForm.roleIds" multiple clearable>
@@ -419,6 +406,7 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import { reservedCodeError } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -426,6 +414,7 @@ import { getCurrentUser, hasPermission } from '@/security/permissionState'
 import configurationDialogsMixin from '@/mixins/configurationDialogsMixin'
 import TableColumnSettings from '@/components/common/TableColumnSettings.vue'
 import OperationLogs from './OperationLogs.vue'
+import AccountListToolbar from './AccountListToolbar.vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 import {
   changeConsoleAccountStatus,
@@ -439,6 +428,13 @@ import {
   saveConsoleAccountPermissions,
   saveConsoleRole
 } from '@/api/consoleAccount'
+
+function filterDirectory(rows, { keyword = '', status, roleId }, fields) {
+  return rows.filter(row =>
+    (status == null || row.status === status) &&
+    (roleId == null || row.roleIds?.includes(roleId)) &&
+    (!keyword || fields.some(field => row[field]?.toLowerCase().includes(keyword))))
+}
 
 function emptyAccountForm() {
   return {
@@ -467,13 +463,13 @@ function emptyRoleForm() {
 }
 
 export default {
-  mixins: [configurationDialogsMixin([
-    { visible: 'accountDialogVisible', draft: vm => vm.accountForm, busy: vm => vm.accountSaving },
+  mixins: [pageTabState('activeTab', vm => [vm.canViewAccounts && 'accounts', vm.canViewRoles && 'roles', vm.canViewLogs && 'logs'].filter(Boolean)), configurationDialogsMixin([
+    { visible: 'accountDialogVisible', draft: vm => ({ form: vm.accountForm, sftpAction: vm.sftpAction, publicKey: vm.sftpPublicKey }), busy: vm => vm.accountSaving },
     { visible: 'roleDialogVisible', draft: vm => vm.roleForm, busy: vm => vm.accountSaving },
     { visible: 'passwordDialogVisible', draft: vm => vm.newPassword, busy: vm => vm.accountSaving },
     { visible: 'permissionDialogVisible', draft: vm => ({ roles: vm.permissionRoleIds, projects: vm.permissionProjectIds, mode: vm.permissionProjectAccessMode, global: vm.permissionGlobalEditable, defaults: vm.overrideDraft, overrides: vm.projectOverrideDraft }), busy: vm => vm.accountSaving },
   ])],
-  components: { DismissibleGuidance, TableColumnSettings, OperationLogs },
+  components: { DismissibleGuidance, TableColumnSettings, OperationLogs, AccountListToolbar },
   name: 'AccountManagement',
   data() {
     return {
@@ -497,9 +493,13 @@ export default {
       loading: false,
       accounts: [],
       roles: [],
+      accountQuery: {},
+      roleQuery: {},
       permissionCatalog: [],
       projectOptions: [],
       accountDialogVisible: false,
+      sftpAction: 'keep',
+      sftpPublicKey: '',
       accountSaving: false,
       accountEditEpoch: 0,
       permissionDialogVisible: false,
@@ -520,6 +520,12 @@ export default {
     }
   },
   computed: {
+    filteredAccounts() {
+      return filterDirectory(this.accounts, this.accountQuery, ['username', 'displayName', 'email'])
+    },
+    filteredRoles() {
+      return filterDirectory(this.roles, this.roleQuery, ['roleName', 'roleCode'])
+    },
     canAssignPermissions() { return hasPermission('account:role-assign') },
     canResetPassword() { return hasPermission('account:password-reset') },
     canViewAccounts() {
@@ -596,7 +602,7 @@ export default {
     }
   },
   mounted() {
-    this.activeTab = this.canViewAccounts ? 'accounts' : this.canViewRoles ? 'roles' : 'logs'
+    if (!({ accounts: this.canViewAccounts, roles: this.canViewRoles, logs: this.canViewLogs })[this.activeTab]) this.activeTab = this.canViewAccounts ? 'accounts' : this.canViewRoles ? 'roles' : 'logs'
     this.loadData()
   },
   beforeUnmount() { this.accountEditEpoch++; this.newPassword = ''; this.accountForm.password = '' },
@@ -614,7 +620,7 @@ export default {
       if (this.accountSaving) return
       this.accountSaving = true
       const epoch = this.accountEditEpoch
-      try { await request(); if (epoch === this.accountEditEpoch) await complete() }
+      try { const result = await request(); if (epoch === this.accountEditEpoch) await complete(result) }
       catch (error) { if (epoch === this.accountEditEpoch && !error.requestErrorNotified) ElMessage.error(error.message || '保存失败，请重试') }
       finally { if (epoch === this.accountEditEpoch) this.accountSaving = false }
     },
@@ -649,6 +655,8 @@ export default {
       return role ? role.roleName : code
     },
     openAccountDialog(account) {
+      this.sftpAction = 'keep'
+      this.sftpPublicKey = ''
       this.accountForm = account
         ? {
             id: account.id,
@@ -667,14 +675,21 @@ export default {
     },
     async saveAccount() {
       const payload = { ...this.accountForm }
+      if (this.sftpAction === 'enable') {
+        if (!this.sftpPublicKey.trim()) return ElMessage.warning('请填写上传方 SSH 公钥')
+        payload.sftpPublicKey = this.sftpPublicKey.trim()
+      } else if (this.sftpAction === 'disable') payload.disableSftp = true
       if (!this.canAssignPermissions) {
         for (const key of ['roleIds', 'permissionOverrides', 'projectIds', 'projectAccessMode', 'globalEditable', 'projectPermissionOverrides']) delete payload[key]
       }
       if (payload.id && !this.canResetAccountPassword(payload)) delete payload.password
-      return this.runAccountSave(() => saveConsoleAccount(payload), async () => {
+      return this.runAccountSave(() => saveConsoleAccount(payload), async result => {
         this.accountDialogVisible = false
         this.accountForm.password = ''
-        ElMessage.success('账户已保存')
+        if (this.sftpAction === 'enable' && result?.data?.id) {
+          const login = 'u' + result.data.id
+          await this.$alert(`个人上传使用 ${login}，项目进件使用 ${login}-p项目ID。登录时使用对应私钥。`, 'SFTP 账户已开通')
+        } else ElMessage.success('账户已保存')
         await this.loadData()
       })
     },
@@ -783,39 +798,8 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.account-actions {
-  margin: 0 0 0 auto;
-}
 .account-page {
   color: var(--tianshu-text-primary);
-}
-.page-header {
-  display: flex;
-  min-height: 76px;
-  margin-bottom: 16px;
-  align-items: flex-start;
-  justify-content: space-between;
-
-  h1 {
-    margin: 4px 0 0;
-    color: var(--tianshu-text-primary);
-    font-size: 24px;
-    font-weight: 650;
-    line-height: 32px;
-  }
-
-  p {
-    margin: 4px 0 0;
-    color: var(--tianshu-text-tertiary);
-    font-size: 14px;
-    line-height: 22px;
-  }
-}
-.page-eyebrow {
-  color: var(--el-color-primary);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
 }
 .content-card {
   padding: 16px 20px 24px;

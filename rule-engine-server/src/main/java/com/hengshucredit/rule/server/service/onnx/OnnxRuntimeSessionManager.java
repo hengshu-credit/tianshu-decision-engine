@@ -37,6 +37,10 @@ public class OnnxRuntimeSessionManager {
     private static final int DEFAULT_MAX_SESSIONS = 16;
     private final EnvironmentLoader environmentLoader;
     private final int maxSessions;
+
+    @Value("${rule-engine.onnx.intra-op-threads:1}")
+    private int intraOpThreads = 1;
+
     private volatile OrtEnvironment environment;
     private volatile Throwable environmentFailure;
     private final Map<String, CachedSession> sessions = new LinkedHashMap<>(16, 0.75F, true);
@@ -373,6 +377,8 @@ public class OnnxRuntimeSessionManager {
         OrtSession.SessionOptions options = new OrtSession.SessionOptions();
         OrtCUDAProviderOptions cudaOptions = null;
         try {
+            options.setIntraOpNumThreads(Math.max(1, intraOpThreads));
+            options.addConfigEntry("session.intra_op.allow_spinning", "0");
             options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
             if (config.isCuda()) {
                 ensureCudaProviderCompiled();

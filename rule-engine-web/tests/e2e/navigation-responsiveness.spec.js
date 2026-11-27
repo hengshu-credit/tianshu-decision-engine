@@ -86,6 +86,7 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
   const apiData = createDocsApiData()
   apiData.set('GET /api/rule/test-data/RULE/catalog', { records: [], total: 0 })
   apiData.set('GET /api/rule/test-data/rules', [])
+  apiData.set('GET /api/rule/test-data/cases', { records: [], total: 0 })
   const projectCode = apiData.get('/api/rule/project/list').records[0].projectCode
   const permissions = [...new Set(SIDEBAR_MENUS.flatMap(menu => menu.permission).filter(Boolean)), 'system:audit', 'account:audit']
   apiData.set('/api/auth/console/config', { loginEnabled: true })
@@ -179,7 +180,9 @@ test('逐一点击全部菜单与子页签，往返切换后仍可交互并记�
       await expect(pane).toHaveAttribute('aria-hidden', 'false')
       await expect(pane).not.toHaveAttribute('inert', '')
       if (menu.index === '/ledger') {
-        await expect(pane).toContainText(name.trim() === '素材库' ? '验收截图.png' : name.trim() === '事件与类型' ? ledgerEvent.title : ledgerTitle)
+        const evidence = { 时间线: ledgerTitle, 文章管理: ledgerTitle, 素材库: '验收截图.png', 事件与类型: ledgerEvent.title, 变更交接: 'DEMO-20260930-001' }
+        expect(evidence).toHaveProperty(name.trim())
+        await expect(pane).toContainText(evidence[name.trim()])
       }
       await record('tab', `${menu.label}/${name.trim()}`)
       if (menu.index === '/billing' || menu.index === '/system/settings') {

@@ -10,6 +10,18 @@ import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface RuleBillingRecordMapper extends BaseMapper<RuleBillingRecord> {
+    record TraceTotal(String currency, String amount) {}
+
+    @Select("""
+            <script>
+            SELECT currency, SUM(amount) AS amount FROM rule_billing_record
+            WHERE root_trace_id = #{traceId}
+            <if test="projectId != null">AND project_id = #{projectId}</if>
+            GROUP BY currency ORDER BY currency
+            </script>
+            """)
+    java.util.List<TraceTotal> totalsByTrace(@Param("traceId") String traceId, @Param("projectId") Long projectId);
+
     /** 根据数据库当前attempt原子更新全部执行事实，不依赖此前SELECT看到的版本。 */
     @Update("UPDATE rule_billing_record SET project_id=#{row.projectId}, project_code=#{row.projectCode}, "
             + "billing_config_id=#{row.billingConfigId}, billing_basis=#{row.billingBasis}, "

@@ -184,7 +184,7 @@ import {
 } from '@/api/datasource'
 import { listProjects } from '@/api/project'
 import MonacoEditor from '@/components/MonacoEditor'
-import { routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, routeProjectId } from '@/utils/projectContext'
 
 export default {
   name: 'DatasourceDetail',
@@ -193,6 +193,7 @@ export default {
     MonacoEditor, ApiAuthEditor },
   data() {
     return {
+      savedConfiguration: null,
       projects: [],
       saving: false,
       detailLoading: false,
@@ -260,6 +261,7 @@ export default {
     }
   },
   computed: {
+    configurationFingerprint() { return JSON.stringify([this.form, this.authConfig]) },
     configurationReady() { return this.isCreateMode || (this.detailLoaded && !this.detailLoading && !this.detailError) },
     isCreateMode() {
       return !this.$route.params.id || this.$route.params.id === 'new'
@@ -285,14 +287,14 @@ export default {
   methods: {
     applyProjectContext(projectId) {
       this.form.scope = 'PROJECT'
-      this.form.projectId = Number(projectId)
+      this.form.projectId = normalizeProjectId(projectId)
     },
     async loadApiPickerOptions() {
       const requestId = ++this.apiPickerRequestId
       const projectId = this.form.scope === 'GLOBAL' ? 0 : this.form.projectId
       this.apiPickerVars = []; this.apiPickerFunctions = []
       if (projectId == null || projectId === '') return
-      const catalog = await loadApiReferenceCatalog(Number(projectId) || 0)
+      const catalog = await loadApiReferenceCatalog(normalizeProjectId(projectId) || 0)
       if (requestId !== this.apiPickerRequestId) return
       this.apiPickerVars = catalog.vars; this.apiPickerFunctions = catalog.functions
       if (catalog.errors.length) this.$message.warning(catalog.errors.join('；'))
@@ -336,6 +338,7 @@ export default {
         if (!data?.id || String(data.id) !== String(id)) throw new Error('外数配置不存在或已删除，请返回列表核对。')
         this.form = { ...this.emptyForm(), ...data }
         this.authConfig = this.parseAuthConfig(this.form.authConfig, this.form.authType)
+        this.savedConfiguration = this.configurationFingerprint
         this.detailLoaded = true
       } catch (error) {
         if (current()) this.detailError = error.message || '无法读取外数配置，请重新加载。'
@@ -380,6 +383,11 @@ export default {
       if (!this.configurationReady || this.saving) return
       this.$refs.form.validate(async (valid) => {
         if (!valid || !this.configurationReady) return
+        const fingerprint = this.configurationFingerprint
+        if (this.form.id && fingerprint === this.savedConfiguration) {
+          this.$message.info('配置未修改，无需保存')
+          return
+        }
         let data
         try {
           data = this.normalizeForm(this.form)
@@ -392,6 +400,7 @@ export default {
           const response = data.id
             ? await updateDatasource(data)
             : await createDatasource(data)
+          this.savedConfiguration = fingerprint
           await completeResourceChange(this, response)
             if (!this.form.id && response.data?.resourceId) {
               this.form.id = response.data.resourceId

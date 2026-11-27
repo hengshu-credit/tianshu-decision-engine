@@ -1,4 +1,4 @@
-/* 首屏、业务组件、Element Plus 和 Monaco 共用同一张 SVG，动画和减少动态效果的静态图都在文件内。 */
+/* 首屏、面板和编辑器共用 HSCredit SVG，动画和减少动态效果的静态图都在文件内。 */
 .tianshu-loading,
 .el-icon.el-icon.is-loading,
 .el-loading-spinner.el-loading-spinner,
@@ -44,6 +44,44 @@
   transform: translateY(-50%);
 }
 .el-loading-mask.is-fullscreen .el-loading-spinner { margin: 0; }
+
+.el-button.is-loading > span > .el-icon:first-child { display: none; }
+
+/* 按钮复用登录反馈，中心点静止，仅旋转外侧两段圆弧。 */
+:is(.login-spinner, .el-button > .el-icon.is-loading) {
+  position: relative;
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  min-width: 16px;
+  min-height: 16px;
+  flex: none;
+  background: none;
+}
+:is(.login-spinner, .el-button > .el-icon.is-loading)::before,
+:is(.login-spinner, .el-button > .el-icon.is-loading)::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+}
+:is(.login-spinner, .el-button > .el-icon.is-loading)::before {
+  inset: 0;
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  border-block-color: currentColor;
+  animation: button-spin 1.35s linear infinite;
+}
+:is(.login-spinner, .el-button > .el-icon.is-loading)::after {
+  width: 24%;
+  height: 24%;
+  inset: 0;
+  margin: auto;
+  background: currentColor;
+}
+@keyframes button-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  :is(.login-spinner, .el-button > .el-icon.is-loading)::before { animation: none; }
+}
 
 .app-bootstrap {
   position: fixed;

@@ -16,6 +16,7 @@ public enum TransferResourceType {
     MODEL("rule_model", "modelCode", "modelName", "model"),
     EXPERIMENT("rule_experiment", "experimentCode", "experimentName", "experiment"),
     FIELD_VALIDATION("rule_field_validation", "validationCode", "validationName", "field"),
+    BILLING_CONFIG("rule_billing_config", "billingCode", "billingName", "billing"),
     RULE_VERSION("rule_version_binding", "versionNo", "versionNo", "rule");
 
     public final String table;

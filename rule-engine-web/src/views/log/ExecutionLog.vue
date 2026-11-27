@@ -251,7 +251,7 @@
         <el-table-column v-if="columnKey === 'trace'" label="追踪" width="70" align="center" >
           <template v-slot="{ row }">
             <el-tag
-              v-if="row.traceInfo"
+              v-if="hasExecutionTrace(row)"
               :type="row.success === 1 ? 'success' : 'danger'"
               size="small"
               ><el-icon><el-icon-view /></el-icon> 有</el-tag
@@ -263,7 +263,7 @@
         <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['查看', '回放'])" align="center" fixed="right">
           <template v-slot="{ row }">
             <el-button link size="small" type="primary" @click="handleViewDetail(row)">详情</el-button>
-            <el-button v-if="!row.traceInfo" link size="small" type="warning" :loading="replayLoadingId === row.id" @click="handleReplay(row)">回溯</el-button>
+            <el-button v-if="!hasExecutionTrace(row)" link size="small" type="warning" :loading="replayLoadingId === row.id" @click="handleReplay(row)">回溯</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -569,6 +569,10 @@
               <pre class="log-pre error">{{ detail.errorMessage }}</pre>
             </div>
           </el-tab-pane>
+          <el-tab-pane name="relations" label="调用与费用" lazy>
+            <execution-relations v-if="detailTab === 'relations' && detail.traceId" :key="detail.traceId"
+              :detail="detail" @view-trace="detailTab = 'trace'" />
+          </el-tab-pane>
           <el-tab-pane name="trace" :disabled="!detail.traceInfo">
             <template v-slot:label>
               <span>
@@ -598,8 +602,10 @@
 </template>
 
 <script>
+import { pageTabState } from '@/mixins/pageTabState'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import ExecutionVersionFilter from '@/components/common/ExecutionVersionFilter.vue'
+import ExecutionRelations from '@/components/ExecutionRelations.vue'
 import ExecutionDiagnosisPanel from '@/components/common/ExecutionDiagnosisPanel.vue'
 import { View as ElIconView, Connection as ElIconConnection } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
@@ -610,7 +616,7 @@ import { listDefinitions as listRules } from '@/api/definition'
 import { getProject, listProjects } from '@/api/project'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
-import { getRuleSetStats, replayExecutionLog } from '@/api/runtimeLog'
+import { getExecutionLogDetail, getRuleSetStats, replayExecutionLog } from '@/api/runtimeLog'
 import TraceTree from '@/components/common/TraceTree.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
@@ -623,14 +629,15 @@ import {
   restorePageState,
   savePageState,
 } from '@/utils/pageStateCache'
-import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
+import { normalizeProjectId, projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import { ruleSetCoverageHint } from '@/utils/ruleSetStatistics'
 import { resolveTraceReferences } from '@/utils/traceReference'
 import { loadPagedCatalog } from '@/utils/pagedCatalog'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
 
 export default {
-  components: { DismissibleGuidance, ExecutionDiagnosisPanel, ExecutionVersionFilter,
+  mixins: [pageTabState('activeView', vm => vm.canViewRuntime ? ['logs','ruleSetStats','runtime'] : ['logs','ruleSetStats'])],
+  components: { DismissibleGuidance, ExecutionRelations, ExecutionDiagnosisPanel, ExecutionVersionFilter,
     TableColumnSettings,
     ExecutionMetricsPanel,
     TraceTree,
@@ -801,7 +808,7 @@ for (var i = 0; i < this.projectList.length; i++) {
 }
 if (!pid) return this.ruleList
 return this.ruleList.filter(function (r) {
-  return r.projectId === pid
+  return String(r.projectId) === String(pid)
 })
 },
 filteredRuleSets: function () {
@@ -825,6 +832,7 @@ this.contextProjectId = contextId
 const trace = this.$route?.query?.traceId
 this.focusedTrace = typeof trace === 'string' && Boolean(trace.trim())
 if (this.focusedTrace) {
+  this.activeView = 'logs'
   this.qp.traceId = trace
 } else {
   this.initDefaultTimeRange()
@@ -832,7 +840,7 @@ if (this.focusedTrace) {
 }
 if (contextId) {
   var currentProject = this.$store && this.$store.state.currentProject
-  if (currentProject && Number(currentProject.id) === contextId && currentProject.projectCode) {
+  if (currentProject && normalizeProjectId(currentProject.id) === contextId && currentProject.projectCode) {
     this.applyProjectContext(currentProject)
   } else {
     try {
@@ -850,6 +858,7 @@ if (contextId) {
   }
 }
 this.load()
+if (this.activeView === 'ruleSetStats') this.loadRuleSetStats()
 },
 beforeUnmount() {
 this.detailRequestId++
@@ -857,11 +866,12 @@ this.loadRequestId++
 this.ruleSetStatsRequestId++
 },
 methods: {
+hasExecutionTrace(row) { return row.traceAvailable ?? Boolean(row.traceInfo) },
 operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
 ruleSetCoverageHint,
 applyProjectContext: function (project) {
 if (!project || !project.id) return
-this.contextProjectId = Number(project.id)
+this.contextProjectId = normalizeProjectId(project.id)
 this.contextProjectCode = project.projectCode || ''
 this.qp.projectCode = this.contextProjectCode
 this.qp.projectName = ''
@@ -940,7 +950,7 @@ this.list = []
 try {
   this.normalizePagination()
   this.saveCachedState()
-  var params = Object.assign({}, this.qp)
+  var params = Object.assign({}, this.qp, { summaryOnly: true })
   if (this.contextProjectId) {
     params.projectId = this.contextProjectId
     if (this.focusedTrace && params.projectCode === this.contextProjectCode) delete params.projectCode
@@ -1227,7 +1237,12 @@ this.detailLoading = true
 this.detail = Object.assign({}, row)
 this.detailVis = true
 try {
-  await this.ensureDetailMetadata(row)
+  if (typeof row.traceAvailable === 'boolean') {
+    const { data } = await getExecutionLogDetail(row.id, row.createTime)
+    if (requestId !== this.detailRequestId || !this.detailVis) return
+    this.detail = data
+  }
+  await this.ensureDetailMetadata(this.detail)
   if (requestId !== this.detailRequestId || !this.detailVis) return
   await this.loadVarMap()
   if (requestId !== this.detailRequestId || !this.detailVis) return

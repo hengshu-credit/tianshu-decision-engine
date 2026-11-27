@@ -2294,10 +2294,10 @@
       "name": "India",
       "layers": [
         {
-          "level": "ADM1",
-          "year": "2011",
+          "level": "ADM0",
+          "year": "2014",
           "count": 1,
-          "url": "https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/9469f09/releaseData/gbOpen/IND/ADM1/geoBoundaries-IND-ADM1_simplified.geojson"
+          "url": "https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/9469f09/releaseData/gbOpen/IND/ADM0/geoBoundaries-IND-ADM0_simplified.geojson"
         },
         {
           "level": "ADM1",

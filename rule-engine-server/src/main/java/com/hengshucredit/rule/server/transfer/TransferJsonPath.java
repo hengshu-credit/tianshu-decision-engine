@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /** 严格 JSON Pointer，保留 JSON 字符串存储形式；不支持模糊匹配或按名称查找。 */
 final class TransferJsonPath {
@@ -12,11 +13,15 @@ final class TransferJsonPath {
     static String child(String path, String key) { return path + "/" + key.replace("~", "~0").replace("/", "~1"); }
 
     static Object read(Object root, String pointer) {
-        return visit(root, tokens(pointer), 0, null, false);
+        return visit(root, tokens(pointer), 0, null, false, null);
     }
 
     static void replace(Map<String, Object> root, String pointer, Object value) {
-        visit(root, tokens(pointer), 0, value, true);
+        replace(root, pointer, value, null);
+    }
+
+    static void replace(Map<String, Object> root, String pointer, Object value, Consumer<Map<String, Object>> updateOwner) {
+        visit(root, tokens(pointer), 0, value, true, updateOwner);
     }
 
     private static String[] tokens(String pointer) {
@@ -25,19 +30,21 @@ final class TransferJsonPath {
     }
 
     @SuppressWarnings("unchecked")
-    private static Object visit(Object node, String[] tokens, int offset, Object replacement, boolean write) {
+    private static Object visit(Object node, String[] tokens, int offset, Object replacement, boolean write,
+                                Consumer<Map<String, Object>> updateOwner) {
         if (offset == tokens.length) return write ? replacement : node;
         String token = tokens[offset].replace("~1", "/").replace("~0", "~");
         if (node instanceof String text && "@json".equals(token)) {
             Object nested;
             try { nested = JSON.parse(text); }
             catch (RuntimeException error) { throw new IllegalArgumentException("迁移引用指向非法 JSON", error); }
-            Object result = visit(nested, tokens, offset + 1, replacement, write);
+            Object result = visit(nested, tokens, offset + 1, replacement, write, updateOwner);
             return write ? CanonicalJson.write(result) : result;
         }
         if (node instanceof Map<?, ?> raw && raw.containsKey(token)) {
             Map<String, Object> map = (Map<String, Object>) raw;
-            Object result = visit(map.get(token), tokens, offset + 1, replacement, write);
+            Object result = visit(map.get(token), tokens, offset + 1, replacement, write, updateOwner);
+            if (updateOwner != null && offset == tokens.length - 1) updateOwner.accept(map);
             if (write) { map.put(token, result); return map; }
             return result;
         }
@@ -47,7 +54,7 @@ final class TransferJsonPath {
             catch (NumberFormatException error) { throw new IllegalArgumentException("迁移引用数组索引无效", error); }
             if (index < raw.size()) {
                 List<Object> list = (List<Object>) raw;
-                Object result = visit(list.get(index), tokens, offset + 1, replacement, write);
+                Object result = visit(list.get(index), tokens, offset + 1, replacement, write, updateOwner);
                 if (write) { list.set(index, result); return list; }
                 return result;
             }

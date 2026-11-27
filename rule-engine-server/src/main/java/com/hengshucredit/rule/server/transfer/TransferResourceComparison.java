@@ -21,6 +21,16 @@ final class TransferResourceComparison {
 
     private TransferResourceComparison() { }
 
+    static void removeInactiveFunctionFields(Map<String, Object> config) {
+        if ("SCRIPT".equals(config.get("implType"))) {
+            config.remove("implClass"); config.remove("implMethod"); config.remove("implBeanName");
+        } else if ("JAVA".equals(config.get("implType"))) {
+            config.remove("implScript"); config.remove("implBeanName");
+        } else if ("BEAN".equals(config.get("implType"))) {
+            config.remove("implScript"); config.remove("implClass");
+        }
+    }
+
     static boolean sameVariableType(Map<String, Object> source, Map<String, Object> target) {
         Object type = source.get("varType");
         return type instanceof String text && !text.isBlank() && type.equals(target.get("varType"))
@@ -53,8 +63,11 @@ final class TransferResourceComparison {
         if (type == TransferResourceType.MODEL && config.get("modelContent") instanceof String content) {
             config.put("modelContent", ModelFileStore.contentDigest(content));
         }
+        config.remove("_transferSourceModelVersion");
+        config.remove("_transferSourceGovernedSnapshot");
         entity(config);
         switch (type) {
+            case FUNCTION -> removeInactiveFunctionFields(config);
             case VARIABLE -> children(config.get("options"), "variableId");
             case DATA_OBJECT -> {
                 TransferObjectFieldIndex index = TransferObjectFieldIndex.of(config);

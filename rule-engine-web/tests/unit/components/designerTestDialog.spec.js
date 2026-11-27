@@ -45,6 +45,17 @@ describe('DesignerTestDialog unified schema', () => {
     } finally { wrapper.unmount() }
   })
 
+  test('已保存的评分卡样例优先于字段模板并保留大整数', async () => {
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: { sampleParams: { amount: 0 } } })
+    const wrapper = shallowMount(DesignerTestDialog, { props: {
+      definitionId: 7, modelType: 'SCORE', savedSample: '{"amount":9007199254740993}',
+    } })
+    try {
+      await wrapper.vm.open()
+      expect(wrapper.vm.paramsJson).toContain('9007199254740993')
+    } finally { wrapper.unmount() }
+  })
+
   test('同一规则改选来源后迟到执行不能污染新来源', async () => {
     let finish
     definitionApi.getRuleTestSchema.mockResolvedValue({ data: { sampleParams: {}, executionIdentity: { sourceType: 'VERSION', sourceId: '81', definitionId: '7' } } })

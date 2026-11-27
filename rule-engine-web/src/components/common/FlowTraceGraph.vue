@@ -17,12 +17,22 @@
       <div class="flow-trace-canvas-wrap">
         <div ref="canvas" class="flow-trace-canvas" data-testid="flow-trace-canvas"></div>
         <div v-if="graphMounted" class="flow-trace-tools" role="group" aria-label="执行图视图操作">
+          <el-button size="small" @click="downloadPng">下载 PNG</el-button>
+          <el-button size="small" @click="arrangeView">一键美化</el-button>
+          <el-button size="small" :aria-pressed="miniMapVisible" @click="toggleMiniMap">小地图</el-button>
           <el-button-group size="small">
             <el-button aria-label="放大执行图" title="放大" @click="zoom(true)"><el-icon><zoom-in /></el-icon></el-button>
             <el-button aria-label="缩小执行图" title="缩小" @click="zoom(false)"><el-icon><zoom-out /></el-icon></el-button>
             <el-button aria-label="适配执行图" title="适配画布" @click="fitGraph"><el-icon><rank /></el-icon></el-button>
           </el-button-group>
           <el-button size="small" aria-label="恢复 100% 并居中" title="恢复 100% 并居中" @click="resetView">{{ zoomPercent }}%</el-button>
+          <el-select class="trace-zoom" :model-value="zoomPercent + '%'" size="small" aria-label="执行图缩放比例" @change="zoom($event / 100)">
+            <el-option v-for="scale in [25,50,75,100,125,150,200]" :key="scale" :label="scale + '%'" :value="scale" />
+          </el-select>
+          <graph-designer-navigator v-model:target="navigationTarget" :options="navigationOptions" :show-mini-map="false" :show-issues="false"
+            @search="searchText = $event" @locate="locateElement" />
+          <el-button size="small" :aria-pressed="gridVisible" @click="toggleGrid">网格</el-button>
+          <el-button size="small" @click="restoreSnapshot">重置</el-button>
         </div>
         <div v-if="!graphMounted" class="flow-trace-fallback" data-testid="flow-trace-fallback">
           <async-state v-if="graphLoading || graphError" compact :loading="graphLoading" :error="graphError" loading-text="正在加载执行图…" @retry="retryGraph" />
@@ -132,6 +142,8 @@
 
 <script>
 import { Rank, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
+import GraphDesignerNavigator from '@/components/flow/GraphDesignerNavigator.vue'
+import { layoutGraphByAnchors } from '@/components/flow/flowDesignerGraph'
 import ContentReference from './ContentReference.vue'
 import AsyncState from './AsyncState.vue'
 
@@ -178,7 +190,7 @@ function snapshotElements(model, key) {
 }
 
 export default {
-  components: { ContentReference, AsyncState, Rank, ZoomIn, ZoomOut },
+  components: { GraphDesignerNavigator, ContentReference, AsyncState, Rank, ZoomIn, ZoomOut },
   name: 'FlowTraceGraph',
   props: {
     modelData: { type: Object, default: null },
@@ -193,10 +205,22 @@ export default {
       graphImportFailed: false,
       graphRequestId: 0,
       zoomPercent: 100,
+      searchText: '',
+      navigationTarget: '',
+      gridVisible: true,
+      miniMapVisible: false,
       selected: null,
     }
   },
   computed: {
+    navigationOptions() {
+      const { nodes, edges } = this.graphSnapshot
+      const keyword = this.searchText.trim().toLowerCase()
+      return [
+        ...nodes.map(n => ({ key: n.id, kind: 'NODE', label: n.properties.nodeName })),
+        ...edges.map(e => ({ key: e.id, kind: 'EDGE', label: e.trace.sourceName + ' → ' + e.trace.targetName + ' · ' + e.trace.title })),
+      ].filter(item => (item.label + ' ' + item.key).toLowerCase().includes(keyword))
+    },
     statusLegend() {
       return [
         { value: 'hit', label: '命中路径' },
@@ -299,6 +323,46 @@ export default {
     resetView() {
       this.lf.resetZoom()
       this.lf.translateCenter()
+    },
+    toggleGrid() {
+      this.gridVisible = !this.gridVisible
+      this.lf.graphModel.updateGridOptions({ visible: this.gridVisible })
+    },
+    toggleMiniMap() {
+      this.miniMapVisible = !this.miniMapVisible
+      const map = this.lf.extension.miniMap
+      if (this.miniMapVisible) map.show()
+      else map.hide()
+    },
+    locateElement(id) {
+      const node = this.graphSnapshot.nodes.find(item => item.id === id)
+      const edge = this.graphSnapshot.edges.find(item => item.id === id)
+      this.selected = node?.trace || edge?.trace || null
+      if (node) this.lf.focusOn(id)
+      else if (edge) {
+        const { startPoint, endPoint } = this.lf.getEdgeModelById(id)
+        this.lf.focusOn({ x: (startPoint.x + endPoint.x) / 2, y: (startPoint.y + endPoint.y) / 2 })
+      }
+      if (this.selected) this.lf.selectElementById(id)
+    },
+    arrangeView() {
+      this.lf.render(layoutGraphByAnchors(this.graphSnapshot))
+      this.fitGraph()
+    },
+    restoreSnapshot() {
+      this.selected = null
+      this.navigationTarget = ''
+      this.searchText = ''
+      if (this.miniMapVisible) this.toggleMiniMap()
+      if (!this.gridVisible) this.toggleGrid()
+      this.lf.render(this.graphSnapshot)
+      this.fitGraph()
+    },
+    async downloadPng() {
+      try {
+        await this.lf.getSnapshot('决策流执行图.png', { fileType: 'png', padding: 32, partial: false,
+          backgroundColor: getComputedStyle(this.$refs.canvas.parentElement).backgroundColor })
+      } catch (error) { this.$message.error(error.message || '执行图下载失败') }
     },
     statusLabel(status) {
       return STATUS_LABELS[status] || '未知状态'
@@ -407,12 +471,16 @@ export default {
       let imported = false
       try {
         // 追踪面板实际展示后才加载画布，不阻塞规则测试等页面的首次导航。
-        const { createGraphCanvas } = await import('@/components/flow/graphCanvas')
+        const [{ createGraphCanvas }, { MiniMap, Snapshot }] = await Promise.all([
+          import('@/components/flow/graphCanvas'), import('@logicflow/extension'),
+        ])
         imported = true
         if (requestId !== this.graphRequestId) return
         if (this.lf && typeof this.lf.destroy === 'function') this.lf.destroy()
         this.lf = createGraphCanvas({
           container: canvas,
+          plugins: [MiniMap, Snapshot],
+          pluginsOptions: { miniMap: { width: 160, height: 100, rightPosition: 10, bottomPosition: 10, isShowHeader: false, isShowCloseIcon: false } },
           isSilentMode: true,
           stopScrollGraph: false,
           stopZoomGraph: false,
@@ -434,6 +502,10 @@ export default {
         return
       }
       this.graphMounted = true
+      this.gridVisible = true
+      this.miniMapVisible = false
+      this.navigationTarget = ''
+      this.searchText = ''
       this.lf.render(this.graphSnapshot)
       if (typeof this.lf.on === 'function') {
         this.lf.on('graph:transform', ({ transform }) => {
@@ -474,8 +546,9 @@ export default {
 .flow-trace-graph__body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(255px, 30%, 380px); min-height: 470px; }
 .flow-trace-canvas-wrap { position: relative; min-width: 0; min-height: 470px; background: var(--tianshu-bg-workspace); }
 .flow-trace-canvas { width: 100%; height: 470px; }
-.flow-trace-tools { position: absolute; top: 10px; left: 10px; display: flex; align-items: center; gap: 6px; padding: 4px; border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; background: var(--tianshu-bg-surface); }
-.flow-trace-tools > .el-button { min-width: 50px; font-variant-numeric: tabular-nums; }
+.flow-trace-tools { position: absolute; inset: 8px 8px auto; display: flex; justify-content: center; flex-wrap: wrap; align-items: center; gap: 6px; background: transparent; pointer-events: none; }
+.flow-trace-tools > * { pointer-events: auto; margin: 0; }
+.flow-trace-tools .trace-zoom { width: 80px; }
 .flow-trace-detail { min-width: 0; padding: 14px; border-left: 1px solid var(--tianshu-border-subtle); background: var(--tianshu-bg-surface); }
 .flow-trace-detail__head, .flow-trace-detail__title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .flow-trace-detail__eyebrow, .flow-trace-detail__label { color: var(--tianshu-text-tertiary); font-size: 11px; font-weight: 700; }

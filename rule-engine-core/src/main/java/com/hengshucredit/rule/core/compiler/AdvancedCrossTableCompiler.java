@@ -73,7 +73,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
                 for (int ci = 0; ci < colProduct.size(); ci++) {
                     List<SegmentInfo> colSegs = colProduct.get(ci);
                     Object cellValue = getCellValue(rowCells, ci);
-                    if (cellValue == null || (cellValue instanceof String && ((String) cellValue).trim().isEmpty())) continue;
+                    if (isUnconfiguredCell(cellValue)) continue;
 
                     script.append(first ? "if (" : " else if (");
                     first = false;
@@ -163,6 +163,14 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
             result = newResult;
         }
         return result;
+    }
+
+    private boolean isUnconfiguredCell(Object cell) {
+        if (cell instanceof JSONObject operand && "LITERAL".equals(operand.getString("kind"))) {
+            Object value = operand.get("value");
+            return value == null || "".equals(value);
+        }
+        return cell == null || cell instanceof String text && text.isBlank();
     }
 
     /** 从多层嵌套的 cells 数组中取值 */

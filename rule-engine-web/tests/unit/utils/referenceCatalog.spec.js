@@ -7,6 +7,16 @@ import {
 } from '@/utils/referenceCatalog'
 
 describe('referenceCatalog', () => {
+  test('冻结目录保留对象别名、完整字段路径和各自的稳定 ID', () => {
+    const catalog = buildReferenceCatalog([], [{
+      object: { id: 9, objectCode: 'Code', objectLabel: '申请', scriptName: 'Alias' },
+      variables: [{ id: 9, varCode: 'Value', scriptName: 'local', referencePath: 'Alias.Alias.local', varType: 'STRING' }],
+    }])
+    expect(buildPickerOptions(catalog).map(item => [item._refType, item._varId, item.varCode])).toEqual([
+      ['DATA_OBJECT', 9, 'Alias.Alias.local'], ['DATA_OBJECT_ROOT', 9, 'Alias'],
+    ])
+  })
+
   test('模型字段使用实际 currentVersion 显示当前版本，并保持输出字段 ID', () => {
     const catalog = buildReferenceCatalog([], [], [{ id: '9007199254740993', modelCode: 'model', currentVersion: 4, outputFields: [{ id: 7, fieldName: 'score' }] }])
     expect(buildPickerOptions(catalog)[0]).toMatchObject({ _varId: 7, _refType: 'MODEL_OUTPUT', _ref: { modelId: '9007199254740993', modelVersion: 4 } })

@@ -11,7 +11,8 @@ export function fieldPickerDetails(node, versionLabel = '') {
   const ref = item._ref || {}
   const raw = item.function || item.resource || item.varObj || ref.varObj || {}
   const parts = [node.name, node.code, `${varTypeLabel(node.type)} (${node.type})`]
-  const category = ({ function: '函数 / 方法', operator: '操作符', rule: '规则', list: '名单', database: '数据库' })[node.category] || pickerCategoryLabel(node.category)
+  const category = (node.category === 'mock' ? item.pickerColumns?.type : null)
+    || ({ function: '函数 / 方法', operator: '操作符', rule: '规则', list: '名单', database: '数据库' })[node.category] || pickerCategoryLabel(node.category)
   if (category) parts.push(`分类：${category}`)
   const owner = ref.objectLabel || ref.modelLabel || ref.apiLabel
   if (owner && owner !== node.name) parts.push(`归属：${owner}`)

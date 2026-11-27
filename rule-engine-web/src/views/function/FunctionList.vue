@@ -200,7 +200,7 @@
             data-action="execute"
             size="small"
             type="success"
-            @click="handleTestFunction(row)"
+            @click="openSavedFunctionTest(row.id)"
             >测试</el-button
           >
           <resource-version-manager v-if="row.id" data-action="version" resource-type="FUNCTION" :resource-id="row.id" has-legacy @legacy="openVersionDialog(row)" />
@@ -284,6 +284,7 @@
         <el-form-item label="函数编码" required :error="functionCodeError">
           <el-input
             v-model="editForm.funcCode"
+            @input="scheduleMethodLookup"
             maxlength="128"
             show-word-limit
             placeholder="如 calcTax（QLExpress 脚本中的调用名）"
@@ -325,14 +326,14 @@
         <template v-if="isNativeFunction">
           <el-form-item :label="editForm.implType === 'JAVA' ? 'Java类名' : 'Bean名称'" required>
             <div class="function-method-target">
-              <el-input v-if="editForm.implType === 'JAVA'" v-model="editForm.implClass" placeholder="已部署的 Java 类全名" />
-              <el-input v-else v-model="editForm.implBeanName" placeholder="已部署的 Spring Bean 名称" />
-              <el-button :loading="methodLoading" @click="loadFunctionMethods">读取方法</el-button>
+              <el-input v-if="editForm.implType === 'JAVA'" v-model="editForm.implClass" placeholder="已部署的 Java 类全名" @input="scheduleMethodLookup" />
+              <el-input v-else v-model="editForm.implBeanName" placeholder="已部署的 Spring Bean 名称" @input="scheduleMethodLookup" />
+              <el-button :loading="methodLoading" :disabled="!canInspectMethods" @click="loadFunctionMethods">重新读取</el-button>
             </div>
           </el-form-item>
           <el-form-item label="实际方法">
             <div class="function-method-selection">
-              <el-select v-if="!nativeManual" :model-value="selectedNativeSignature" filterable style="width: 100%" placeholder="先读取方法，再选择实际签名" data-testid="function-method-select" @change="selectFunctionMethod">
+              <el-select v-if="!nativeManual" :model-value="selectedNativeSignature" :loading="methodLoading" filterable style="width: 100%" placeholder="选择实际方法签名" data-testid="function-method-select" @visible-change="onMethodListOpen" @change="selectFunctionMethod">
                 <el-option v-for="method in nativeMethodChoices" :key="method.signature" :value="method.signature" :label="method.displaySignature" :disabled="!method.available" :title="method.unavailableReason || method.displaySignature" />
               </el-select>
               <el-input v-else v-model="editForm.implMethod" placeholder="实际方法名（不包含括号和参数）" data-testid="function-method-name" />
@@ -340,13 +341,13 @@
                 <span v-if="editForm.implMethod">已配置方法：{{ editForm.implMethod }}</span>
                 <el-button link @click="nativeManual = !nativeManual">{{ nativeManual ? '返回方法选择' : '手工填写目标签名' }}</el-button>
               </div>
-              <el-alert v-if="currentMethodCatalog" :title="currentMethodCatalog.message" :type="currentMethodCatalog.valid && !currentMethodCatalog.legacySignature ? 'success' : 'warning'" :closable="false" show-icon />
+              <el-alert v-if="currentMethodCatalog" :title="currentMethodCatalog.valid && currentMethodCatalog.legacySignature ? '已自动匹配当前方法，参数类型已显示。' : currentMethodCatalog.message" :type="currentMethodCatalog.valid ? 'success' : 'warning'" :closable="false" show-icon />
               <div v-if="nativeManual" class="function-method-help">用于目标运行端尚未安装的实现。请明确填写方法名和每个参数的实际类型；未验证状态会保留在审批预检中。</div>
             </div>
           </el-form-item>
         </template>
         <el-form-item label="参数列表">
-          <div class="function-form-help">脚本按参数顺序传值。<span v-if="isNativeFunction && !nativeManual && editParams.some((_, i) => !methodParameterType(i))">点击上方“读取方法”，可查看每个参数的 Java 类型。</span></div>
+          <div class="function-form-help">脚本按参数顺序传值。<span v-if="isNativeFunction && !nativeManual && editParams.some((_, i) => !methodParameterType(i))">选择实际方法后可查看每个参数的 Java 类型。</span></div>
           <el-alert v-if="parameterConfigError" :title="parameterConfigError" type="error" :closable="false" show-icon>
             <el-button link @click="resetFunctionParameters">重新配置参数</el-button>
           </el-alert>
@@ -418,6 +419,7 @@
       </el-form>
       <template v-slot:footer>
         <el-button size="small" :disabled="functionSaving" @click="closeConfigurationDialog('dialogVisible')">取消</el-button>
+        <el-button v-if="editForm.implType === 'SCRIPT'" v-permission="'function:edit'" size="small" :disabled="functionSaving" @click="testCurrentScript">测试当前脚本</el-button>
         <el-button v-permission="'function:edit'" size="small" type="primary" :loading="functionSaving" @click="handleSave"
           >保存</el-button
         >
@@ -425,7 +427,7 @@
     </el-dialog>
 
     <el-dialog
-      title="函数测试"
+      :title="testingCurrentScript ? '测试当前脚本' : '函数测试'"
       v-model="functionTestVisible"
       width="760px"
       append-to-body
@@ -456,6 +458,9 @@
           <el-button size="small" @click="functionTestVisible = false"
             >关闭</el-button
           >
+          <el-button v-if="!testingCurrentScript && !functionSampleReadonly && functionTestTarget.id"
+            v-permission="{ code: 'function:edit', projectId: functionTestTarget.projectId, scope: functionTestTarget.scope }"
+            size="small" :loading="functionSampleSaving" @click="saveTestSample">保存参数样例</el-button>
           <el-button v-permission="'function:edit'"
             size="small"
             type="primary"
@@ -467,11 +472,9 @@
       </template>
     </el-dialog>
 
-    <el-dialog
+    <resource-workspace-drawer
       title="函数版本管理"
       v-model="versionVisible"
-      width="min(1120px, 96vw)"
-      append-to-body
     >
       <div class="version-compare-toolbar">
         <el-select v-model="versionCompareLeft" @change="viewVersion(null)" size="small" placeholder="选择左侧版本">
@@ -499,7 +502,7 @@
           >查看具体差异</el-button
         >
       </div>
-      <el-table show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
+      <el-table class="workspace-history-table" show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
         <el-table-column
           prop="displayVersion"
           label="版本"
@@ -548,11 +551,12 @@
         :original-label="versionDisplayLabel(versionCompare.left)" :modified-label="versionDisplayLabel(versionCompare.right)" />
       <version-snapshot-panel v-else-if="versionPreview" historical resource-type="FUNCTION"
         :snapshot="versionPreview" :modified-label="versionDisplayLabel(versionPreview)" />
-    </el-dialog>
+    </resource-workspace-drawer>
   </div>
 </template>
 
 <script>
+import ResourceWorkspaceDrawer from '@/components/common/ResourceWorkspaceDrawer.vue'
 import { reservedCodeError, isManagedFunction } from '@/utils/reservedContentCode'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { historicalVersionMethods } from '@/mixins/historicalVersionMixin'
@@ -583,6 +587,7 @@ import {
   compareVersions,
   rollbackVersion,
   testFunction,
+  testFunctionScript,
   inspectFunctionMethods,
 } from '@/api/function'
 import { listProjects } from '@/api/project'
@@ -593,7 +598,8 @@ import {
   restorePageState,
   savePageState,
 } from '@/utils/pageStateCache'
-import { sampleValueForVarType } from '@/utils/testParamTemplate'
+import { functionSampleText } from '@/utils/functionTestSample'
+import { readFunctionSample, saveFunctionSample } from '@/api/functionTestSample'
 import { parseFunctionParameters, validatedFunctionParameters, explicitFunctionSignature, FUNCTION_JAVA_TYPES } from '@/utils/functionParameters'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
@@ -666,6 +672,7 @@ export default {
       methodCatalogTargetKey: '',
       methodLoading: false,
       methodRequestId: 0,
+      methodLookupTimer: null,
       editSessionId: 0,
       originalBindingKey: '',
       originalBuiltinCode: null,
@@ -676,6 +683,11 @@ export default {
       functionTestVisible: false,
       functionTesting: false,
       functionTestTarget: {},
+      functionSampleReadonly: true,
+      functionSampleOriginal: '',
+      functionSampleSaving: false,
+      functionSampleRequest: 0,
+      testingCurrentScript: false,
       functionTestParamsText: '{}',
       functionTestResultText: '',
       varTypeFormOptions: VAR_TYPE_FORM_OPTIONS,
@@ -690,7 +702,7 @@ export default {
       ElIconDelete: markRaw(ElIconDelete),
     }
   },
-  components: { DismissibleGuidance, VersionSnapshotPanel, FunctionImpactPanel, ProjectResourceSelect, ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { ResourceWorkspaceDrawer, DismissibleGuidance, VersionSnapshotPanel, FunctionImpactPanel, ProjectResourceSelect, ResourceVersionManager, GovernancePublishAction, GovernanceWorkspaceToolbar,
     GovernanceResourceStatus,
     TableColumnSettings,
     MonacoEditor,
@@ -706,6 +718,10 @@ export default {
     },
     canManageNative() { return hasPermission('function:native') },
     isNativeFunction() { return ['JAVA', 'BEAN'].includes(this.editForm.implType) },
+    canInspectMethods() {
+      const target = this.editForm.implType === 'JAVA' ? this.editForm.implClass : this.editForm.implBeanName
+      return this.dialogVisible && this.canManageNative && this.isNativeFunction && !!target?.trim() && !this.parameterConfigError
+    },
     nativeBindingKey() { return this.functionBindingKey() },
     nativeTargetKey() { return JSON.stringify([this.editForm.implType, this.editForm.implClass, this.editForm.implBeanName]) },
     currentMethodCatalog() { return this.methodCatalogKey === this.nativeBindingKey ? this.methodCatalog : null },
@@ -736,10 +752,13 @@ export default {
     this.loadFunctions()
   },
   watch: {
-    dialogVisible(visible) { if (!visible) { this.methodRequestId++; this.editSessionId++; this.methodLoading = false } },
+    '$route.query.testId': { immediate: true, handler(id) {
+      if (this.$route.path === '/function' && /^[1-9]\d*$/.test(id || '')) this.openSavedFunctionTest(id)
+    } },
+    dialogVisible(visible) { if (!visible) { this.cancelMethodLookup(); this.editSessionId++ } },
     '$route.query.projectId'() { this.handleProjectContextChange() },
   },
-  beforeUnmount() { this.methodRequestId++; this.editSessionId++ },
+  beforeUnmount() { this.functionSampleRequest++; this.cancelMethodLookup(); this.editSessionId++ },
   methods: {
     parameterCodeError(name) {
       if (this.originalBuiltinCode === this.editForm.funcCode && this.editForm.scope === 'GLOBAL' && this.originalBuiltinParams.includes(name)) return ''
@@ -760,19 +779,33 @@ export default {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
     functionBindingKey(form = this.editForm, params = this.editParams) {
-      return JSON.stringify([form.implType, form.implClass, form.implBeanName, form.implMethod, form.funcCode, params])
+      return JSON.stringify([form.scope, form.projectId, form.implType, form.implClass, form.implBeanName, form.implMethod, form.funcCode,
+        params.map(param => [param.type, param.javaType])])
     },
     functionDeclarationKey() {
       return JSON.stringify([this.nativeTargetKey, this.editForm.implMethod?.trim() || this.editForm.funcCode,
         this.editParams.map(param => [param.type, param.javaType])])
     },
+    cancelMethodLookup() {
+      clearTimeout(this.methodLookupTimer)
+      this.methodRequestId++
+      this.methodLoading = false
+    },
+    clearMethodLookup() {
+      this.cancelMethodLookup()
+      this.methodCatalog = null
+      this.methodCatalogKey = ''
+      this.methodCatalogTargetKey = ''
+    },
     resetMethodEditor() {
-      this.editSessionId++; this.methodRequestId++; this.methodLoading = false
-      this.methodCatalog = null; this.methodCatalogKey = ''; this.methodCatalogTargetKey = ''; this.nativeManual = false
+      this.clearMethodLookup()
+      this.editSessionId++
+      this.nativeManual = false
       this.parameterConfigError = ''; this.functionSaving = false
     },
     onImplementationChange(type) {
-      this.methodRequestId++; this.methodLoading = false; this.methodCatalog = null; this.methodCatalogKey = ''; this.nativeManual = false
+      this.clearMethodLookup()
+      this.nativeManual = false
       if (type === 'SCRIPT') this.editParams = this.editParams.map(param => {
         const copy = { ...param }; delete copy.javaType; return copy
       })
@@ -780,18 +813,30 @@ export default {
         && this.editParams[0].type === 'STRING' && Object.keys(this.editParams[0]).every(key => ['name', 'type', 'label'].includes(key))) {
         this.editParams = []
       }
+      this.loadFunctionMethods()
     },
     resetFunctionParameters() {
       this.editParams = []; this.parameterConfigError = ''
       this.methodCatalog = null; this.methodCatalogKey = ''
+      this.loadFunctionMethods()
+    },
+    scheduleMethodLookup() {
+      if (!this.isNativeFunction) return
+      this.clearMethodLookup()
+      if (this.canInspectMethods) this.methodLookupTimer = setTimeout(() => this.loadFunctionMethods(), 350)
+    },
+    onMethodListOpen(open) {
+      if (open && !this.methodLoading && this.methodCatalogTargetKey !== this.nativeTargetKey) this.loadFunctionMethods()
     },
     async loadFunctionMethods() {
+      clearTimeout(this.methodLookupTimer)
+      if (!this.canInspectMethods) return
       const requestId = ++this.methodRequestId
       const session = this.editSessionId
       const key = this.nativeBindingKey
       const targetKey = this.nativeTargetKey
       const payload = { ...this.editForm, paramsJson: JSON.stringify(this.editParams) }
-      this.methodLoading = true; this.methodCatalog = null; this.methodCatalogKey = ''
+      this.methodLoading = true; this.methodCatalog = null; this.methodCatalogKey = ''; this.methodCatalogTargetKey = ''
       try {
         const response = await inspectFunctionMethods(payload)
         if (requestId !== this.methodRequestId || session !== this.editSessionId || targetKey !== this.nativeTargetKey || !this.dialogVisible) return
@@ -815,7 +860,8 @@ export default {
         const previous = this.editParams[index]
         const untouched = previous && !previous.name && !previous.label && previous.type === 'STRING' && !previous.javaType
         return { ...previous, name: previous?.name || parameter.name || '', label: previous?.label || '',
-          type: !previous || untouched ? parameter.suggestedType : previous.type, javaType: parameter.javaType }
+          type: previous && !untouched && (previous.javaType === parameter.javaType || parameter.javaType === 'java.lang.Object')
+            ? previous.type : parameter.suggestedType, javaType: parameter.javaType }
       })
       this.parameterConfigError = ''; this.nativeManual = false
       this.methodCatalog = { ...catalog, signature, legacySignature: false, valid: true, message: '已选择实际方法；保存前将再次核对完整参数配置' }
@@ -1017,31 +1063,45 @@ export default {
         this.editParams = [{ name: '', type: 'STRING', label: '' }]
       this.originalBindingKey = this.functionDeclarationKey()
       this.dialogVisible = true
+      return this.loadFunctionMethods()
     },
     handleTestFunction(row) {
+      this.testingCurrentScript = false
       this.functionTestTarget = row || {}
-      this.functionTestParamsText = this.buildFunctionTestParamsTemplate(row)
+      this.functionTestParamsText = functionSampleText(row || {})
       this.functionTestResultText = ''
       this.functionTestVisible = true
     },
-    buildFunctionTestParamsTemplate(row) {
-      const params = this.parseParams(row && row.paramsJson)
-      const sample = {}
-      params.forEach((item) => {
-        if (item && item.name)
-          sample[item.name] = this.sampleValueForFunctionParam(item)
-      })
-      return JSON.stringify(sample, null, 2)
+    testCurrentScript() {
+      try {
+        const params = validatedFunctionParameters(this.editParams)
+        if (!this.editForm.funcCode?.trim() || !this.editForm.implScript?.trim()) throw new Error('请填写函数编码和实现脚本')
+        this.handleTestFunction({ ...this.editForm, paramsJson: JSON.stringify(params) })
+        this.testingCurrentScript = true
+      } catch (error) { this.$message.error(error.message) }
     },
-    sampleValueForFunctionParam(item) {
-      if (item && Object.prototype.hasOwnProperty.call(item, 'example')) {
-        try {
-          return JSON.parse(JSON.stringify(item.example))
-        } catch (e) {
-          return item.example
-        }
-      }
-      return sampleValueForVarType(item && item.type)
+    async openSavedFunctionTest(id) {
+      const ticket = ++this.functionSampleRequest
+      const path = this.$route.fullPath
+      try {
+        const sample = await readFunctionSample(id, true)
+        if (ticket !== this.functionSampleRequest || this.$route.fullPath !== path) return
+        this.handleTestFunction(sample.config)
+        this.functionSampleReadonly = sample.readonly
+        this.functionSampleOriginal = sample.text
+      } catch (error) { if (ticket === this.functionSampleRequest) this.$message.error(error.message || '读取函数样例失败') }
+    },
+    async saveTestSample() {
+      if (this.functionSampleSaving) return
+      this.functionSampleSaving = true
+      const text = this.functionTestParamsText
+      const ticket = this.functionSampleRequest
+      try {
+        const saved = await saveFunctionSample(this.functionTestTarget.id, this.functionSampleOriginal, text)
+        if (ticket === this.functionSampleRequest) this.functionSampleOriginal = saved
+        this.$message.success('函数样例草稿已保存，审批后生效')
+      } catch (error) { this.$message.error(error.message || '保存函数样例失败') }
+      finally { this.functionSampleSaving = false }
     },
     normalizeFunctionTestParams(params) {
       const code = this.functionTestTarget && this.functionTestTarget.funcCode
@@ -1069,7 +1129,7 @@ export default {
       return params
     },
     async doTestFunction() {
-      if (!this.functionTestTarget || !this.functionTestTarget.id) return
+      if (!this.testingCurrentScript && !this.functionTestTarget?.id) return
       let params
       try {
         params = this.functionTestParamsText
@@ -1082,13 +1142,14 @@ export default {
       }
       this.functionTesting = true
       try {
-        const res = await testFunction(this.functionTestTarget.id, params)
+        const res = this.testingCurrentScript ? await testFunctionScript(this.functionTestTarget, params) : await testFunction(this.functionTestTarget.id, params)
         this.functionTestResultText = JSON.stringify(
           (res && res.data) || res || {},
           null,
           2
         )
-        this.$message.success('测试完成')
+        if (res?.data?.success === false) this.$message.error(res.data.errorMessage || '函数测试失败')
+        else this.$message.success('测试完成')
       } catch (e) {
         this.functionTestResultText = JSON.stringify(
           { success: false, errorMessage: e.message || '测试失败' },
@@ -1123,13 +1184,20 @@ export default {
         if (this.parameterConfigError) throw new Error(this.parameterConfigError)
         params = validatedFunctionParameters(this.editParams, this.originalBuiltinCode === this.editForm.funcCode && this.editForm.scope === 'GLOBAL' ? this.originalBuiltinParams : [])
       } catch (error) { this.$message.warning(error.message); return }
+      if (this.finishUnchangedEdit('dialogVisible', this.editForm.id)) return
       const payload = { ...this.editForm, projectId: this.editForm.scope === 'GLOBAL' ? 0 : this.editForm.projectId, paramsJson: JSON.stringify(params) }
+      if (payload.implType === 'SCRIPT') {
+        payload.implClass = null
+        payload.implBeanName = null
+        payload.implMethod = null
+      }
       this.functionSaving = true
       try {
         if (this.isNativeFunction) {
           const unchangedLegacyBinding = this.editForm.id && this.functionDeclarationKey() === this.originalBindingKey
           if (!unchangedLegacyBinding && (!payload.implMethod?.trim() || params.some(param => !param.javaType)))
             throw new Error('请选择实际方法，或明确填写方法名及每个参数的实际方法类型')
+          this.cancelMethodLookup()
           const inspected = await inspectFunctionMethods(payload)
           if (session !== this.editSessionId || !this.dialogVisible) return
           if (snapshotKey !== JSON.stringify([this.editForm, this.editParams])) {

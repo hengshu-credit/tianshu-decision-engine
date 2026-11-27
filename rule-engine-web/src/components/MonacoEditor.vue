@@ -1,23 +1,31 @@
 <template>
-  <div
-    ref="container"
-    class="monaco-editor-container"
-    :class="{ 'has-reference-decorations': referenceDecorationIds.length > 0 }"
-    :aria-busy="loading"
-    :style="{ height: height }"
-    @mousedown.capture="focusReferenceCode"
-    @dblclick.capture="focusReferenceCode"
-    @mouseup.capture="normalizeReferenceCaret"
-  />
+  <div class="monaco-editor-frame" :class="{ 'is-resizable': initialScriptHeight > 0 }">
+    <div
+      ref="container"
+      v-bind="$attrs"
+      class="monaco-editor-container"
+      :class="{ 'has-reference-decorations': referenceDecorationIds.length > 0 }"
+      :aria-busy="loading"
+      :style="{ height: displayHeight }"
+      @mousedown.capture="focusReferenceCode"
+      @dblclick.capture="focusReferenceCode"
+      @mouseup.capture="normalizeReferenceCaret"
+    />
+    <editor-height-handle v-if="initialScriptHeight" label="调整脚本编辑器高度" :model-value="scriptHeight"
+      :initial="initialScriptHeight" :min="Math.min(120, initialScriptHeight)" :max="Math.max(1000, initialScriptHeight)"
+      @update:model-value="customScriptHeight = $event" />
+  </div>
 </template>
 
 <script>
 import { markRaw } from 'vue'
+import EditorHeightHandle from './common/EditorHeightHandle.vue'
 import { $emit } from '../utils/gogocodeTransfer'
 import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
 import { contentSourceIcon } from '@/utils/contentDisplay'
 import { waitForMonaco } from '@/utils/monacoLoader'
 import { identifyMonacoFields } from '@/utils/monacoFieldIds'
+import { followMonacoContentHeight } from '@/utils/monacoContentHeight'
 import {
   buildQlCompletionItems,
   buildQlHover,
@@ -31,6 +39,8 @@ import {
 } from '@/utils/qlScriptReferences'
 export default {
   name: 'MonacoEditor',
+  inheritAttrs: false,
+  components: { EditorHeightHandle },
   props: {
     value: {
       type: String,
@@ -109,6 +119,8 @@ export default {
   data() {
     return {
       editor: null,
+      customScriptHeight: null,
+      contentHeight: 48,
       loading: true,
       loadController: null,
       intelligenceDisposables: [],
@@ -120,9 +132,19 @@ export default {
     }
   },
   computed: {
+    displayHeight() {
+      if (this.height === 'auto') return this.contentHeight + 'px'
+      return this.initialScriptHeight ? this.scriptHeight + 'px' : this.height
+    },
+    initialScriptHeight() {
+      if (this.readOnly || this.options.readOnly || !['ql', 'javascript'].includes(this.language)) return 0
+      return /^\d+px$/.test(this.height) ? Number.parseInt(this.height, 10) : 0
+    },
+    scriptHeight() { return this.customScriptHeight ?? this.initialScriptHeight },
     referenceCatalog() { return markRaw(createQlReferenceCatalog(this.normalizedReferenceItems(), this.effectiveFunctions())) },
   },
   watch: {
+    height() { this.customScriptHeight = null },
     value(val) {
       if (!this.editor) return
       // 仅外部值变化（非用户输入）才更新编辑器内容，防止光标跳位
@@ -212,6 +234,10 @@ export default {
     this.editor = markRaw(
       window.monaco.editor.create(this.$refs.container, options)
     )
+    if (this.height === 'auto') {
+      this.editor.updateOptions({ scrollbar: { ...options.scrollbar, handleMouseWheel: false } })
+      followMonacoContentHeight([this.editor], height => { this.contentHeight = height })
+    }
     identifyMonacoFields(this.editor)
     this.registerIntelligenceProviders(window.monaco)
     this.refreshReferenceDecorations()
@@ -909,6 +935,8 @@ export default {
 </script>
 
 <style scoped>
+.monaco-editor-frame { display: contents; }
+.monaco-editor-frame.is-resizable { display: block; width: 100%; min-width: 0; }
 .monaco-editor-container {
   width: 100%;
   min-width: 0;

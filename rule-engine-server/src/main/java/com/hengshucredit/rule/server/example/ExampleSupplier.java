@@ -28,7 +28,20 @@ final class ExampleSupplier {
     private static final Path REPORTS = Path.of("/srv/credit-example/reports");
     private final Map<String,Object> keys;
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
-    private final String engine = System.getenv("EXAMPLE_ENGINE_URL").replaceAll("/+$","");
+    private final List<String> engines =
+            Arrays.stream(
+                            System.getenv()
+                                    .getOrDefault(
+                                            "EXAMPLE_ENGINE_URLS",
+                                            System.getenv("EXAMPLE_ENGINE_URL"))
+                                    .split(","))
+                    .map(String::trim)
+                    .filter(url -> !url.isEmpty())
+                    .map(url -> url.replaceAll("/+$", ""))
+                    .distinct()
+                    .toList();
+    private final java.util.concurrent.atomic.AtomicInteger nextEngine =
+            new java.util.concurrent.atomic.AtomicInteger();
     private final PublicKey fraudKey;
     private final ConcurrentMap<String,Long> tokens = new ConcurrentHashMap<>();
     private final Map<String,Job> jobs = new HashMap<>();
@@ -188,39 +201,150 @@ final class ExampleSupplier {
             if (!authorized(source,x,b)) {if (source.equals("pboc")) challenge(x);send(x,401,Map.of("error","invalid_credentials"));return;}
             if (poll) {status(x,Objects.toString(b.get("serial"),""));return;}
             if (!INPUTS.stream().allMatch(k->b.get(k) instanceof String v && !v.isBlank() && v.length()<=128)) {send(x,400,Map.of("error","missing_input"));return;}
-            if (source.equals("pboc")) send(x,200,apply(b)); else send(x,200,query(source,b));
+            if (source.equals("pboc")) send(x, 200, apply(b));
+            else
+                send(
+                        x,
+                        200,
+                        replayableQuery(
+                                source, b, x.getRequestHeaders().getFirst("Idempotency-Key")));
         } catch (Exception error) {
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();
             if (x.getResponseCode()==-1) send(x,503,Map.of("code","SUPPLIER_UNAVAILABLE"));
         } finally {x.close();}
     }
 
+    private static final Path RECEIPTS = Path.of("/var/lib/tianshu-example-receipts");
+    private final Object[] receiptLocks =
+            java.util.stream.IntStream.range(0, 128).mapToObj(i -> new Object()).toArray();
+
+    private Map<String, Object> replayableQuery(
+            String source, Map<String, Object> input, String key) throws Exception {
+        if (key == null) return query(source, input);
+        if (!key.matches("[0-9a-fA-F-]{36}")) throw new IllegalArgumentException("无效的供应商幂等标识");
+        var business = new LinkedHashMap<String, Object>();
+        INPUTS.forEach(name -> business.put(name, input.get(name)));
+        String digest =
+                com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(
+                        CanonicalJson.writeBytes(business));
+        // Namespace by the authenticated API. Only a fully committed receipt is returned on replay.
+        Path folder = RECEIPTS.resolve(source);
+        Files.createDirectories(folder);
+        Path path = folder.resolve(key);
+        synchronized (receiptLocks[Math.floorMod(key.hashCode(), receiptLocks.length)]) {
+            if (Files.exists(path)) {
+                var receipt = CanonicalJson.readMap(Files.readAllBytes(path));
+                if (!digest.equals(receipt.get("digest")))
+                    throw new IllegalArgumentException("供应商幂等标识的请求已变化");
+                return CanonicalJson.readMap(CanonicalJson.writeBytes(receipt.get("payload")));
+            }
+            var payload = query(source, input);
+            Path temp = Files.createTempFile(folder, "receipt-", ".tmp");
+            try {
+                Files.write(
+                        temp,
+                        CanonicalJson.writeBytes(Map.of("digest", digest, "payload", payload)));
+                Files.move(temp, path, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } finally {
+                Files.deleteIfExists(temp);
+            }
+            return payload;
+        }
+    }
+
     private Map<String,Object> query(String source, Map<String,Object> b) throws Exception {
         var params=new LinkedHashMap<String,Object>();
         INPUTS.forEach(k->params.put(k,b.get(k)));
-        var request=HttpRequest.newBuilder(URI.create(engine+"/api/rule/sync/execute/MOCK_"+RULES.get(source)))
-                .timeout(Duration.ofSeconds(20)).header("Content-Type","application/json").header("Authorization",basic("demo_supplier_gateway",key("engine")))
-                .POST(HttpRequest.BodyPublishers.ofByteArray(CanonicalJson.writeBytes(Map.of("params",params,"clientAppName","本地模拟供应商","traceEnabled",false)))).build();
-        var response=client.send(request,HttpResponse.BodyHandlers.ofByteArray());
+        byte[] body =
+                CanonicalJson.writeBytes(
+                        Map.of(
+                                "params",
+                                params,
+                                "clientAppName",
+                                "本地模拟供应商",
+                                "traceEnabled",
+                                false));
+        int start = Math.floorMod(nextEngine.getAndIncrement(), engines.size());
+        HttpResponse<byte[]> response = null;
+        for (int i = 0; i < engines.size(); i++) {
+            String engine = engines.get((start + i) % engines.size());
+            var request =
+                    HttpRequest.newBuilder(
+                                    URI.create(
+                                            engine
+                                                    + "/api/rule/sync/execute/MOCK_"
+                                                    + RULES.get(source)))
+                            .timeout(Duration.ofSeconds(20))
+                            .header("Content-Type", "application/json")
+                            .header("Authorization", basic("demo_supplier_gateway", key("engine")))
+                            .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+                            .build();
+            try {
+                response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                break;
+            } catch (java.net.ConnectException unavailable) {
+                if (i + 1 == engines.size()) throw unavailable;
+            }
+        }
+        if (response == null) throw new IOException("模拟供应商缺少引擎回调地址");
         var outer=CanonicalJson.readMap(response.body());
         if (response.statusCode()!=200 || !Boolean.TRUE.equals(outer.get("success")) || !(outer.get("data") instanceof Map<?,?> data) || !Boolean.TRUE.equals(data.get("success"))
                 || !(data.get("result") instanceof Map<?,?> out) || !(out.get("supplier_payload") instanceof Map<?,?> payload) || !(payload.get(FLAGS.get(source)) instanceof Boolean))
             throw new IOException("模拟供应商规则缺少有效输出");
         return CanonicalJson.readMap(CanonicalJson.write(payload));
     }
-    private synchronized Map<String,Object> apply(Map<String,Object> b) throws Exception {
+
+    private final java.util.concurrent.ConcurrentMap<
+                    String, java.util.concurrent.CompletableFuture<Job>>
+            applying = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private Map<String, Object> apply(Map<String, Object> b) throws Exception {
         String identity=List.of("request_id","name","idcard_no","mobile_no").stream().map(k->CanonicalJson.write(b.get(k))).collect(Collectors.joining(", ","[","]"));
         String serial=HexFormat.of().formatHex(mac("pboc",identity)).substring(0,32);
-        long now=System.currentTimeMillis();Job job=jobs.get(serial);
-        if (job==null || now>=job.expiry()) {
-            var p=query("pboc",b);
-            if (!(p.get("billable") instanceof Boolean billable)) throw new IOException("缺少受理计费标志");
-            boolean found=(Boolean)p.get("reportFound");
-            var report=new LinkedHashMap<String,Object>(); report.put("serial",serial);report.put("reportFound",found);report.put("report",p.get("report"));
-            job=new Job(now+(b.get("request_id").toString().startsWith("DEMO-PBOC-RESUME-")?15000:2500),now+3600000,billable,found,
-                    Boolean.TRUE.equals(p.get("deliveryFailed"))?null:CanonicalJson.writeBytes(report));
-            jobs.put(serial,job);
-        }
+        var loading = new java.util.concurrent.CompletableFuture<Job>();
+        var other = applying.putIfAbsent(serial, loading);
+        Job job;
+        if (other != null) job = other.get();
+        else
+            try {
+                synchronized (this) {
+                    job = jobs.get(serial);
+                }
+                if (job == null || System.currentTimeMillis() >= job.expiry()) {
+                    var p = query("pboc", b);
+                    if (!(p.get("billable") instanceof Boolean billable))
+                        throw new IOException("缺少受理计费标志");
+                    boolean found = (Boolean) p.get("reportFound");
+                    var report = new LinkedHashMap<String, Object>();
+                    report.put("serial", serial);
+                    report.put("reportFound", found);
+                    report.put("report", p.get("report"));
+                    long now = System.currentTimeMillis();
+                    job =
+                            new Job(
+                                    now
+                                            + (b.get("request_id")
+                                                            .toString()
+                                                            .startsWith("DEMO-PBOC-RESUME-")
+                                                    ? 15000
+                                                    : 2500),
+                                    now + 3600000,
+                                    billable,
+                                    found,
+                                    Boolean.TRUE.equals(p.get("deliveryFailed"))
+                                            ? null
+                                            : CanonicalJson.writeBytes(report));
+                    synchronized (this) {
+                        jobs.put(serial, job);
+                    }
+                }
+                loading.complete(job);
+            } catch (Exception | Error failure) {
+                loading.completeExceptionally(failure);
+                throw failure;
+            } finally {
+                applying.remove(serial, loading);
+            }
         return Map.of("code","0000","serial",serial,"billable",job.billable());
     }
     private synchronized void status(HttpExchange x,String serial) throws IOException {

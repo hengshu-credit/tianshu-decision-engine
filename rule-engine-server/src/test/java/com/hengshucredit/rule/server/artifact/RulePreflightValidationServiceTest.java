@@ -17,6 +17,30 @@ import java.util.List;
 import java.util.Map;
 
 public class RulePreflightValidationServiceTest {
+    @Test
+    public void publicationResolvesRevisionFieldsWithTheirSavedValidationOverrides() {
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId(31L);
+        definition.setProjectId(8L);
+        definition.setModelType("SCRIPT");
+        RuleRevision revision = new RuleRevision();
+        revision.setDefinitionId(31L);
+        revision.setModelJson("{\"script\":\"return age;\"}");
+        RulePreflightValidationService service = new RulePreflightValidationService();
+        RuleFieldAnalyzer analyzer = new RuleFieldAnalyzer() {
+            @Override
+            public ResolvedFields resolveFields(Long definitionId, String modelJson, String modelType, Long projectId) {
+                Assert.assertEquals(definition.getId(), definitionId);
+                Assert.assertEquals(revision.getModelJson(), modelJson);
+                Assert.assertEquals("SCRIPT", modelType);
+                Assert.assertEquals(Long.valueOf(8), projectId);
+                return new ResolvedFields(List.of(), List.of());
+            }
+        };
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", analyzer);
+        Assert.assertNotNull(service.resolveFields(definition, revision));
+    }
+
     @org.junit.Test
     public void enabledCaseWithoutEvidenceBlocksPublicationPreflight() {
         FixtureService service = new FixtureService();

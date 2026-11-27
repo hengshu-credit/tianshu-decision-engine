@@ -192,6 +192,11 @@ public class QLExpressEngine {
             ruleResult.setErrorMessage(e.getMessage());
             Throwable cause = e;
             while (cause != null) {
+                if (cause instanceof com.hengshucredit.rule.core.function.DecisionBuiltinFunctions.ScriptConditionException rejected) {
+                    ruleResult.setExecutionErrorDetail(e.getMessage());
+                    ruleResult.setErrorMessage(rejected.getMessage());
+                    break;
+                }
                 if (cause instanceof DecisionTableConflictException conflict) {
                     ruleResult.setExecutionErrorDetail(e.getMessage());
                     ruleResult.setErrorMessage(conflict.getMessage());

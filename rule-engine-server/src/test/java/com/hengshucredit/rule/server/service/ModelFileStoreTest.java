@@ -16,12 +16,52 @@ import java.util.concurrent.Executors;
 import static org.junit.Assert.*;
 
 public class ModelFileStoreTest {
+    @Test public void verifiedSnapshotReusesOnlyExactStoredBytes() {
+        var files = store(temp.getRoot().toPath(), "CLEAN");
+        byte[] original = "<PMML version='4.4'/>".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String reference = files.accept(7L, "sample.pmml", original);
+        String digest = com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(original);
+        assertEquals(reference, files.fromVerifiedSnapshot(7L, "sample.pmml", original.length, digest,
+                () -> { throw new AssertionError("不应展开第二份已验证的原件"); }));
+        assertThrows(IllegalArgumentException.class, () -> files.fromVerifiedSnapshot(7L, "sample.pmml",
+                original.length + 1, digest, () -> original));
+    }
+
     @Rule public TemporaryFolder temp = new TemporaryFolder();
     static ModelFileStore store(Path root, String status) {
         UploadSecurity scanner = new UploadSecurity(new UploadScanProperties()) {
             @Override public Result scan(byte[] content) { return new Result(status, status); }
         };
         return new ModelFileStore(root.toString(), 1024 * 1024, 0, scanner);
+    }
+
+    @Test public void readinessChecksTheScannerAndCannotApproveTheFollowingModel() throws Exception {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var scanner = new UploadSecurity(new UploadScanProperties()) {
+            @Override public Result scan(byte[] content) {
+                return calls.incrementAndGet() == 1 ? new Result("CLEAN", "OK") : new Result("QUARANTINED", "检测到威胁");
+            }
+        };
+        try {
+            var files = new ModelFileStore(temp.newFolder().toString(), 1024, 0, scanner);
+            assertNull(files.importScanIssue());
+            assertTrue(assertThrows(IllegalArgumentException.class,
+                    () -> files.accept(1L, "test.pmml", new byte[]{1,2})).getMessage().contains("QUARANTINED"));
+            assertEquals(2, calls.get());
+        } finally { scanner.close(); }
+    }
+
+    @Test public void localFileCacheEvictsByBytesAndDiscardsCorruptHits() {
+        try (var files = new VerifiedFileCache()) {
+            byte[] bytes = {1, 2, 3};
+            String sha = com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(bytes);
+            files.put("one", bytes, 3);
+            assertArrayEquals(bytes, files.read("one", sha));
+            files.put("two", bytes, 3);
+            assertNull(files.read("one", sha));
+            assertNull(files.read("two", "wrong"));
+            assertNull(files.read("two", sha));
+        }
     }
 
     @Test public void originalSurvivesConcurrentUploadsAndPinsHistoricalBytes() throws Exception {

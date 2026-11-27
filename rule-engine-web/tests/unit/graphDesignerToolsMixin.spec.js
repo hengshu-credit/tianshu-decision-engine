@@ -6,6 +6,7 @@ describe('graphDesignerToolsMixin', () => {
     const calls = []
     const node = { id: 'node-1' }
     const context = {
+      focusGraphElement: graphDesignerToolsMixin.methods.focusGraphElement,
       lf: {
         selectElementById: vi.fn(),
         resize: (width, height) => calls.push(['resize', width, height]),

@@ -20,6 +20,20 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
+test('按分区身份读取摘要对应的正文，旧请求不能替换新打开的详情', async () => {
+  const view = await mountAndWait()
+  const pending = deferred()
+  runtimeLogApi.getExecutionLogDetail.mockReturnValueOnce(pending.promise)
+    .mockResolvedValueOnce({ data: { id: 8, ruleCode: 'second', traceInfo: '[{"node":"second"}]' } })
+  const first = view.vm.handleViewDetail({ id: 7, createTime: '2026-11-26T09:00:00', traceAvailable: true })
+  await view.vm.handleViewDetail({ id: 8, createTime: '2026-11-26T10:00:00', traceAvailable: true })
+  pending.resolve({ data: { id: 7, ruleCode: 'first' } })
+  await first
+  expect(runtimeLogApi.getExecutionLogDetail).toHaveBeenCalledWith(8, '2026-11-26T10:00:00')
+  expect(view.vm.detail).toMatchObject({ id: 8, ruleCode: 'second', traceInfo: '[{"node":"second"}]' })
+  view.unmount()
+})
+
 test('迟到的历史回放结果不能覆盖用户已打开的另一条日志', async () => {
   const view = await mountAndWait()
   const pending = deferred()
@@ -571,7 +585,11 @@ test('已有表达式追踪树时操作列不再显示回溯按钮', () => {
     path.resolve(process.cwd(), 'src/views/log/ExecutionLog.vue'),
     'utf8'
   )
-  expect(source).toContain('<el-button v-if="!row.traceInfo"')
+  expect(source).toContain('<el-button v-if="!hasExecutionTrace(row)"')
+  expect(ExecutionLog.methods.hasExecutionTrace({ traceInfo: '[]' })).toBe(true)
+  expect(ExecutionLog.methods.hasExecutionTrace({ traceInfo: null })).toBe(false)
+  expect(ExecutionLog.methods.hasExecutionTrace({ traceAvailable: true, traceInfo: null })).toBe(true)
+  expect(ExecutionLog.methods.hasExecutionTrace({ traceAvailable: false })).toBe(false)
   expect(source).toContain('回溯</el-button>')
 })
 

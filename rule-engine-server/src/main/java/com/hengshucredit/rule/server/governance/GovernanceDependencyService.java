@@ -264,7 +264,9 @@ public class GovernanceDependencyService {
 
     protected GovernedResourceVersion findVersion(Long versionId) {
         return versionMapper == null || versionId == null
-                ? null : versionMapper.selectById(versionId);
+                ? null : versionMapper.selectOne(new LambdaQueryWrapper<GovernedResourceVersion>()
+                        .select(GovernedResourceVersion::getId, GovernedResourceVersion::getSnapshotDigest)
+                        .eq(GovernedResourceVersion::getId, versionId));
     }
 
     private GovernancePreflightReport.ResolvedDependency resolve(
@@ -294,10 +296,10 @@ public class GovernanceDependencyService {
         }
         String targetType = normalizeType(
                 dependency.targetResourceType());
-        if (dependency.refType() != null
-                && !dependency.refType().isBlank()
-                && !targetType.equals(
-                normalizeType(dependency.refType()))) {
+        // 根引用使用对象自身的 ID，发布状态和版本归属于 DATA_OBJECT。
+        String ownerType = "DATA_OBJECT_ROOT".equalsIgnoreCase(dependency.refType())
+                ? GovernanceResourceTypes.DATA_OBJECT : dependency.refType();
+        if (ownerType != null && !ownerType.isBlank() && !targetType.equals(normalizeType(ownerType))) {
             GovernanceIssue issue = GovernanceIssue.error(
                     "DEPENDENCY_TYPE_MISMATCH",
                     "依赖引用类型与目标资源类型不一致",
@@ -396,7 +398,7 @@ public class GovernanceDependencyService {
                 var stored = resourceVersions.snapshot(new com.hengshucredit.rule.core.engine.ResourceVersionCall(selection.refType(),
                         selection.refId(), selection.versionId(), "", List.of(), null, null,
                         "SNAPSHOT".equals(selection.versionSource()) ? null : selection.versionSource()), null);
-                type = switch (selection.refType()) { case "CONSTANT" -> "VARIABLE"; case "MODEL_OUTPUT" -> "MODEL"; default -> selection.refType(); };
+                type = switch (selection.refType()) { case "CONSTANT" -> "VARIABLE"; case "MODEL_OUTPUT" -> "MODEL"; case "DATA_OBJECT_ROOT" -> GovernanceResourceTypes.DATA_OBJECT; default -> selection.refType(); };
                 ownerId = stored.getLong("ownerId");
                 versionId = stored.getLong("resolvedVersionId") == null ? selection.versionId() : stored.getLong("resolvedVersionId");
                 number = stored.getInteger("displayVersion");

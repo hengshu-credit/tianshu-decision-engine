@@ -592,7 +592,7 @@ export default {
       this.designerSourcesLoading = true
       const listPromise = Promise.resolve().then(() => listRuleRevisions(definitionId))
       const versionsPromise = Promise.resolve().then(() =>
-        definitionApi.listPublishedVersions(definitionId)
+        definitionApi.listPublishedVersions(definitionId, false)
       )
       this.loadDesignerVersions(
         versionsPromise,
@@ -862,12 +862,20 @@ export default {
         this.designerSaveRequest = { signature, requestId: Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('') }
       }
       body.requestId = this.designerSaveRequest.requestId
+      const previousState = this.designerActionState
       this.designerActionState = 'SAVING'
       let result
       try {
         result = unwrap(await definitionApi.saveDesignerDraft(definitionId, body))
         if (!result?.revision || result.revision.state !== 'DRAFT') throw new Error('草稿保存响应无效，页面修改仍保留')
       } catch (error) {
+        if (error?.response?.data?.data?.errorCode === 'GOVERNANCE_NO_CHANGES') {
+          if (this.isCurrentViewAction(action)) {
+            this.designerActionState = previousState
+            this.captureDesignerDraftState()
+          }
+          return false
+        }
         if (this.isCurrentViewAction(action)) {
           this.designerActionState = error?.response?.status === 409 ? 'SAVE_CONFLICT' : 'DIRTY'
           this.captureDesignerDraftState()
@@ -997,7 +1005,7 @@ export default {
               && createDraftFingerprint(initialJson) === this.designerBaselineFingerprint) {
             const initialAction = this.designerActionSnapshot()
             const [checked, versions] = await Promise.all([
-              this.savedDraftPublicationReport(definitionId, revision), definitionApi.listPublishedVersions(definitionId),
+              this.savedDraftPublicationReport(definitionId, revision), definitionApi.listPublishedVersions(definitionId, false),
             ])
             if (!this.isCurrentViewAction(initialAction)) return false
             if (!this.designerConfigurationMatches(initialAction, initialJson) || String(this.viewRevision.lockVersion) !== String(checked.lockVersion)) {
@@ -1018,7 +1026,7 @@ export default {
             saved = await this.saveDraftModel(this.serializeDesignerDraft())
             if (!saved) return false
             const savedAction = this.designerActionSnapshot()
-            const versions = await definitionApi.listPublishedVersions(definitionId)
+            const versions = await definitionApi.listPublishedVersions(definitionId, false)
             if (!this.isCurrentViewAction(savedAction) || this.designerHasUnsavedChanges) return false
             this.designerVersions = this.normalizeDesignerVersions(versions)
           }
@@ -1086,7 +1094,7 @@ export default {
           await definitionApi.deleteDesignerDraft(String(this.definitionId || this.$route.params.id), String(item.id), item.lockVersion)
           this.designerRevisions = this.designerRevisions.filter(revision => String(revision.id) !== String(item.id))
           if (current && this.isCurrentViewAction(action)) {
-            const versions = this.normalizeDesignerVersions(await definitionApi.listPublishedVersions(String(this.definitionId || this.$route.params.id)))
+            const versions = this.normalizeDesignerVersions(await definitionApi.listPublishedVersions(String(this.definitionId || this.$route.params.id), false))
             const draft = this.designerRevisions.find(revision => revision.state === 'DRAFT')
             const query = { ...(this.$route?.query || {}) }
             delete query.sourceType

@@ -59,7 +59,8 @@ public class RuleIdempotencyService {
         if (state == null) throw new IllegalStateException("规则订单登记失败");
         if (!hash.equals(state.requestDigest())) return Decision.conflict();
         if ("SUCCEEDED".equals(state.status()) && state.resultJson() != null)
-            return Decision.completed(state, JSON.parseObject(state.resultJson(), RuleResult.class));
+            return Decision.completed(
+                    state, stateService.completedResult(state));
         if (!Objects.equals(state.currentRevisionId(), published.getRevisionId()) || !Objects.equals(state.artifactDigest(), published.getArtifactDigest()))
             return Decision.conflict();
         if ("QUEUED".equals(state.status()) || state.leaseOwner() == null &&
@@ -113,7 +114,10 @@ public class RuleIdempotencyService {
             boolean samePublished = Objects.equals(state.currentRevisionId(), published.getRevisionId())
                     && Objects.equals(state.artifactDigest(), published.getArtifactDigest());
             if ("SUCCEEDED".equals(state.status()) && state.resultJson() != null && samePublished) {
-                Decision decision = Decision.completed(state, JSON.parseObject(state.resultJson(), RuleResult.class));
+                Decision decision =
+                        Decision.completed(
+                                state,
+                                stateService.completedResult(state));
                 current.remove();
                 return decision;
             }
@@ -318,17 +322,30 @@ public class RuleIdempotencyService {
     }
 
     public void complete(Decision decision, RuleResult result, String checkpointJson) {
-        if (result != null && decision != null && decision.executionParams != null) {
-            JSONObject stored = (JSONObject) JSON.toJSON(result);
-            stored.put("experimentResolvedParams", decision.executionParams);
-            completeStored(decision, result, checkpointJson, CanonicalJson.write(stored));
-        } else completeStored(decision, result, checkpointJson, JSON.toJSONString(result));
+        completeStored(
+                decision,
+                result,
+                checkpointJson,
+                encodeResult(result, decision == null ? null : decision.executionParams));
     }
 
+    static String encodeResult(RuleResult result, Map<String, Object> params) {
+        return CanonicalJson.write(new StoredResult(result, params, 2));
+    }
+
+    private record StoredResult(
+            @com.fasterxml.jackson.annotation.JsonUnwrapped RuleResult execution,
+            @com.fasterxml.jackson.annotation.JsonInclude(
+                            com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                    Map<String, Object> experimentResolvedParams,
+            int snapshotVersion) {}
+
     void completeExperimentGroup(Decision decision, RuleExecuteService.ExecutionOutcome outcome) {
-        JSONObject stored = (JSONObject) JSON.toJSON(outcome.getResult());
-        stored.put("experimentResolvedParams", outcome.getExecuteParams());
-        completeStored(decision, outcome.getResult(), null, CanonicalJson.write(stored));
+        completeStored(
+                decision,
+                outcome.getResult(),
+                null,
+                encodeResult(outcome.getResult(), outcome.getExecuteParams()));
     }
 
     private void completeStored(Decision decision, RuleResult result, String checkpointJson, String resultJson) {

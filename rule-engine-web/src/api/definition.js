@@ -1,8 +1,9 @@
 import request from './request'
-import { metadataResponse } from '@/utils/metadataResponse'
+import { createResourceDraft } from './governance'
+import { metadataResponse, publicationRequest } from '@/utils/metadataResponse'
 
 export function compileDesignerModel(id, data) {
-  return request({ acceptExecutionFailure: true, url: `/rule/definition/${id}/designer/compile`, method: 'post', headers: { Prefer: 'wait=1' }, data })
+  return request({ acceptExecutionFailure: true, url: `/rule/definition/${id}/designer/compile`, method: 'post', headers: { Prefer: 'wait=1' }, timeout: publicationRequest.timeout, data })
 }
 
 export function getDesignerCompileTask(id, taskId) {
@@ -14,21 +15,20 @@ export function waitForDesignerCompileTask(id, taskId) {
 }
 
 export function saveDesignerDraft(id, data) {
-  return request({ ...metadataResponse, url: `/rule/definition/${id}/designer/drafts`, method: 'post', data })
+  return request({ ...publicationRequest, url: `/rule/definition/${id}/designer/drafts`, method: 'post', data })
 }
 
 export function deleteDesignerDraft(id, revisionId, lockVersion) {
   return request({ url: `/rule/definition/${id}/revisions/${revisionId}`, method: 'delete', params: { lockVersion } })
 }
 
-export function listPublishedVersions(id) {
-  return request({ ...metadataResponse, url: `/rule/definition/${id}/published-versions`, method: 'get' })
+export function listPublishedVersions(id, includeFields = true) {
+  return request({ ...metadataResponse, url: `/rule/definition/${id}/published-versions`, method: 'get', params: { includeFields } })
 }
 
 export function publishDesignerDraft(id, data) {
-  return request({ ...metadataResponse, url: `/rule/definition/${id}/designer/publish`, method: 'post', data })
+  return request({ ...publicationRequest, url: `/rule/definition/${id}/designer/publish`, method: 'post', data })
 }
-import { createResourceDraft } from './governance'
 
 export function listDefinitions(params) {
   return request({ ...metadataResponse, url: '/rule/definition/list', method: 'get', params })
@@ -43,7 +43,7 @@ export function getDefinition(id) {
 }
 
 export function getRuleReferenceCatalog(id, source) {
-  return request({ url: `/rule/definition/${id}/reference-catalog`, method: 'get', params: source })
+  return request({ timeout: publicationRequest.timeout, url: `/rule/definition/${id}/reference-catalog`, method: 'get', params: source })
 }
 
 export function getContent(definitionId) {
@@ -191,7 +191,7 @@ export function getCurrentDraftRevision(definitionId) {
 }
 
 export function preflightRuleRevision(definitionId, revisionId) {
-  return request({ ...metadataResponse, url: `/rule/definition/${definitionId}/revisions/${revisionId}/preflight`, method: 'post' })
+  return request({ ...publicationRequest, url: `/rule/definition/${definitionId}/revisions/${revisionId}/preflight`, method: 'post' })
 }
 
 export function submitRuleRevision(definitionId, revisionId, data) {
@@ -223,7 +223,7 @@ export function getRuleLifecycleTimeline(definitionId) {
 
 function lifecycleAction(definitionId, revisionId, action, data) {
   return request({
-    ...metadataResponse,
+    ...(['submit', 'approve', 'publish'].includes(action) ? publicationRequest : metadataResponse),
     url: `/rule/definition/${definitionId}/revisions/${revisionId}/${action}`,
     method: 'post',
     data

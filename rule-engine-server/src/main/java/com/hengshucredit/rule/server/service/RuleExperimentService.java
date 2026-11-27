@@ -1,8 +1,8 @@
 package com.hengshucredit.rule.server.service;
 
-import static com.hengshucredit.rule.server.service.SafeLogJson.toJsonSafely;
 
 import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.openapi.OpenApiContractCodec;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.compiler.ConditionCompiler;
@@ -282,7 +282,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             inputs.addAll(conditionFields.getInputFields());
         }
         if (hasText(experiment.getRequestKeyPath())) {
-            for (JSONObject operand : OperandValueResolver.collectReferences(experiment.getRequestKeyPath())) {
+            for (JSONObject operand : OperandValueResolver.collectReferences(validatedRequestKey(experiment))) {
                 String path = firstNonBlank(operand.getString("code"), operand.getString("value"));
                 if (!hasText(path)) continue;
                 RuleDefinitionInputField requestKey = new RuleDefinitionInputField();
@@ -309,8 +309,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     public IPage<RuleExperimentExecutionLog> pageExecutionLogs(int pageNum, int pageSize, Long experimentId,
                                                                String experimentCode, String requestKey,
                                                                String traceId, String stage, String groupCode,
-                                                               Integer success) {
+                                                               Integer success, Long projectId) {
         LambdaQueryWrapper<RuleExperimentExecutionLog> wrapper = new LambdaQueryWrapper<>();
+        if (projectId != null) {
+            wrapper.apply("experiment_id IN (SELECT id FROM rule_experiment WHERE project_id = {0})", projectId);
+        }
         if (experimentId != null) {
             wrapper.eq(RuleExperimentExecutionLog::getExperimentId, experimentId);
         }
@@ -322,6 +325,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         if (hasText(traceId)) {
             wrapper.and(w -> w.eq(RuleExperimentExecutionLog::getExperimentTraceId, traceId)
+                    .or().eq(RuleExperimentExecutionLog::getRootTraceId, traceId)
                     .or().eq(RuleExperimentExecutionLog::getChildTraceId, traceId));
         }
         if (hasText(stage)) {
@@ -707,7 +711,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         // 独立路由规则由已发布执行器解析自己的冻结依赖，不提前回读实时草稿。
 
         if (includeRequestKey && hasText(experiment.getRequestKeyPath())) {
-            for (JSONObject operand : OperandValueResolver.collectReferences(experiment.getRequestKeyPath())) {
+            for (JSONObject operand : OperandValueResolver.collectReferences(validatedRequestKey(experiment))) {
                 if ("FIXED".equals(operand.getString("versionMode"))) continue;
                 String refType = firstNonBlank(operand.getString("refType"), "VARIABLE");
                 Long refId = operand.getLong("refId");
@@ -1034,7 +1038,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     @SuppressWarnings("unchecked")
     private Map<String, Object> copyParams(Map<String, Object> params) {
         if (params == null || params.isEmpty()) return new LinkedHashMap<>();
-        return JSON.parseObject(JSON.toJSONString(params), Map.class);
+        return CanonicalJson.readSnapshot(CanonicalJson.write(params), LinkedHashMap.class);
     }
 
     private RuleExperimentGroupResult toGroupResult(RuleExperimentGroup group,
@@ -1084,9 +1088,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         log.setRuleCode(group.getRuleCode());
         log.setRouteReason(routeReason);
         log.setSuccess(result.isSuccess() ? 1 : 0);
-        log.setInputParams(toJsonSafely(inputParams));
-        log.setOutputResult(toJsonSafely(result.getResult()));
-        log.setTraceInfo(toJsonSafely(buildExperimentTrace(
+        log.setInputParams(SafeLogJson.output(inputParams));
+        log.setOutputResult(SafeLogJson.output(result.getResult()));
+        log.setTraceInfo(SafeLogJson.output(buildExperimentTrace(
                 experimentTraceId, result.getTraceId(), stage, routeTrace, result.getTraces())));
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
@@ -1332,6 +1336,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     /** 审批预检与执行共用相同分流约束。 */
     public void validateExperiment(RuleExperiment experiment) {
+        validatedRequestKey(experiment);
         List<RuleExperimentGroup> groups = experiment.getGroups() == null
                 ? Collections.emptyList()
                 : experiment.getGroups();
@@ -1553,13 +1558,25 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
     }
 
+    private static String validatedRequestKey(RuleExperiment experiment) {
+        String value = experiment.getRequestKeyPath();
+        if (value == null || value.isBlank()) return value;
+        try {
+            if (JSON.parse(value) instanceof JSONObject operand && operand.getString("kind") != null
+                    && !operand.getString("kind").isBlank()) return value;
+        } catch (com.alibaba.fastjson.JSONException invalid) {
+            // 业务请求不回显可能含有样例值的原始 JSON。
+        }
+        throw new IllegalArgumentException("实验请求键必须为有效操作数，请在内容选择器中重新选择字段或表达式");
+    }
+
     private String resolveRequestKey(RuleExperiment experiment, RuleExperimentExecuteRequest request,
                                      Map<String, Object> params) {
         if (request != null && hasText(request.getRequestKey())) {
             return request.getRequestKey();
         }
         Object configured = hasText(experiment.getRequestKeyPath())
-                ? OperandValueResolver.resolve(experiment.getRequestKeyPath(), params,
+                ? OperandValueResolver.resolve(validatedRequestKey(experiment), params,
                 referenceValues(experiment.getProjectId(), params), this::invokeOperandFunction)
                 : null;
         if (configured != null && hasText(String.valueOf(configured))) {

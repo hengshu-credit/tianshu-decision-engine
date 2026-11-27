@@ -88,6 +88,10 @@
       </div>
     </div>
     <template v-slot:footer>
+      <slot name="save-sample" :text="paramsJson" :disabled="schemaLoading || executing">
+        <save-rule-test-input v-if="targetType === 'RULE'" :definition-id="definitionId" :project-id="projectId"
+          :read-input="() => paramsJson" :disabled="schemaLoading || executing" @saved="defaultSaved" />
+      </slot>
       <el-button size="small" @click="close">关闭</el-button>
       <el-button size="small" :disabled="schemaLoading || executing" @click="resetParams">重置样例</el-button>
       <el-button
@@ -105,6 +109,8 @@
 </template>
 
 <script>
+import SaveRuleTestInput from '@/components/test/SaveRuleTestInput.vue'
+import { parseExactJson, stringifyExactJson } from '@/utils/exactJson'
 import DismissibleGuidance from '@/components/common/DismissibleGuidance.vue'
 import { parseDesignerModelJson } from '@/utils/designerModelJson'
 import { markRaw } from 'vue'
@@ -145,7 +151,7 @@ export default {
     }
   },
   name: 'DesignerTestDialog',
-  components: { DismissibleGuidance, MonacoEditor, TraceTree, DialogResizeHandle, RuleValidationReport },
+  components: { SaveRuleTestInput, DismissibleGuidance, MonacoEditor, TraceTree, DialogResizeHandle, RuleValidationReport },
   props: {
     visible: {
       type: Boolean,
@@ -177,6 +183,7 @@ export default {
       type: Function,
       default: null,
     },
+    savedSample: { type: [String, Object], default: null },
     paramsTemplate: {
       type: [Object, String],
       default: () => ({}),
@@ -306,20 +313,33 @@ export default {
         requireExecutionIdentity(schema?.executionIdentity, definitionId, source)
         this.resolvedIdentity = schema?.executionIdentity || null
         if (schema && schema.sampleParams)
-          this.resolvedTemplate = schema.sampleParams
+          this.resolvedTemplate = schema.sampleParamsJson || schema.sampleParams
         this.schemaDiagnostics =
           schema && Array.isArray(schema.diagnostics) ? schema.diagnostics : []
       } catch (e) {
         if (requestId === this.schemaRequestId && context === this.executionContextKey()) {
           this.schemaSourceError = e.message || '测试字段解析失败'
           this.schemaDiagnostics = [this.schemaSourceError]
+          if (source && definitionId && this.targetType === 'RULE' && this.savedSample == null) {
+            try {
+              const { data } = await getRuleTestSchema({ targetType: 'RULE', targetId: definitionId })
+              if (requestId === this.schemaRequestId && context === this.executionContextKey() && data?.savedDefault)
+                this.resolvedTemplate = data.sampleParamsJson || data.sampleParams
+            } catch { /* 继续显示所选测试来源的诊断。 */ }
+          }
         }
       } finally {
         if (requestId === this.schemaRequestId) this.schemaLoading = false
       }
     },
+    defaultSaved(text) {
+      this.resolvedTemplate = text
+      this.lastGeneratedParams = text
+    },
     resetParams() {
-      this.paramsJson = this.formatJson(this.normalizeTemplate())
+      const template = this.savedSample ?? this.normalizeTemplate()
+      try { this.paramsJson = stringifyExactJson(typeof template === 'string' ? parseExactJson(template) : template, 2) }
+      catch { this.paramsJson = this.formatJson(template) }
       this.lastGeneratedParams = this.paramsJson
       this.jsonError = ''
     },

@@ -69,6 +69,9 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         m.put("scriptName", f.getScriptName());
         m.put("varType", f.getVarType());
         m.put("mockRuleId", f.getMockRuleId());
+        m.put("exampleCaseBinding", f.getExampleCaseBinding());
+        m.put("exampleMode", f.getExampleMode());
+        m.put("exampleValue", f.getExampleValue());
         m.put("sourcePath", f.getSourcePath());
         m.put("sourceConfig", f.getSourceConfig());
         m.put("refObjectCode", f.getRefObjectCode());
@@ -577,12 +580,13 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                 .comparing((RuleDataObjectField f) -> f.getSortOrder() == null ? 0 : f.getSortOrder())
                 .thenComparing(f -> f.getId() == null ? 0L : f.getId()));
 
+        var fieldsById = DataObjectScriptPath.index(sorted);
         Map<Long, Map<String, Object>> rowById = new LinkedHashMap<>();
         Map<Long, List<Map<String, Object>>> childrenByParent = new HashMap<>();
         for (RuleDataObjectField field : sorted) {
             Map<String, Object> row = toVariableRow(field);
             row.put("originalScriptName", field.getScriptName());
-            normalizeObjectFieldScriptName(row, objScriptName);
+            row.put("scriptName", DataObjectScriptPath.resolve(objScriptName, field, fieldsById::get));
             normalizeObjectFieldDisplay(row, objScriptName);
             rowById.put(field.getId(), row);
             if (field.getParentFieldId() != null) {
@@ -605,62 +609,18 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         return roots;
     }
 
-    private static void normalizeObjectFieldScriptName(Map<String, Object> row, String objScriptName) {
-        if (objScriptName == null || objScriptName.trim().isEmpty()) return;
-        String fieldScriptName = (String) row.get("scriptName");
-        if (fieldScriptName == null || fieldScriptName.trim().isEmpty()) {
-            fieldScriptName = (String) row.get("varCode");
-        }
-        fieldScriptName = collapseDuplicateObjectPrefix(fieldScriptName, objScriptName);
-        if (fieldScriptName != null && !fieldScriptName.trim().isEmpty()
-                && !fieldScriptName.equals(objScriptName)
-                && !fieldScriptName.startsWith(objScriptName + ".")) {
-            row.put("scriptName", objScriptName + "." + fieldScriptName);
-        } else if (fieldScriptName != null && !fieldScriptName.trim().isEmpty()) {
-            row.put("scriptName", fieldScriptName);
-        }
-    }
-
     private static void normalizeObjectFieldDisplay(Map<String, Object> row, String objScriptName) {
-        String scriptName = (String) row.get("scriptName");
-        String path = stripObjectPrefix(scriptName, objScriptName);
-        String displayCode = leafName(path);
-        if (displayCode == null || displayCode.isEmpty()) {
-            displayCode = leafName((String) row.get("varCode"));
-        }
-        if (displayCode == null || displayCode.isEmpty()) return;
-
         String oldCode = (String) row.get("varCode");
+        if (oldCode == null || !oldCode.contains(".") || !oldCode.equals(row.get("originalScriptName"))
+                || objScriptName == null || !oldCode.startsWith(objScriptName + ".")) return;
+        String displayCode = leafName(oldCode);
         row.put("varCode", displayCode);
 
         String label = (String) row.get("varLabel");
         if (label == null || label.trim().isEmpty()
-                || label.equals(oldCode)
-                || label.indexOf('.') >= 0) {
+                || label.equals(oldCode)) {
             row.put("varLabel", displayCode);
         }
-    }
-
-    private static String collapseDuplicateObjectPrefix(String value, String objScriptName) {
-        if (value == null || objScriptName == null || objScriptName.trim().isEmpty()) return value;
-        String prefix = objScriptName + ".";
-        String duplicatePrefix = objScriptName + "." + objScriptName + ".";
-        String result = value;
-        while (result.startsWith(duplicatePrefix)) {
-            result = prefix + result.substring(duplicatePrefix.length());
-        }
-        return result;
-    }
-
-    private static String stripObjectPrefix(String value, String objScriptName) {
-        if (value == null) return null;
-        if (objScriptName == null || objScriptName.trim().isEmpty()) return value;
-        String prefix = objScriptName + ".";
-        String result = value;
-        while (result.startsWith(prefix)) {
-            result = result.substring(prefix.length());
-        }
-        return result;
     }
 
     private static String leafName(String value) {

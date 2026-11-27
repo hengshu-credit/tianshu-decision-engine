@@ -59,6 +59,90 @@ async function expectDialogUsable(page, buttonName, title) {
   await expect(dialog).toBeHidden()
 }
 
+test('账户和角色页签分别筛选并把字段、新增按钮排在工具栏右侧', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const { assertClean } = await installDistRoutes(page, { origin, liveStatic: !!process.env.E2E_DEV_BASE_URL, apiData: {
+    '/api/rule/console/accounts': [
+      { id: 1, username: 'writer', displayName: '策略员', status: 1, roleIds: [11], roleCodes: ['EDITOR'] },
+      { id: 2, username: 'reviewer', email: 'risk@example.com', status: 0, roleIds: [12], roleCodes: ['REVIEWER'] },
+    ],
+    '/api/rule/console/roles': [
+      { id: 11, roleCode: 'EDITOR', roleName: '策略配置', status: 1 },
+      { id: 12, roleCode: 'REVIEWER', roleName: '风险审核', status: 0 },
+    ],
+    '/api/rule/console/permissions': [],
+  } })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(origin + '/#/account')
+  const accounts = await activateTab(page, '账户')
+  async function checkToolbar(pane, addLabel) {
+    const toolbar = pane.locator('.uiue-filter-toolbar')
+    const query = toolbar.getByRole('button', { name: '查询' })
+    const fields = toolbar.getByRole('button', { name: '设置表格显示字段' })
+    const add = toolbar.getByRole('button', { name: addLabel })
+    const [left, first, last, bar] = await Promise.all([query, fields, add, toolbar].map(el => el.boundingBox()))
+    expect(Math.abs(left.y - last.y)).toBeLessThanOrEqual(2)
+    expect(left.x + left.width).toBeLessThan(first.x)
+    expect(last.x - first.x - first.width).toBeGreaterThanOrEqual(0)
+    expect(last.x - first.x - first.width).toBeLessThanOrEqual(12)
+    expect(Math.abs(bar.x + bar.width - last.x - last.width)).toBeLessThanOrEqual(2)
+    expect(bar.y + bar.height - last.y - last.height).toBeGreaterThan(4)
+    await fields.click()
+    await expect(page.getByText('显示字段', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    await expectDialogUsable(page, addLabel, addLabel)
+  }
+  const rows = pane => pane.locator('.el-table__body .el-table__row')
+  await expect(rows(accounts)).toHaveCount(2)
+  await checkToolbar(accounts, '新增账户')
+  const keyword = accounts.getByPlaceholder('用户名、显示名称或邮箱')
+  await keyword.fill('EXAMPLE.COM')
+  await keyword.press('Enter')
+  await expect(rows(accounts)).toHaveCount(1)
+  await expect(rows(accounts)).toContainText('reviewer')
+  await accounts.getByRole('combobox', { name: '角色', exact: true }).click()
+  await page.getByRole('option', { name: '策略配置' }).click()
+  await expect(rows(accounts)).toHaveCount(0)
+  await accounts.getByRole('combobox', { name: '角色', exact: true }).click()
+  await page.getByRole('option', { name: '风险审核' }).click()
+  await expect(rows(accounts)).toHaveCount(1)
+
+  const roles = await activateTab(page, '角色')
+  await expect(rows(roles)).toHaveCount(2)
+  await checkToolbar(roles, '新增角色')
+  await roles.getByPlaceholder('角色名称或编码').fill('review')
+  await roles.getByRole('button', { name: '查询' }).click()
+  await expect(rows(roles)).toHaveCount(1)
+  await expect(rows(roles)).toContainText('风险审核')
+  const statusSelect = roles.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '状态' }) })
+  await statusSelect.click()
+  await page.getByRole('option', { name: '已启用' }).click()
+  await expect(rows(roles)).toHaveCount(0)
+  await statusSelect.click()
+  await page.getByRole('option', { name: '已停用' }).click()
+  await expect(rows(roles)).toHaveCount(1)
+  await roles.getByRole('button', { name: '重置' }).click()
+  await expect(rows(roles)).toHaveCount(2)
+  await activateTab(page, '账户')
+  await expect(keyword).toHaveValue('EXAMPLE.COM')
+  await expect(rows(accounts)).toHaveCount(1)
+  await accounts.getByRole('button', { name: '重置', exact: true }).click()
+  await expect(rows(accounts)).toHaveCount(2)
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  for (const label of ['账户', '角色']) {
+    const pane = await activateTab(page, label)
+    const toolbar = pane.locator('.uiue-filter-toolbar')
+    const add = toolbar.getByRole('button', { name: '新增' + label })
+    await expect(add).toBeInViewport()
+    const [bar, button] = await Promise.all([toolbar.boundingBox(), add.boundingBox()])
+    expect(button.x + button.width).toBeLessThanOrEqual(bar.x + bar.width + 1)
+    expect(bar.y + bar.height - button.y - button.height).toBeGreaterThan(4)
+    await expectNoRootOverflow(page)
+  }
+  assertClean()
+})
+
 test('变量管理四类业务页签的数据、复制、按钮和弹框均可用', async ({ page }) => {
   const pageErrors = []
   page.on('pageerror', error => pageErrors.push(error.message))
@@ -146,7 +230,7 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
     await page.getByRole('button', { name: action, exact: true }).first().click()
     const dialog = page.locator('.el-dialog:visible').last()
     const form = dialog.locator('form').first()
-    const collapse = dialog.locator('.variable-advanced-collapse')
+    const collapse = dialog.locator('.variable-advanced-section')
     await expect(collapse).toBeVisible()
 
     const gaps = await Promise.all([
@@ -158,7 +242,7 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
     }))
     expect(Math.abs(gaps.left - gaps.right)).toBeLessThanOrEqual(1)
 
-    await collapse.locator('.el-collapse-item__header').click()
+    await expect(collapse.getByRole('button', { name: /更多说明与发布设置/ })).toHaveCount(0)
     await expect(collapse.locator('.el-input-number').first()).toBeVisible()
     await expect(collapse.locator('.el-input-number__decrease:visible')).toHaveCount(0)
     await expect(collapse.locator('.el-input-number__increase:visible')).toHaveCount(0)
@@ -179,7 +263,7 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
     expect(Math.abs(formBox.width - previewBox.width)).toBeLessThanOrEqual(2)
     await expect.poll(() => dialog.evaluate(element => {
       const preview = element.querySelector('.draft-preview-panel').getBoundingClientRect()
-      const advanced = element.querySelector('.variable-advanced-collapse').getBoundingClientRect()
+      const advanced = element.querySelector('.variable-advanced-section').getBoundingClientRect()
       return preview.top - advanced.bottom
     })).toBeGreaterThan(0)
 
@@ -224,7 +308,8 @@ test('外数的数据源、API、调用日志和质量看板均正常', async ({
   expect(logRequests).toHaveLength(0)
 
   const monitorPane = await activateTab(page, '监控看板')
-  await expect(monitorPane.getByText('外数供应商质量看板', { exact: true })).toBeVisible()
+  await expect(monitorPane.getByText('外数供应商质量看板', { exact: true })).toHaveCount(0)
+  await expect(monitorPane.getByText(/缓存命中只计算缓存期内命中的数据/)).toBeVisible()
   await expect(monitorPane.locator('.datasource-stat-cell')).toHaveCount(8)
   await expect(monitorPane.getByText('credit_query', { exact: true })).toBeVisible()
   await expect(monitorPane.locator('.module-call-log')).toHaveCount(0)
@@ -234,7 +319,8 @@ test('外数的数据源、API、调用日志和质量看板均正常', async ({
   await expect.poll(() => statsRequests.length).toBe(2)
 
   const logPane = await activateTab(page, '调用日志')
-  await expect(logPane.getByText('外数调用日志', { exact: true })).toBeVisible()
+  await expect(logPane.getByRole('region', { name: '外数调用日志' })).toBeVisible()
+  await expect(logPane.getByText('外数调用日志', { exact: true })).toHaveCount(0)
   await expect(logPane.getByText('credit_query', { exact: true }).first()).toBeVisible()
   await expect(logPane.locator('.datasource-stat-cell')).toHaveCount(0)
   expect(logRequests).toHaveLength(1)
@@ -285,7 +371,8 @@ for (const moduleCase of [
     await page.goto(`http://tianshu.local/index.html#${moduleCase.path}`)
 
     const pane = await activateTab(page, moduleCase.tab)
-    await expect(pane.getByText(moduleCase.title, { exact: true }).first()).toBeVisible()
+    await expect(pane.getByRole('region', { name: moduleCase.title })).toBeVisible()
+    await expect(pane.getByText(moduleCase.title, { exact: true })).toHaveCount(0)
     const rowText = pane.getByText(moduleCase.rowText, { exact: true }).first()
     await expect(rowText).toBeVisible()
     await expectTextSelectable(rowText, moduleCase.rowText)
@@ -325,7 +412,43 @@ for (const [path, logTab] of [['/list', '名单日志'], ['/database', '调用�
     await page.goto('http://tianshu.local/#' + path)
     await expect(page.getByRole('tab', { name: logTab, exact: true })).toBeVisible()
     expect(calls()).toBe(0)
-    await activateTab(page, logTab)
+    const pane = await activateTab(page, logTab)
+    await expect(pane.getByText('仅展示本人及明确授权的调用记录。')).toBeVisible()
+    await expect(pane.locator('.log-title')).toHaveCount(0)
     await expect.poll(calls).toBe(1)
   })
 }
+
+test('分流实验提示铺满内容区，单条关闭后收展，窄屏逐条排列', async ({ page }) => {
+  const apiData = createManagementApiData()
+  apiData.set('/api/rule/experiment/list', { records: [], total: 0 })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.setViewportSize({ width: 3000, height: 900 })
+  await page.goto('http://tianshu.local/index.html#/experiment')
+  const hints = page.getByRole('region', { name: '分流实验说明' })
+  const cards = hints.getByRole('listitem')
+  const toolbar = page.locator('.experiment-page .uiue-filter-toolbar')
+  await expect(cards).toHaveCount(2)
+  for (const width of [3000, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    const [area, first, last] = await Promise.all([toolbar, cards.first(), cards.last()].map(el => el.boundingBox()))
+    expect(Math.abs(area.x - first.x)).toBeLessThan(2)
+    expect(Math.abs(area.x + area.width - last.x - last.width)).toBeLessThan(2)
+    if (width === 390) {
+      expect(last.y).toBeGreaterThanOrEqual(first.y + first.height)
+      expect(Math.abs(area.width - first.width)).toBeLessThan(2)
+      expect(Math.abs(area.width - last.width)).toBeLessThan(2)
+    } else {
+      expect(first.y).toBe(last.y)
+      expect(Math.abs(first.width - last.width)).toBeLessThan(2)
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await hints.getByRole('button', { name: '关闭分流实验说明' }).click()
+  await expect(cards).toHaveCount(1)
+  expect(Math.abs((await toolbar.boundingBox()).width - (await cards.first().boundingBox()).width)).toBeLessThan(2)
+  await hints.getByRole('button', { name: '关闭生产分流与空跑' }).click()
+  await expect(hints).toHaveCount(0)
+  await expect(toolbar.getByRole('button', { name: '查询', exact: true })).toBeVisible()
+  assertClean()
+})

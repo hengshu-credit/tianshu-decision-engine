@@ -70,6 +70,10 @@ docker compose --project-name rule-engine --env-file .env.server -f docker/docke
 
 正常响应的 data 为 `{"result":"0","credit_limit":20000,"credit_period":12,"priced_rate":16}`。将 request_id 改为 `DEMO-COURT-REJECT` 可验证法院拒绝和后续费用短路。日常请求使用独立申请号，重复调用同一申请时保留相同请求体。
 
+## 授信随机分流与收入报告缓存
+
+控制台离线配置包提供 30/70 额度实验、四类收尾子规则和按报告编号复用的收入查询。用例、分组和双节点复测命令见[衡枢真信授信分流演示](credit-review-example/README.md)。
+
 ## 衡枢 KYC
 
 [三项人脸规则样例](kyc-example/README.md)通过控制台离线配置迁移独立加载。

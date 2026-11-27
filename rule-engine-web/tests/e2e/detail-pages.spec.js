@@ -28,6 +28,57 @@ function createEditableDetailApiData() {
   return apiData
 }
 
+for (const [entry, route, tab] of [
+  ['规则', '/rule/101', /^输入字段/],
+  ['分流实验', '/experiment/detail/61', /^输入字段/],
+  ['外数请求', '/datasource/api/22', '请求字段'],
+]) test(`${entry}输入字段完整显示多项校验并在列内换行`, async ({ page }) => {
+  const rules = ['必填', '纯数字', '至少十六位', '业务渠道提供的客户识别编号必须满足当前项目配置的长度及字符格式要求'].map((validationName, i) => ({
+    id: i + 1, validationName, validationType: i === 0 ? 'REQUIRED' : 'REGEX',
+  }))
+  const data = createEditableDetailApiData()
+  data.set('/api/rule/field-validation/available', rules)
+  data.set('/api/rule/governance/workspaces/EXTERNAL_API/22', {})
+  data.set('/api/rule/governance/workspaces/EXPERIMENT/61', {})
+  data.get('/api/rule/datasource/api-config/22').executionConfig = JSON.stringify({
+    version: 2, requestFields: [{ id: 'credit', path: 'credit_id', location: 'JSON', value: { kind: 'LITERAL', value: '123' } }],
+  })
+  if (entry === '规则') {
+    const field = data.get('/api/rule/definition/detail/101').inputFieldsJson[0]
+    field.validationRuleIds = JSON.stringify(rules.map(rule => rule.id))
+    field.validationOverride = 1
+  }
+  const harness = await openDetailPage(page, route, data)
+  await page.setViewportSize({ width: 1000, height: 820 })
+  await page.getByRole('tab', { name: tab, exact: true }).click()
+  const cell = page.locator('td.field-validation-cell:visible').first()
+  if (entry === '规则') {
+    const saved = cell.locator('.field-validation-tags .el-tag')
+    await expect(saved).toHaveText(rules.map(rule => rule.validationName))
+    const lines = await saved.evaluateAll(tags => tags.map(tag => tag.getBoundingClientRect().top))
+    expect(new Set(lines).size).toBeGreaterThan(1)
+    await cell.locator('xpath=..').getByRole('button', { name: '编辑', exact: true }).click()
+  }
+  const select = cell.locator('.el-select')
+  if (entry !== '规则') {
+    await select.click()
+    for (const rule of rules) await page.getByRole('option', { name: new RegExp(rule.validationName) }).click()
+    await page.keyboard.press('Escape')
+  }
+  const tags = select.locator('.el-tag')
+  await expect(tags).toHaveCount(rules.length)
+  for (const rule of rules) await expect(select).toContainText(rule.validationName)
+  const sizes = await tags.evaluateAll(items => items.map(tag => {
+    const text = tag.querySelector('.el-select__tags-text')
+    const rect = tag.getBoundingClientRect(), cellRect = tag.closest('td').getBoundingClientRect()
+    return { y: rect.top, fits: rect.right <= cellRect.right + 1 && rect.bottom <= cellRect.bottom + 1 &&
+      text.scrollWidth <= text.clientWidth + 1 && text.scrollHeight <= tag.clientHeight + 1 }
+  }))
+  expect(new Set(sizes.map(size => size.y)).size).toBeGreaterThan(1)
+  expect(sizes.every(size => size.fits)).toBe(true)
+  harness.assertClean()
+})
+
 async function expectNoRootOverflow(page) {
   const metrics = await page.evaluate(() => ({
     viewport: window.innerWidth,
@@ -134,7 +185,7 @@ test('项目详情加载项目规则并保持内容可复制', async ({ page }) 
   await expect(rulesTab).toHaveAttribute('aria-selected', 'true')
   await expect(ruleCode).toBeVisible()
   await expectTextSelectable(ruleCode, 'age_rule')
-  await expectPrimaryActions(page, ['返回', '添加规则', '新建规则'])
+  await expectPrimaryActions(page, ['返回', '关联全局规则', '新建规则'])
   await expectNoRootOverflow(page)
   expect(errors.pageErrors).toEqual([])
   expect(errors.consoleErrors).toEqual([])
@@ -189,13 +240,16 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
     const selector = panel.getByTestId('field-revision-select')
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 })
-      if (width === 390) {
+      if (width === 1280) {
         const grip = await page.getByRole('button', { name: '调整侧边栏宽度' }).boundingBox()
         await page.mouse.move(grip.x + grip.width / 2, grip.y + 100)
         await page.mouse.down()
         await page.mouse.move(64, grip.y + 100, { steps: 8 })
         await page.mouse.up()
         await expect(page.locator('.layout-sidebar')).toHaveClass(/is-compact/)
+      } else {
+        await expect(page.locator('.layout-sidebar')).toBeHidden()
+        await expect(page.getByRole('button', { name: '展开侧边栏' })).toHaveAttribute('aria-expanded', 'false')
       }
       await expect(selector).toBeVisible()
       await expect(selector).toContainText('修订 2 · 已发布')
@@ -263,6 +317,7 @@ test('规则工作区输入和输出的数据对象字段按对象父层和字�
   const errors = await openDetailPage(page, '/rule/101', apiData)
   await page.getByRole('tab', { name: /输入字段/ }).click()
   const inputHierarchy = page.getByTestId('input-field-hierarchy-2001')
+  await expect(inputHierarchy.locator('.content-ref__type').last()).toHaveText('1.0')
   await expect(inputHierarchy.locator('.content-ref__name').first()).toHaveText('评分字段')
   await expect(inputHierarchy.locator('.content-ref__code').first()).toHaveText('score_f1_fields')
   await expect(inputHierarchy.locator('.content-ref__name').last()).toHaveText('HYBASE_X115')
@@ -270,6 +325,7 @@ test('规则工作区输入和输出的数据对象字段按对象父层和字�
 
   await page.getByRole('tab', { name: /输出字段/ }).click()
   const outputHierarchy = page.getByTestId('output-field-hierarchy-2002')
+  await expect(outputHierarchy.locator('.content-ref__type').last()).toHaveText('Abc')
   await expect(outputHierarchy.locator('.content-ref__name').first()).toHaveText('评分字段')
   await expect(outputHierarchy.locator('.content-ref__name').last()).toHaveText('风险结果')
   await expect(outputHierarchy.locator('.content-ref__code').last()).toHaveText('score_f1_fields.risk_result')
@@ -327,8 +383,8 @@ test('名单详情加载记录和变更日志且内容可复制', async ({ page 
 test('名单变更日志窄屏日期范围与操作均完整可见', async ({ page }) => {
   const errors = await openDetailPage(page, '/list/9')
   await page.setViewportSize({ width: 560, height: 900 })
-  const expand = page.getByRole('button', { name: '展开侧边栏', exact: true })
-  if (await expand.isVisible()) await expand.click()
+  await expect(page.getByRole('button', { name: '展开侧边栏', exact: true })).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.locator('.layout-sidebar')).toBeHidden()
   await page.getByRole('tab', { name: '变更日志', exact: true }).click()
   const toolbar = page.getByTestId('log-filter-toolbar')
   const frame = await toolbar.boundingBox()

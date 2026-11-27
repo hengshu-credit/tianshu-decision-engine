@@ -1,12 +1,15 @@
 <template>
   <div
     class="layout-shell"
-    :class="{ 'is-top-navigation': isTopNavigation }"
+    :class="{ 'is-top-navigation': isTopNavigation, 'has-mobile-sidebar': mobileViewport && !isTopNavigation }"
   >
     <layout-sidebar
       v-if="!isTopNavigation"
-      :width="sidebarWidth"
-      :compact="isSidebarCompact"
+      v-show="!mobileViewport || mobileMenuOpen"
+      id="layout-sidebar"
+      ref="sidebar"
+      :width="mobileViewport ? mobileMenuWidth : sidebarWidth"
+      :compact="!mobileViewport && isSidebarCompact"
       :active-menu="activeMenuIndex"
       :menus="sidebarMenus"
       @navigate="navigateTo"
@@ -44,6 +47,11 @@
         </nav>
       </header>
       <header class="layout-topbar">
+        <button v-if="mobileViewport && !isTopNavigation" ref="menuToggle" type="button" class="mobile-menu-toggle"
+          aria-controls="layout-sidebar" :aria-expanded="mobileMenuOpen" :aria-label="mobileMenuOpen ? '收起侧边栏' : '展开侧边栏'"
+          @click="toggleMobileMenu">
+          <app-icon :name="mobileMenuOpen ? 'Close' : 'Expand'" aria-hidden="true" />
+        </button>
         <workspace-tabs
           :tabs="workspaceTabs"
           :active-path="activeTabPath"
@@ -112,16 +120,20 @@
           <el-button size="small" @click="navigateTo(navigation.error.fullPath)">重新加载</el-button>
         </el-alert>
         <router-view v-slot="{ Component }">
+          <!-- 上传与回归发布在整个工作台会话内继续，迁移页拥有独立的缓存位置。 -->
+          <keep-alive :key="transferIdentity">
+            <component :is="Component" v-if="$route.name === 'OfflineTransfer'" />
+          </keep-alive>
           <keep-alive :max="12">
             <component
               :is="Component"
-              v-if="$route.meta.keepAlive"
+              v-if="$route.meta.keepAlive && $route.name !== 'OfflineTransfer'"
               :key="currentViewKey"
             />
           </keep-alive>
           <component
             :is="Component"
-            v-if="!$route.meta.keepAlive"
+            v-if="!$route.meta.keepAlive && $route.name !== 'OfflineTransfer'"
             :key="currentViewKey"
           />
         </router-view>
@@ -176,6 +188,7 @@ import {
   SIDEBAR_COMPACT_THRESHOLD,
   SIDEBAR_MENUS,
   SIDEBAR_MIN_WIDTH,
+  SIDEBAR_DEFAULT_WIDTH,
   clampSidebarWidth,
   getActiveMenuIndex,
   getAvatarInitial,
@@ -242,9 +255,14 @@ export default {
   },
   data() {
     const sidebarState = readSidebarState(browserSessionStorage())
+    const mobileQuery = window.matchMedia?.('(max-width: 768px)')
     const initialTheme = readLocalTheme(browserLocalStorage())
     return {
       navigation: navigationState,
+      mobileQuery,
+      mobileViewport: Boolean(mobileQuery?.matches),
+      mobileMenuOpen: false,
+      mobileMenuWidth: SIDEBAR_DEFAULT_WIDTH,
       sidebarWidth: sidebarState.width,
       lastExpandedWidth: sidebarState.lastExpandedWidth,
       confirmedTheme: initialTheme,
@@ -280,6 +298,10 @@ export default {
       if (this.pendingRoute) return this.pendingRoute.fullPath
       return this.$store.getters['workspaceTabs/activePath'] || ''
     },
+    transferIdentity() {
+      const user = getCurrentUser()
+      return JSON.stringify([user?.userId, user?.username, user?.permissionVersion])
+    },
     currentViewKey() {
       const viewKey = this.$store.getters['workspaceTabs/viewKey']
       const baseKey = viewKey
@@ -302,7 +324,17 @@ export default {
     },
   },
   watch: {
+    mobileMenuOpen(open, previous, onCleanup) {
+      if (!open) return
+      const controller = new AbortController()
+      for (const type of ['pointerdown', 'click', 'focusin', 'wheel']) {
+        document.addEventListener(type, this.onMobilePageInteraction, { capture: true, passive: true, signal: controller.signal })
+      }
+      onCleanup(() => controller.abort())
+    },
+    isTopNavigation() { this.mobileMenuOpen = false },
     '$route.fullPath'() {
+      this.mobileMenuOpen = false
       this.openCurrentRoute()
       this.syncProjectContext()
     },
@@ -312,10 +344,12 @@ export default {
     this.restoreWorkspaceTabs()
   },
   async mounted() {
+    this.mobileQuery?.addEventListener('change', this.onMobileViewportChange)
     window.addEventListener('keydown', this.handleWorkspaceShortcut, true)
     await Promise.all([this.loadAccountTheme(), this.syncProjectContext()])
   },
   beforeUnmount() {
+    this.mobileQuery?.removeEventListener('change', this.onMobileViewportChange)
     window.removeEventListener('keydown', this.handleWorkspaceShortcut, true)
   },
   methods: {
@@ -356,6 +390,7 @@ export default {
       this.$store.dispatch('workspaceTabs/open', this.routeTab(this.$route))
     },
     async navigateTo(fullPath, options = {}) {
+      if (this.mobileMenuOpen) this.closeMobileMenu(true)
       if (!fullPath || (fullPath === this.$route.fullPath && !this.pendingRoute)) return
       if (
         !options.skipDesignerGuard &&
@@ -410,6 +445,11 @@ export default {
       return result
     },
     handleWorkspaceShortcut(event) {
+      if (this.mobileMenuOpen && event.key === 'Escape') {
+        event.preventDefault()
+        this.closeMobileMenu(true)
+        return
+      }
       const command = resolveWorkspaceShortcut(
         event,
         this.workspaceTabs,
@@ -469,6 +509,28 @@ export default {
       }
       return result
     },
+    onMobileViewportChange(event) {
+      this.mobileMenuOpen = false
+      this.mobileViewport = event.matches
+    },
+    toggleMobileMenu(event) {
+      this.mobileMenuOpen = !this.mobileMenuOpen
+      if (this.mobileMenuOpen && event.detail === 0) {
+        this.$nextTick(() => {
+          const sidebar = this.$refs.sidebar?.$el
+          const item = sidebar?.querySelector('.sidebar-menu__item.is-active') || sidebar?.querySelector('.sidebar-menu__item')
+          item?.focus()
+        })
+      }
+    },
+    closeMobileMenu(restoreFocus = false) {
+      this.mobileMenuOpen = false
+      if (restoreFocus) this.$refs.menuToggle?.focus({ preventScroll: true })
+    },
+    onMobilePageInteraction(event) {
+      if (this.$refs.sidebar?.$el.contains(event.target) || this.$refs.menuToggle?.contains(event.target)) return
+      this.closeMobileMenu()
+    },
     handleSidebarResize(width) {
       const nextWidth = clampSidebarWidth(width)
       this.sidebarWidth = nextWidth
@@ -481,6 +543,7 @@ export default {
       this.persistSidebarState()
     },
     toggleSidebar() {
+      if (this.mobileViewport) { this.closeMobileMenu(true); return }
       if (this.isSidebarCompact) {
         this.sidebarWidth = Math.max(
           SIDEBAR_COMPACT_THRESHOLD,
@@ -584,6 +647,30 @@ export default {
   min-width: 0;
   overflow: hidden;
   background: var(--tianshu-bg-page);
+}
+.has-mobile-sidebar {
+  position: relative;
+  .layout-sidebar {
+    position: absolute;
+    z-index: 20;
+    inset: 52px auto 0 0;
+    height: auto;
+    max-width: calc(100% - 48px);
+    box-shadow: var(--tianshu-shadow-small);
+    transition: none;
+  }
+  :deep(.sidebar-resizer), :deep(.sidebar-collapse) { display: none; }
+}
+.mobile-menu-toggle {
+  display: grid;
+  flex: 0 0 44px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--tianshu-text-primary);
+  font-size: 20px;
+  cursor: pointer;
+  &:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -3px; }
 }
 .layout-workspace {
   --layout-account-width: 136px;

@@ -11,22 +11,26 @@
         <el-checkbox v-if="changeCount && !warning" v-model="changesOnly">只看差异</el-checkbox>
       </template>
     </div>
-    <div class="business-preview-head pane-grid">
-      <div v-for="pane in panes" :key="pane.side">
-        <span>{{ pane.caption }}</span><strong>{{ pane.label }}</strong>
-        <small v-if="pane.byline">{{ pane.byline }}</small>
-        <p v-if="pane.note">{{ pane.note }}</p>
+    <version-preview-region label="版本说明">
+      <div class="business-preview-head pane-grid">
+        <div v-for="pane in panes" :key="pane.side">
+          <span>{{ pane.caption }}</span><strong>{{ pane.label }}</strong>
+          <small v-if="pane.byline">{{ pane.byline }}</small>
+          <p v-if="pane.note">{{ pane.note }}</p>
+        </div>
       </div>
-    </div>
+    </version-preview-region>
     <el-alert v-if="warning" :title="warning" type="warning" :closable="false" show-icon />
     <section v-if="basicRows.length" class="preview-section">
       <h4>基本信息</h4>
-      <dl class="basic-fields">
-        <div v-for="row in basicRows" :key="row.key" class="basic-field" :class="'is-' + row.status">
-          <dt>{{ (row.right || row.left).title }} <el-tag v-if="comparing && row.status !== 'same'" size="small" :type="tagType[row.status]">{{ changeLabel[row.status] }}</el-tag></dt>
-          <dd v-for="pane in panes" :key="pane.side"><span v-if="comparing" class="narrow-version-label">{{ pane.label }}</span>{{ row[pane.side]?.nodes[0].text ?? '此版本未配置' }}</dd>
-        </div>
-      </dl>
+      <version-preview-region label="基本信息">
+        <dl class="basic-fields">
+          <div v-for="row in basicRows" :key="row.key" class="basic-field" :class="'is-' + row.status">
+            <dt>{{ (row.right || row.left).title }} <el-tag v-if="comparing && row.status !== 'same'" size="small" :type="tagType[row.status]">{{ changeLabel[row.status] }}</el-tag></dt>
+            <dd v-for="pane in panes" :key="pane.side"><span v-if="comparing" class="narrow-version-label">{{ pane.label }}</span>{{ row[pane.side]?.nodes[0].text ?? '此版本未配置' }}</dd>
+          </div>
+        </dl>
+      </version-preview-region>
     </section>
     <section v-for="row in detailRows" :key="row.key" :ref="element => registerSection(row.key, element)"
       class="preview-section business-preview-row" :class="'is-' + row.status" :data-section="row.key">
@@ -36,10 +40,12 @@
         </button>
         <el-tag v-if="comparing && row.status !== 'same'" :type="tagType[row.status]" size="small">{{ changeLabel[row.status] }}</el-tag>
       </h4>
-      <div v-if="!folded.has(row.key)" class="pane-grid">
-        <version-config-section v-for="pane in panes" :key="pane.side" :section="row[pane.side]"
-          :version-label="comparing ? pane.label : ''" absent-label="此版本未配置" />
-      </div>
+      <version-preview-region v-show="!folded.has(row.key)" :label="(row.right || row.left).title">
+        <div class="pane-grid">
+          <version-config-section v-for="pane in panes" :key="pane.side" :section="row[pane.side]"
+            :version-label="comparing ? pane.label : ''" absent-label="此版本未配置" />
+        </div>
+      </version-preview-region>
     </section>
     <el-empty v-if="!rows.length && !warning" description="此快照暂无业务配置" :image-size="64" />
   </div>
@@ -48,6 +54,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { buildResourcePreview, pairPreviewSections } from '@/utils/resourceVersionPreview'
 import VersionConfigSection from './VersionConfigSection.vue'
+import VersionPreviewRegion from './VersionPreviewRegion.vue'
 
 const props = defineProps({
   resourceType: { type: String, required: true }, snapshot: { type: [String, Object], required: true },
@@ -115,7 +122,12 @@ const detailRows = computed(() => {
 })
 </script>
 <style scoped>
-.version-preview-summary { margin: 16px 0; color: var(--tianshu-text-primary); min-width: 0; }
+.version-preview-summary {
+  container: version-preview / inline-size;
+  margin: 16px 0;
+  color: var(--tianshu-text-primary);
+  min-width: 0;
+}
 .preview-title, .preview-section h4 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .preview-title { margin-bottom: 12px; font-size: 16px; }
 .preview-title .el-checkbox { margin-left: auto; }
@@ -140,8 +152,9 @@ const detailRows = computed(() => {
 .basic-field dt { color: var(--tianshu-text-secondary); }
 .basic-field dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .basic-field dt .el-tag { margin-left: 4px; }
+.basic-field dt { overflow-wrap: anywhere; }
 .narrow-version-label { display: none; }
-@media (max-width: 640px) {
+@container version-preview (max-width: 640px) {
   .is-comparing .pane-grid { grid-template-columns: minmax(0, 1fr); }
   .narrow-version-label { display: block; font-size: 12px; color: var(--tianshu-text-secondary); margin: 0 0 6px; }
   .is-comparing .basic-field { grid-template-columns: minmax(0, 1fr); gap: 8px; }

@@ -67,9 +67,10 @@ public class RuleExperimentController {
                                                      @RequestParam(required = false) String traceId,
                                                      @RequestParam(required = false) String stage,
                                                      @RequestParam(required = false) String groupCode,
-                                                     @RequestParam(required = false) Integer success) {
+                                                     @RequestParam(required = false) Integer success,
+                                                     @RequestParam(required = false) Long projectId) {
         return ApiResponse.ok(experimentService.pageExecutionLogs(pageNum, pageSize, experimentId, experimentCode,
-                requestKey, traceId, stage, groupCode, success));
+                requestKey, traceId, stage, groupCode, success, projectId));
     }
 
     @PostMapping

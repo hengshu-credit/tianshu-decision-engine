@@ -1,0 +1,28 @@
+# 通用上传扫描服务，接入 server 已使用的可信网络。
+name: ${CLAMD_PROJECT:-tianshu-upload-scan}
+services:
+  upload-clamd:
+    image: ${CLAMAV_IMAGE:-clamav/clamav:1.4}
+    restart: unless-stopped
+    environment:
+      CLAMD_CONF_StreamMaxLength: 256M
+      CLAMD_CONF_MaxFileSize: 256M
+      CLAMD_CONF_MaxScanSize: 512M
+      CLAMD_CONF_AlertExceedsMax: "yes"
+    volumes:
+      - signatures:/var/lib/clamav
+    networks: [engine]
+    healthcheck:
+      test: [CMD, clamdcheck.sh]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 5m
+
+volumes:
+  signatures:
+
+networks:
+  engine:
+    external: true
+    name: ${ENGINE_NETWORK:?Set ENGINE_NETWORK to the existing server network}

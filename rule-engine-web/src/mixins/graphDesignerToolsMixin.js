@@ -39,11 +39,15 @@ export default {
         const node = (graph.nodes || []).find(value => value.id === item.elementId)
         if (node && typeof this.selectNodeData === 'function') this.selectNodeData(node)
       }
+      await this.focusGraphElement(item.elementId)
+    },
+    async focusGraphElement(elementId) {
+      const lf = this.lf
       await this.$nextTick()
-      if (!this.lf) return
+      if (!lf || this.lf !== lf) return
       const canvas = this.$refs.canvasContainer
-      if (canvas?.clientWidth && canvas?.clientHeight) this.lf.resize(canvas.clientWidth, canvas.clientHeight)
-      this.lf.focusOn(item.elementId)
+      if (canvas?.clientWidth && canvas?.clientHeight) lf.resize(canvas.clientWidth, canvas.clientHeight)
+      lf.focusOn(elementId)
     },
     createGraphValidationReport() {
       const modelType = this.$options.name === 'DecisionTree' ? 'TREE' : 'FLOW'

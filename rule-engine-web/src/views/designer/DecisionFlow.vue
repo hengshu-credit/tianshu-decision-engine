@@ -88,33 +88,6 @@
       </div>
       </div>
       <div class="toolbar-row toolbar-row-actions">
-      <div class="toolbar-center toolbar-node-actions">
-        <span class="toolbar-label">添加节点：</span>
-        <el-button
-          size="small"
-          class="toolbar-node-button"
-          :disabled="startNodeExists"
-          @click="addNode('start-event')"
-        >
-          <span class="node-dot" style="background: #52c41a" />开始
-        </el-button>
-        <el-button size="small" class="toolbar-node-button" @click="addNode('exclusive-gateway')">
-          <span class="node-dot" style="background: #fa8c16" />条件判断
-        </el-button>
-        <el-button
-          size="small"
-          class="toolbar-node-button btn-script-task"
-          @click="addNode('script-task')"
-        >
-          <span class="node-dot" />执行动作
-        </el-button>
-        <el-button size="small" class="toolbar-node-button" @click="addNode('join-gateway')">
-          <span class="node-dot" style="background: #8c8c8c" />聚合
-        </el-button>
-        <el-button size="small" class="toolbar-node-button" @click="addNode('end-event')">
-          <span class="node-dot" style="background: #ff4d4f" />结束
-        </el-button>
-      </div>
       <div class="toolbar-edit-actions">
         <el-button-group>
           <el-button
@@ -194,6 +167,32 @@
         >
           <el-option v-for="preset in zoomPresets" :key="preset" :label="`${preset}%`" :value="`${preset}%`" />
         </el-select>
+      </div>
+      <div class="toolbar-center toolbar-node-actions" role="group" aria-label="画布节点">
+        <el-button
+          size="small"
+          class="toolbar-node-button"
+          :disabled="startNodeExists"
+          @click="addNode('start-event')"
+        >
+          <span class="node-dot" style="background: #52c41a" />开始
+        </el-button>
+        <el-button size="small" class="toolbar-node-button" @click="addNode('exclusive-gateway')">
+          <span class="node-dot" style="background: #fa8c16" />条件判断
+        </el-button>
+        <el-button
+          size="small"
+          class="toolbar-node-button btn-script-task"
+          @click="addNode('script-task')"
+        >
+          <span class="node-dot" />执行动作
+        </el-button>
+        <el-button size="small" class="toolbar-node-button" @click="addNode('join-gateway')">
+          <span class="node-dot" style="background: #8c8c8c" />聚合
+        </el-button>
+        <el-button size="small" class="toolbar-node-button" @click="addNode('end-event')">
+          <span class="node-dot" style="background: #ff4d4f" />结束
+        </el-button>
       </div>
       <div class="toolbar-right">
         <rule-designer-action-bar
@@ -430,8 +429,8 @@
         </div>
       </transition>
 
-      <!-- 无选中提示 -->
-      <div v-if="!activeElement" class="flow-hint">
+      <!-- 空画布操作提示 -->
+      <div v-if="!activeElement && !startNodeExists" class="flow-hint">
         <el-icon class="hint-icon"><el-icon-set-up /></el-icon>
         <p>从工具栏添加节点，拖拽锚点连线</p>
         <p>单击节点/连线可编辑属性</p>

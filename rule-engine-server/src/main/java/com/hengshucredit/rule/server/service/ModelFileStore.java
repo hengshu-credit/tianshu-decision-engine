@@ -4,6 +4,7 @@ import com.hengshucredit.rule.server.artifact.Sha256Digests;
 import com.hengshucredit.rule.server.artifact.DecisionArtifactPackage;
 import com.hengshucredit.rule.model.entity.DecisionArtifact;
 import com.hengshucredit.rule.server.upload.UploadSecurity;
+import com.hengshucredit.rule.server.sftp.SftpObjectStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -32,29 +33,29 @@ public final class ModelFileStore {
     private static final String PREFIX = "ts-file-v1:";
     private static final Pattern KEY = Pattern.compile("(models/[0-9]+|packages)/[0-9a-f]{2}/[\\p{L}\\p{N}_.-]+--[0-9a-f]{64}\\.(onnx|pmml|zip)");
     private final Path root;
-    private final MysqlModelBlobStore shared;
+    private final SftpObjectStore shared;
     private final UploadSecurity security;
     private final long fileLimit;
     private final long cacheLimit;
     private final Map<String, byte[]> cache = new LinkedHashMap<>(16, 0.75f, true);
     private long cachedBytes;
+    private final VerifiedFileCache largeFiles = new VerifiedFileCache();
+    @Value("${rule-engine.model.local-file-cache-bytes:1073741824}")
+    private long localFileCacheBytes;
+
+    @jakarta.annotation.PreDestroy
+    void closeLocalCache() { largeFiles.close(); }
 
     public ModelFileStore(String directory, long fileLimit, long cacheLimit, UploadSecurity security) {
-        this(directory, fileLimit, cacheLimit, security, "FILESYSTEM", null);
+        this(directory, fileLimit, cacheLimit, security, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public ModelFileStore(@Value("${rule-engine.model.storage-directory:./data/model-files}") String directory,
                           @Value("${rule-engine.model.max-file-size-bytes:268435456}") long fileLimit,
                           @Value("${rule-engine.model.file-cache-bytes:134217728}") long cacheLimit,
-                          UploadSecurity security,
-                          @Value("${rule-engine.model.storage-backend:MYSQL}") String backend,
-                          MysqlModelBlobStore database) {
-        this.shared = switch (backend.toUpperCase(Locale.ROOT)) {
-            case "MYSQL" -> java.util.Objects.requireNonNull(database);
-            case "FILESYSTEM" -> null;
-            default -> throw new IllegalArgumentException("未知模型存储后端：" + backend);
-        };
+                          UploadSecurity security, SftpObjectStore shared) {
+        this.shared = shared;
         this.root = Path.of(directory).toAbsolutePath().normalize();
         this.fileLimit = fileLimit;
         this.cacheLimit = cacheLimit;
@@ -125,6 +126,26 @@ public final class ModelFileStore {
         return saveOriginal(projectId, filename, bytes, true);
     }
 
+    /** 制品解码已验证原件摘要。目标安装已有相同原件时只校验存储，不展开第二份模型权重。 */
+    public String fromVerifiedSnapshot(Long projectId, String filename, int length, String digest,
+                                       java.util.function.Supplier<byte[]> source) {
+        UploadSecurity.filename(filename);
+        if (length <= 0 || length > fileLimit || digest == null || !digest.matches("[0-9a-f]{64}"))
+            throw new IllegalArgumentException("冻结模型文件大小或摘要无效");
+        String lower = filename.toLowerCase(Locale.ROOT);
+        if (!lower.endsWith(".onnx") && !lower.endsWith(".pmml")) throw new IllegalArgumentException("仅支持 ONNX 或 PMML 原始模型文件");
+        String reference = key(scope(projectId), filename, digest);
+        if (shared != null ? shared.contains(reference) : Files.exists(path(reference), LinkOption.NOFOLLOW_LINKS)) {
+            if (largeFiles.verifies(reference, digest, length)) return reference;
+            if (verifiedRead(reference, digest).length != length) throw new IllegalArgumentException("冻结模型大小不匹配");
+            return reference;
+        }
+        byte[] original = source.get();
+        if (original.length != length) throw new IllegalArgumentException("冻结模型大小不匹配");
+        checkDigest(original, digest);
+        return accept(projectId, filename, original);
+    }
+
     private String saveOriginal(Long projectId, String filename, byte[] bytes, boolean trustedSnapshot) {
         UploadSecurity.filename(filename);
         if (bytes.length == 0 || bytes.length > fileLimit) throw new IllegalArgumentException("模型大小超过限制或为空");
@@ -141,11 +162,18 @@ public final class ModelFileStore {
         return reference;
     }
 
+    /** 用小样本确认当前节点的 ClamD 能处理 INSTREAM，导入时仍独立扫描每个原件。 */
+    public String importScanIssue() {
+        var probe = security.scan("tianshu-upload-readiness".getBytes(StandardCharsets.US_ASCII));
+        if ("CLEAN".equals(probe.status())) return null;
+        return "模型扫描服务未就绪：" + probe.message() + "。请核对 ClamD、病毒库与服务端连接后重新预检。";
+    }
+
     private void screen(String filename, byte[] bytes) {
         if (bytes.length == 0 || bytes.length > fileLimit) throw new IllegalArgumentException("模型文件大小无效");
         var result = security.scan(bytes);
         if (!"CLEAN".equals(result.status())) {
-            throw new IllegalArgumentException("模型安全检测 " + result.status() + "：" + result.message() + "。文件未入库，可重新上传");
+            throw new IllegalArgumentException("模型安全检测 " + result.status() + "：" + result.message() + "。模型未入库");
         }
         if (filename.toLowerCase(Locale.ROOT).endsWith(".pmml")) requireStandalonePmml(bytes);
         else com.hengshucredit.rule.server.upload.StandaloneOnnx.require(bytes);
@@ -158,7 +186,11 @@ public final class ModelFileStore {
             throw new IllegalArgumentException("模型迁移包缺少可验证的原始文件");
         }
         if (data.length() > 4L * ((fileLimit + 2) / 3)) throw new IllegalArgumentException("模型迁移原件超过上传大小上限");
-        byte[] bytes = legacyBytes(data);
+        ingestConfiguration(cfg, owner, legacyBytes(data));
+    }
+
+    public void ingestConfiguration(Map<String,Object> cfg, Long owner, byte[] bytes) {
+        if (bytes.length > fileLimit) throw new IllegalArgumentException("模型迁移原件超过上传大小上限");
         checkDigest(bytes, (String) cfg.get("modelDigest"));
         String ref = accept(owner, (String) cfg.get("modelFileName"), bytes);
         cfg.put("modelContent", ref);
@@ -182,10 +214,26 @@ public final class ModelFileStore {
     }
 
     public byte[] artifactContent(DecisionArtifactPackage pack, byte[] bytes) {
-        boolean models = pack.getComponents().values().stream().anyMatch(c -> "MODEL".equals(c.getMetadata().get("resourceType"))
+        if (!hasStoredModels(pack)) return bytes;
+        String digest = Sha256Digests.bytes(bytes);
+        String ref = key("packages", "snapshot.zip", digest);
+        install(ref, bytes);
+        if (cacheLimit > 0 && bytes.length > cacheLimit / 4) largeFiles.put(ref, bytes, localFileCacheBytes);
+        return ref.getBytes(StandardCharsets.UTF_8);
+    }
+
+    private boolean hasStoredModels(DecisionArtifactPackage pack) {
+        return pack.getComponents().values().stream().anyMatch(c -> "MODEL".equals(c.getMetadata().get("resourceType"))
                 || c.getPath().startsWith("resources/versions/MODEL-")
                 || c.getPath().startsWith("resources/versions/MODEL_OUTPUT-"));
-        return models ? savePackage(bytes).getBytes(StandardCharsets.UTF_8) : bytes;
+    }
+
+    public boolean storesSharedArchive(DecisionArtifactPackage pack) { return shared != null && hasStoredModels(pack); }
+
+    public byte[] storeArchive(DecisionArtifactPackage pack, Path archive, String digest, int length) {
+        String ref = key("packages", "snapshot.zip", digest);
+        shared.putArchive(ref, digest, archive, length);
+        return ref.getBytes(StandardCharsets.UTF_8);
     }
 
     public byte[] model(Long projectId, String fileName, String content, String expectedDigest) {
@@ -253,7 +301,7 @@ public final class ModelFileStore {
 
     private void install(String reference, byte[] bytes) {
         if (shared != null) {
-            shared.put(reference, contentDigest(reference), bytes, reference.startsWith(PREFIX + "packages/"));
+            shared.put(reference, contentDigest(reference), bytes);
             return;
         }
         Path dest = path(reference);
@@ -292,6 +340,10 @@ public final class ModelFileStore {
             byte[] found = cache.get(ref);
             if (found != null) return found.clone();
         }
+        if (shared != null && cacheLimit > 0 && localFileCacheBytes > 0) {
+            byte[] local = largeFiles.read(ref, digest);
+            if (local != null) return local;
+        }
         try {
             long limit = ref.startsWith(PREFIX + "models/") ? fileLimit : 512L * 1024 * 1024;
             byte[] bytes;
@@ -302,7 +354,9 @@ public final class ModelFileStore {
                 bytes = readFile(ref, limit);
             }
             checkDigest(bytes, digest);
-            if (bytes.length <= cacheLimit) synchronized (cache) {
+            if (shared != null && cacheLimit > 0 && bytes.length > cacheLimit / 4 && localFileCacheBytes >= bytes.length)
+                largeFiles.put(ref, bytes, localFileCacheBytes);
+            else if (bytes.length <= cacheLimit) synchronized (cache) {
                 if (cache.put(ref, bytes.clone()) == null) cachedBytes += bytes.length;
                 while (cachedBytes > cacheLimit) {
                     var iterator = cache.entrySet().iterator();
@@ -342,6 +396,7 @@ public final class ModelFileStore {
     }
 
     private void importLegacyFile(String ref, String digest, long limit) throws IOException {
+        if (shared.restoreFromDatabase(ref, digest, limit)) return;
         byte[] bytes = readFile(ref, limit);
         checkDigest(bytes, digest);
         boolean archive = ref.startsWith(PREFIX + "packages/");
@@ -351,7 +406,7 @@ public final class ModelFileStore {
         } else {
             screen(path(ref).getFileName().toString(), bytes);
         }
-        shared.put(ref,digest,bytes,archive);
+        shared.put(ref, digest, bytes);
     }
 
     private static void checkDigest(byte[] bytes, String digest) {

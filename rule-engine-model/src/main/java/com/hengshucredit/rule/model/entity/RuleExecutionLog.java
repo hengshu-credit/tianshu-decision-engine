@@ -36,6 +36,9 @@ public class RuleExecutionLog implements AccountOwnedRecord {
     private String inputParams;
     private String outputResult;
     private String traceInfo;
+    /** 摘要列表中标识是否存在可读取的追踪正文。 */
+    @TableField(exist = false)
+    private Boolean traceAvailable;
     @TableField(exist = false)
     private String ruleSetStatsJson;
     private String ruleSetStatsStatus;

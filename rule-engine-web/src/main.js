@@ -9,6 +9,7 @@ import router from './router'
 import { initializeSystemBrand } from '@/system/systemBrand'
 import store from './store'
 import ElementTabFocusGuard from '@/plugins/elementTabFocusGuard'
+import { enablePlaceholderSelection } from '@/plugins/placeholderSelection'
 import permissionDirective from '@/directives/permission'
 import { recordTabVisit } from '@/security/operationActivity'
 import './styles/index.scss'
@@ -49,6 +50,7 @@ router.beforeEach(to => {
 })
 app.use(router)
 app.use(ElementTabFocusGuard)
+app.onUnmount(enablePlaceholderSelection())
 app.mount('#app')
 // 先绘制可操作的首屏，再启用完整品牌字体。慢网下载期间沿用系统字体。
 router.isReady().then(() => {

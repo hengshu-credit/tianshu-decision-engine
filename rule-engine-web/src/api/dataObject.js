@@ -1,4 +1,5 @@
 import request from './request'
+import { metadataResponse } from '@/utils/metadataResponse'
 import { createResourceDraft, editableResource } from './governance'
 import { hasPermission } from '@/security/permissionState'
 
@@ -28,7 +29,7 @@ export function listDataObjects(projectId) {
 }
 
 export function getDataObject(id) {
-  return request({ url: `/rule/dataobject/${id}`, method: 'get' })
+  return request({ ...metadataResponse, url: `/rule/dataobject/${id}`, method: 'get' })
 }
 
 export function validateDataObjectFieldReference(objectId, field) {

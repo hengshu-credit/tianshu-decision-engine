@@ -18,8 +18,9 @@ public class RuleVersionController {
     @Resource private RuleGovernanceSubmissionService submissionService;
     @GetMapping("/{id}/published-versions")
     @RequirePermission("rule:view")
-    public ApiResponse<List<Map<String, Object>>> versions(@PathVariable Long id) {
-        return ApiResponse.ok(versionService.publishedVersions(id));
+    public ApiResponse<List<Map<String, Object>>> versions(@PathVariable Long id,
+            @RequestParam(defaultValue = "true") boolean includeFields) {
+        return ApiResponse.ok(versionService.publishedVersions(id, includeFields));
     }
     @PostMapping("/{id}/designer/publish")
     @RequirePermission("rule:submit")

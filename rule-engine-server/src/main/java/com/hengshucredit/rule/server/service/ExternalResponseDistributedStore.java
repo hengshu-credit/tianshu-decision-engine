@@ -6,4 +6,8 @@ interface ExternalResponseDistributedStore {
     void put(Long apiConfigId, String cacheKey, ExternalApiResponseCache.CachedResponse response);
 
     void invalidateApi(Long apiConfigId);
+
+    boolean acquireLoad(Long apiConfigId, String cacheKey, String owner, long leaseMillis);
+
+    void releaseLoad(Long apiConfigId, String cacheKey, String owner);
 }

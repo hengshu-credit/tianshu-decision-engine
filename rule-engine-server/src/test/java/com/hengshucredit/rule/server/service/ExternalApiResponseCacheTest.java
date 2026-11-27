@@ -80,6 +80,71 @@ public class ExternalApiResponseCacheTest {
         }
     }
 
+    @Test
+    public void cachedOrderKeepsNullsExactDecimalsAndIndependentCopies() {
+        var cache = cache(new AtomicLong(1000L));
+        var cfg = config();
+        Map<String, Object> shared = new java.util.LinkedHashMap<>();
+        shared.put("missingScore", null);
+        shared.put("amount", new java.math.BigDecimal("12000.1234567890123456789"));
+        Map<String, Object> body = Map.of("first", shared, "second", shared);
+        cache.put(cfg, "same-subject", body);
+        shared.clear();
+        var hit = cache.get(cfg, "same-subject").getResponse();
+        assertEquals(Map.of("first", hit.get("first"), "second", hit.get("first")), hit);
+        assertEquals(new java.math.BigDecimal("12000.1234567890123456789"), ((Map<?, ?>)hit.get("second")).get("amount"));
+        assertTrue(((Map<?, ?>)hit.get("first")).containsKey("missingScore"));
+        ((Map<?, ?>)hit.get("first")).clear();
+        assertEquals(2, ((Map<?, ?>)cache.get(cfg, "same-subject").getResponse().get("first")).size());
+    }
+
+    @Test
+    public void twoNodesShareOneColdLoadAndReleaseTheLeaseAfterFailure() throws Exception {
+        var value = new java.util.concurrent.atomic.AtomicReference<ExternalApiResponseCache.CachedResponse>();
+        var owner = new java.util.concurrent.atomic.AtomicReference<String>();
+        var joined = new java.util.concurrent.CountDownLatch(1);
+        var distributed = new ExternalResponseDistributedStore() {
+            public ExternalApiResponseCache.CachedResponse get(Long id, String key) { return value.get(); }
+            public void put(Long id, String key, ExternalApiResponseCache.CachedResponse response) { value.set(response); }
+            public void invalidateApi(Long id) { value.set(null); }
+            public boolean acquireLoad(Long id, String key, String token, long lease) {
+                boolean ok = owner.compareAndSet(null, token);
+                if (!ok) joined.countDown();
+                return ok;
+            }
+            public void releaseLoad(Long id, String key, String token) { assertTrue(owner.compareAndSet(token, null)); }
+        };
+        var config = config();
+        config.setResponseCacheRedisEnabled(1);
+        var first = new ExternalApiResponseCache(new ExternalCallProperties(), distributed, System::currentTimeMillis);
+        var second = new ExternalApiResponseCache(new ExternalCallProperties(), distributed, System::currentTimeMillis);
+        org.junit.Assert.assertThrows(java.io.IOException.class, () -> first.singleFlight(config, "key", () -> {
+            throw new java.io.IOException("provider unavailable");
+        }));
+        assertNull(owner.get());
+
+        var pool = Executors.newFixedThreadPool(2);
+        var loads = new AtomicInteger();
+        try {
+            var jobs = new ArrayList<Future<ExternalApiResponseCache.LoadResult>>();
+            for (var node : List.of(first, second)) jobs.add(pool.submit(() -> node.singleFlight(config, "key", () -> {
+                loads.incrementAndGet();
+                assertTrue(joined.await(2, java.util.concurrent.TimeUnit.SECONDS));
+                Map<String, Object> response = Map.of("approvedLimit", 21000);
+                node.put(config, "key", response);
+                return response;
+            })));
+            var a = jobs.get(0).get();
+            var b = jobs.get(1).get();
+            assertEquals(1, loads.get());
+            assertEquals(a.getResponse(), b.getResponse());
+            assertTrue(a.isShared() != b.isShared());
+            assertNull(owner.get());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     private ExternalApiResponseCache cache(AtomicLong clock) {
         ExternalCallProperties properties = new ExternalCallProperties();
         properties.setResponseCacheRegistryMaxEntries(8);

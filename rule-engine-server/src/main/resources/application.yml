@@ -63,7 +63,25 @@ spring:
     redis:
       namespace: ${SESSION_REDIS_NAMESPACE:tianshu:session}
 
+engine:
+  sftp:
+    host: ${ENGINE_SFTP_HOST:127.0.0.1}
+    port: ${ENGINE_SFTP_PORT:2222}
+    username: ${ENGINE_SFTP_USERNAME:engine-storage}
+    password: ${ENGINE_SFTP_PASSWORD:}
+    host-fingerprint: ${ENGINE_SFTP_HOST_FINGERPRINT:}
+    directory: ${ENGINE_SFTP_DIRECTORY:./data/engine-sftp}
+    bind-address: ${ENGINE_SFTP_BIND_ADDRESS:127.0.0.1}
+
 rule-engine:
+  search:
+    enabled: ${RULE_SEARCH_ENABLED:false}
+    url: ${RULE_SEARCH_URL:http://127.0.0.1:9200}
+    index-prefix: ${RULE_SEARCH_INDEX_PREFIX:tianshu}
+    compact-logs: ${RULE_SEARCH_COMPACT_LOGS:false}
+    api-key: ${RULE_SEARCH_API_KEY:}
+    username: ${RULE_SEARCH_USERNAME:}
+    password: ${RULE_SEARCH_PASSWORD:}
   upload:
     antivirus-host: ${UPLOAD_ANTIVIRUS_HOST:${rule-engine.ledger.antivirus-host:}}
     antivirus-port: ${UPLOAD_ANTIVIRUS_PORT:${rule-engine.ledger.antivirus-port:3310}}
@@ -93,6 +111,8 @@ rule-engine:
     # 仅遮罩持久化追踪副本，逗号分隔 JSONPath，例如 $.input.idCard,$.items[*].phone。
     mask-paths: ${RULE_TRACE_MASK_PATHS:}
   execution-admission:
+    callback-project-ids: ${RULE_EXECUTION_CALLBACK_PROJECT_IDS:}
+    callback-parallelism: ${RULE_EXECUTION_CALLBACK_PARALLELISM:4}
     parallelism: ${RULE_EXECUTION_PARALLELISM:0}
     queue-capacity: ${RULE_EXECUTION_QUEUE_CAPACITY:256}
     wait-ms: ${RULE_EXECUTION_QUEUE_WAIT_MS:90000}
@@ -102,14 +122,15 @@ rule-engine:
     # 所有数据库数据源共享的查询并发预算；超出后立即返回可重试的容量错误。
     max-concurrent-queries: ${RULE_DATABASE_MAX_CONCURRENT_QUERIES:128}
   external-call:
+    provider-idempotent-endpoints: ${RULE_PROVIDER_IDEMPOTENT_ENDPOINTS:}
     runtime-log-content-enabled: ${RULE_RUNTIME_LOG_CONTENT_ENABLED:true}
     runtime-log-max-field-bytes: ${RULE_RUNTIME_LOG_MAX_FIELD_BYTES:0}
   onnx:
+    intra-op-threads: ${ONNX_INTRA_OP_THREADS:1}
     # 8 种任务各保留 CPU 检查与一种运行配置；仅限制会话数量，不等于 native/显存字节预算。
     # 满额优先释放最久未用的空闲会话，全部在用时明确拒绝新的模型/运行配置。
     session-cache-max-entries: ${ONNX_SESSION_CACHE_MAX_ENTRIES:16}
   model:
-    storage-backend: ${RULE_MODEL_STORAGE_BACKEND:MYSQL}
     write-payload-limit: ${RULE_MODEL_WRITE_PAYLOAD_LIMIT_BYTES:0}
     storage-directory: ${RULE_MODEL_STORAGE_DIRECTORY:./data/model-files}
     file-cache-bytes: ${RULE_MODEL_FILE_CACHE_BYTES:134217728}
@@ -206,6 +227,7 @@ management:
 # 生产 Compose 默认根级别 WARN；升级进度和逐表结果仍应进入 server 标准日志。
 logging:
   level:
+    com.hengshucredit.rule.server.sftp.EngineSftpServer: INFO
     com.hengshucredit.rule.server.schema: INFO
     com.hengshucredit.rule.server.config.SchemaInitializationConfig: INFO
     com.hengshucredit.rule.server.service.SchemaSyncService: INFO

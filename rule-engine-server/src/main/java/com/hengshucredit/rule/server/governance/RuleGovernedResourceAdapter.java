@@ -106,8 +106,11 @@ public class RuleGovernedResourceAdapter
     @Override
     public List<GovernanceIssue> validate(ResourceSnapshot draft,
                                           String action) {
-        List<GovernanceIssue> issues =
-                new ArrayList<>(super.validate(draft));
+        return validateSubmitted(draft, action, null);
+    }
+
+    List<GovernanceIssue> validateSubmitted(ResourceSnapshot draft, String action, RuleRevision justReviewed) {
+        List<GovernanceIssue> issues = new ArrayList<>(super.validate(draft));
         if ("DELETE".equals(action) || "DISABLE".equals(action)) {
             return issues;
         }
@@ -116,6 +119,11 @@ public class RuleGovernedResourceAdapter
         Long definitionId = longValue(snapshot.get("id"));
         Long revisionId = longValue(snapshot.get("_ruleRevisionId"));
         if (definitionId == null || revisionId == null) {
+            return issues;
+        }
+        if (justReviewed != null && definitionId.equals(justReviewed.getDefinitionId())
+                && revisionId.equals(justReviewed.getId()) && RuleRevisionState.REVIEW.name().equals(justReviewed.getState())
+                && justReviewed.getContentDigest() != null) {
             return issues;
         }
         RuleRevision review = lifecycleService.listRevisions(definitionId)

@@ -568,6 +568,37 @@ describe('flowDesignerGraph', () => {
     expect(layoutGraphByAnchors(result)).toEqual(result)
   })
 
+  test('四个同向检测分支按优先级展开，标签跟随目标，混用的聚合入口重新对齐', () => {
+    const names = ['YuNet', 'Intel 0100', 'SCRFD', '其他']
+    const tasks = names.map((name, i) => ({ id: name, type: 'script-task', x: 600, y: 600 - i * 140 }))
+    const nodes = [{ id: 'choose', type: 'exclusive-gateway', x: 300, y: 300 }, ...tasks,
+      { id: 'join', type: 'join-gateway', x: 800, y: 300 }]
+    const edges = tasks.flatMap(({ id }, i) => [
+      { type: 'polyline', sourceNodeId: 'choose', targetNodeId: id, sourceAnchorId: 'choose_1',
+        targetAnchorId: id + '_3', text: { value: id, x: 0, y: 0 },
+        properties: { conditionName: id, priority: (i + 1) * 10, conditionExpr: i < 3 ? 'model == ' + i : '' } },
+      { type: 'polyline', sourceNodeId: id, targetNodeId: 'join', sourceAnchorId: id + '_1',
+        targetAnchorId: 'join_' + (i < 2 ? 3 : 2), startPoint: { x: 50, y: 40 } },
+    ])
+    const layout = layoutGraphByAnchors({ nodes, edges }, { gridSize: 20 })
+    const join = layout.nodes.at(-1)
+    const branches = layout.nodes.slice(1, -1)
+    expect(branches.map(node => node.y)).toEqual(branches.map(node => node.y).sort((a, b) => a - b))
+    expect(new Set(branches.map(node => node.x)).size).toBe(1)
+    expect(join.y).toBe((branches[0].y + branches[3].y) / 2)
+    branches.forEach((node, i) => {
+      const branch = layout.edges[i * 2], merge = layout.edges[i * 2 + 1]
+      expect(branch.text.value).toBe(i < 3 ? names[i] + '\nmodel == ' + i : names[i])
+      expect(branch.text.y).toBe(node.y)
+      expect(branch.text.x).toBeGreaterThan(branch.pointsList.at(-2).x)
+      expect(branch.text.x).toBeLessThan(node.x - 80)
+      expect(merge.startPoint).toEqual({ x: node.x + 80, y: node.y })
+      expect(merge.targetAnchorId).toBe('join_3')
+      expect(merge.endPoint).toEqual({ x: join.x - 28, y: join.y })
+    })
+    expect(layoutGraphByAnchors(layout, { gridSize: 20 })).toEqual(layout)
+  })
+
   test.each(['line', 'bezier'])('%s 美化保留连线类型，交给原有渲染器重新计算路径', type => {
     const graph = {
       nodes: [{ id: 'a', type: 'start-event', x: 100, y: 100 }, { id: 'b', type: 'script-task', x: 300, y: 200 }],

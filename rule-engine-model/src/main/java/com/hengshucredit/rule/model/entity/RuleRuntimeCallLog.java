@@ -69,6 +69,20 @@ public class RuleRuntimeCallLog implements AccountOwnedRecord {
     private String rawResponseMetadata;
     /** 供应商实际返回的原始响应体，永远不被解密/裁剪副本覆盖。 */
     private String originalResponseBody;
+    /** 大报文逐字节相同后可共用一份受控原文；标志只由数据库投递确认语句写入。 */
+    @TableField(insertStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER,
+            updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER)
+    @lombok.Getter(lombok.AccessLevel.NONE)
+    @com.alibaba.fastjson.annotation.JSONField(serialize = false, deserialize = false)
+    private int esBodyAliases;
+
+    public String getOriginalRequestBody() {
+        return originalRequestBody == null && (esBodyAliases & 1) != 0 ? rawRequestBody : originalRequestBody;
+    }
+
+    public String getOriginalResponseBody() {
+        return originalResponseBody == null && (esBodyAliases & 2) != 0 ? rawResponseBody : originalResponseBody;
+    }
     private String errorType;
     private String errorMessage;
     private Long costTimeMs;

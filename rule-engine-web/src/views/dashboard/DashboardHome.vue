@@ -373,6 +373,7 @@ import {
   dashboardRegionNames,
   dashboardWorldCountries,
   filterDashboardRegionFeatures,
+  normalizeChileRegionNames,
   prepareDashboardWorld,
   prioritizeChinaBoundary
 } from '@/utils/dashboardMapLayers'
@@ -632,6 +633,7 @@ export default {
         if (!response.ok) throw new Error('地图资源加载失败')
         let geoJson = await response.json()
         if (this.mapLoadController !== controller) return
+        if (country === 'CHL' && layer.level === 'ADM1') geoJson = normalizeChileRegionNames(geoJson)
         if (country !== 'CHN') {
           if (!this.chinaLandGeometry) {
             const chinaResponse = await fetch(mapAssetUrl('/maps/dashboard-china-land.geojson'), { signal: controller.signal })

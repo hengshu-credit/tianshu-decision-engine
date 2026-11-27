@@ -601,7 +601,7 @@ export default {
         this.$message.success('创建成功')
         this.dialogVisible = false
         this.markConfigurationSaved()
-        await this.loadData()
+        const refresh = this.loadData()
         const created = response && response.data
         if (continueEditing && created && created.id) {
           await this.$router.push({ ...ruleDesignerLocation({ ...this.form, id: created.id }),
@@ -609,6 +609,7 @@ export default {
         } else if (continueEditing) {
           this.$message.warning('规则已创建，请从列表进入详情继续配置')
         }
+        await refresh
       } catch (e) {
         if (!e || !e.requestErrorNotified) this.$message.error(this.dialogVisible ? ((e && e.message) || '创建失败，请重试') : '规则已创建，请从列表重新进入详情')
       } finally {

@@ -340,6 +340,7 @@ describe('DatabaseDetail — 项目选择', () => {
       expect(wrapper.find('.detail-form').exists()).toBe(true)
       expect(wrapper.vm.form.jdbcAutoBuild).toBe(false)
       expect(wrapper.vm.form.jdbcUrl).toBe('jdbc:mysql://custom-host:3306/risk?custom=true')
+      wrapper.vm.form.datasourceName = '修改后的连接名称'
       databaseApi.updateDbDatasource.mockResolvedValueOnce({ data: { id: 99 } })
       wrapper.vm.handleSubmit()
       await flushPromises()

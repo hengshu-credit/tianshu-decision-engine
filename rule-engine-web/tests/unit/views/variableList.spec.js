@@ -26,6 +26,7 @@ vi.mock('@/api/variable', () => ({
   previewVariableDraft: vi.fn(),
   importJavaConstants: vi.fn(),
   importJsonConstants: vi.fn(),
+  importJsonVariables: vi.fn(),
   listFieldValidations: vi.fn(),
   listAvailableFieldValidations: vi.fn(),
   createFieldValidationDraft: vi.fn(),
@@ -454,8 +455,8 @@ describe('VariableList — 标签方法', () => {
     expect(variableTable).toContain('fixed="right"')
     expect(variableTable).not.toContain('class="table-secondary-time"')
     expect(variableTable).toContain('formatUpdateTime(row.updateTime)')
-    expect(objectTable).toContain('label="更新时间"')
-    expect(objectTable).toContain('formatUpdateTime(node.object.updateTime)')
+    expect(wrapper.vm.visibleObjectColumns).toContainEqual(expect.objectContaining({ key: 'updateTime', label: '更新时间' }))
+    expect(objectTable).toContain('formatUpdateTime((item.field || item.node.object).updateTime)')
     expect(constantTable).toContain('label="更新时间"')
     expect(constantTable).toContain('formatUpdateTime(row.updateTime)')
   })
@@ -607,6 +608,7 @@ describe('VariableList — 变量操作', () => {
 
     expect(wrapper.vm.form.projectId).toBe(1)
     expect(wrapper.vm.getProjectName(wrapper.vm.form.projectId)).toBe('项目A')
+    wrapper.vm.form.description = '更新字段说明'
 
     wrapper.vm.handleSubmit()
     await nextTick()
@@ -690,13 +692,14 @@ describe('VariableList — 变量操作', () => {
     expect(objectDialog).toContain('label="项目名称"')
   })
 
-  test('数据对象按表格逐行展示并通过展开列查看字段', () => {
-    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
-    const objectPanel = source.slice(source.indexOf('<el-tab-pane label="数据对象"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="数据对象"')))
-
-    expect(objectPanel).toContain('data-testid="data-object-table"')
-    expect(objectPanel).toMatch(/<el-table-column\s+type="expand"/)
-    expect(objectPanel).not.toContain('class="var-group-card"')
+  test('对象与字段共用表格，行标识区分对象 ID 与字段 ID', () => {
+    wrapper.vm.objectTree = [{ object: { id: 1, objectCode: 'Request' }, variables: [{ id: 1, varCode: 'name' }] }]
+    const object = wrapper.vm.objectTableRows[0]
+    expect(object).toMatchObject({ key: 'object:1', depth: 0, code: 'Request', expanded: false })
+    wrapper.vm.toggleObjectTableRow(object)
+    expect(wrapper.vm.objectTableRows.map(({ key, code, depth }) => [key, code, depth])).toEqual([
+      ['object:1', 'Request', 0], ['field:1:1', 'name', 1],
+    ])
   })
 
   test('对象字段引用入口同时支持同范围且类型兼容的启用变量和常量', () => {
@@ -747,6 +750,7 @@ describe('VariableList — 变量操作', () => {
       refVariableId: 9,
       status: 1
     }, node)
+    wrapper.vm.form.varLabel = '申请人年龄'
 
     await new Promise(resolve => setTimeout(resolve, 0))
     wrapper.vm.handleSubmit()
@@ -806,16 +810,23 @@ describe('VariableList — 变量操作', () => {
     wrapper.vm.objectFieldPageSize = 1
     const nested = { id: 1, children: [{ id: 2, children: [{ id: 3 }] }] }
     const node = { object: { id: 20 }, variables: [nested, { id: 4 }] }
+    wrapper.vm.objectTree = [node]
+    wrapper.vm.toggleObjectTableRow(wrapper.vm.objectTableRows[0])
+    const toggle = field => wrapper.vm.toggleObjectTableRow(wrapper.vm.objectTableRows.find(row => row.field?.id === field.id))
     expect(wrapper.vm.objectFieldTotal(node)).toBe(4)
     expect(wrapper.vm.objectFieldRootTotal(node)).toBe(2)
     expect(wrapper.vm.paginatedObjectFields(node)).toEqual([nested])
-    wrapper.vm.setObjectFieldExpansion(node, true)
+    toggle(nested)
+    toggle(nested.children[0])
     expect(wrapper.vm.objectFieldExpandedKeys(node)).toEqual([1, 2])
     wrapper.vm.handleObjectFieldExpandChange(node, nested, false)
     expect(wrapper.vm.objectFieldExpandedKeys(node)).toEqual([2])
     wrapper.vm.handleObjectFieldPageChange(node, 2)
     expect(wrapper.vm.paginatedObjectFields(node)).toEqual([{ id: 4 }])
-    wrapper.vm.setObjectFieldExpansion(node, false)
+    wrapper.vm.handleObjectFieldPageChange(node, 1)
+    toggle(nested)
+    toggle(nested.children[0])
+    toggle(nested)
     expect(wrapper.vm.objectFieldExpandedKeys(node)).toEqual([])
   })
 
@@ -834,10 +845,9 @@ describe('VariableList — 变量操作', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
     const guardedHandlers = [
       'handleAddObjectField(node)',
-      'handleDeleteObject(node.object)',
-      'handleEditObjectField(row, node)',
+      'row ? handleDeleteObjectField(row) : handleDeleteObject(node.object)',
+      "row ? editObjectFieldWorkspace(row, node) : editWorkspace('DATA_OBJECT', node.object, handleEditObject, loadCurrentObject)",
       'handleOptions(row, true)',
-      'handleDeleteObjectField(row)',
       "editWorkspace('FIELD_VALIDATION', row, editFieldValidation)",
       'removeFieldValidation(row)',
       "handleVariableRowCommand('options', row)",
@@ -854,7 +864,9 @@ describe('VariableList — 变量操作', () => {
     expect(source).toContain("if (!hasPermission('field:edit'))")
     expect(source).toContain("if (command === 'options') return this.handleOptions(row)")
     expect(source).toContain("if (command === 'delete') return this.handleDelete(row)")
-    expect(source).toMatch(/v-model="node\.object\.objectType"[\s\S]*?:disabled="!canEditResource\(node\.object\)"/)
+    expect(source).toContain('objTypeLabel(item.node.object.objectType)')
+    expect(source).not.toContain('v-model="item.node.object.objectType"')
+    expect(source).toContain('v-model="objectForm.objectType"')
     expect(source).not.toContain('v-model="node.object.scriptName"')
     expect(source).not.toContain('v-model="row.scriptName"')
   })
@@ -915,7 +927,8 @@ describe('VariableList — 变量操作', () => {
       sourceConfig: JSON.stringify({ requestOverrides: { customerId: { kind: 'REFERENCE', refType: 'DATA_OBJECT', refId: 20, code: 'customer.id' } }, resultPath: 'body.score' })
     }
     expect(wrapper.vm.isTestableSource(row)).toBe(true)
-    expect(wrapper.vm.isTestableSource({ varSource: 'INPUT' })).toBe(false)
+    expect(wrapper.vm.isTestableSource({ varSource: 'INPUT' })).toBe(true)
+    expect(wrapper.vm.isTestableSource({ varSource: 'COMPUTED' })).toBe(false)
     definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: {
       inputs: [{ refId: 20, refType: 'DATA_OBJECT', scriptName: 'customer.id', valueType: 'STRING' }],
       sampleParams: { customer: { id: 'C000' } }
@@ -1204,8 +1217,9 @@ describe('VariableList — 变量操作', () => {
     ['ddl-table', 'doImportDdl', 'importDdlTable'],
     ['java-const', 'doImportJavaConst', 'importJavaConstants'],
     ['json-const', 'doImportJsonConst', 'importJsonConstants'],
+    ['json-variable', 'doImportJsonConst', 'importJsonVariables'],
   ])('%s 使用当前作用范围提交并展示审批草稿结果', async (mode, method, apiName) => {
-    const api = mode.endsWith('-const') ? variableApi[apiName] : dataObjectApi[apiName]
+    const api = apiName in variableApi ? variableApi[apiName] : dataObjectApi[apiName]
     api.mockResolvedValueOnce({ data: { success: true, requestIds: [88], requestCount: 1 } })
     wrapper.vm.handleImportCmd(mode)
     Object.assign(wrapper.vm.importForm, { scope: 'GLOBAL', objectCode: 'Mixed_Request', javaSource: 'class Request {}', jsonContent: '{"Age":18}', ddlSource: 'CREATE TABLE Request (Age int);' })

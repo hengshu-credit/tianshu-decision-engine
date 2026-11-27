@@ -1,12 +1,6 @@
 <template>
   <div class="uiue-list-page account-profile-page">
-    <header class="page-header">
-      <div>
-        <span class="page-eyebrow">PERSONAL SETTINGS</span>
-        <h1>个人设置</h1>
-        <dismissible-guidance tag="p" guide-id="profile.intro" label="个人设置说明">管理个人资料和控制台登录密码。</dismissible-guidance>
-      </div>
-    </header>
+    <dismissible-guidance tag="p" guide-id="profile.intro" label="个人设置说明">管理个人资料和控制台登录密码。</dismissible-guidance>
 
     <section class="profile-grid">
       <div class="content-card">
@@ -113,10 +107,6 @@ export default {
 
 <style lang="scss" scoped>
 .account-profile-page { color: var(--tianshu-text-primary); }
-.page-header { min-height: 76px; margin-bottom: 16px; }
-.page-header h1 { margin: 4px 0 0; font-size: 24px; font-weight: 650; line-height: 32px; }
-.page-header p { margin: 4px 0 0; color: var(--tianshu-text-tertiary); font-size: 14px; }
-.page-eyebrow { color: var(--el-color-primary); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
 .profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .content-card { padding: 20px 24px 24px; background: var(--tianshu-bg-surface); border: 1px solid var(--tianshu-border-subtle); border-radius: 8px; box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
 .card-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 20px; }

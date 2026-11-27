@@ -1,5 +1,9 @@
 # 天枢决策引擎 Docker 部署
 
+服务端可接入 Elasticsearch，将执行日志、调用日志、追踪与历史特征分开索引。配置项、独立 Compose、存量补齐和回切流程见[日志混合存储](../docs/elasticsearch-log-storage.md)。
+
+ES 主文件为 `docker/docker-compose.elasticsearch.yml`，索引和文件日志分别位于安装目录的 `docker/rule-engine-elasticsearch/data/` 和 `logs/`。在已有 ES 上更换挂载前，按[独立 ES 部署与迁移](rule-engine-elasticsearch/README.md)完成快照及恢复核验。
+
 生产环境采用外层共享服务、内层应用版本布局：`config/.env.server`、`config/.env.client` 是生效配置，根目录原 env 仅为备份；应用位于 `deploy-prod/current`，上一版在 `previous`。已有 deploy-prod 先按 [一次性目录整理](../docs/server-upload.md) 操作，之后在安装目录运行 `bash install-release.sh 发布包.zip` 更新。本文下方是源码检出/旧平铺模式的 Compose 参考；已整理环境手工运维时，env 参数必须改用 `--env-file config/.env.server` 或 `config/.env.client`，并沿用原项目名。
 
 MySQL、Redis、Kafka 共用长期保留的一套环境；日常只替换 JAR 与前端 dist，保留原 env、Compose、Nginx 配置及数据。独立迁移 SQL 随包交付到 migrations/，在停止旧应用并完成备份后、新版启动前按需执行。上传、更新与回退步骤见 [服务器部署与升级](../docs/server-upload.md)。统一入口调用本次包内的 `deploy.py` 完成校验、备份、替换与重启，兼容 `docker compose` 和 `docker-compose`。以下完整 Compose 命令用于手工运维。推荐 server/client 分开管理，默认 server 2 副本、web 1 个、可选 SDK runtime 1 个；MySQL、Redis 复用现有服务。
@@ -304,3 +308,52 @@ docker compose --project-name tianshu-external --env-file .env.client --env-file
 ```
 
 MySQL、Redis、Kafka 的更新、备份、恢复单独维护，应用升级不重建它们。不同应用部署可连接同一套基础设施；应用容器仍使用各自的宿主机端口和原 Compose 项目名。
+
+## 内置 SFTP 交接目录
+
+在「账户管理」新增账户时，选择「开通或更换公钥」并填写上传方的单行 OpenSSH 公钥。私钥由上传方保管。保存后界面给出登录名，端口和主机指纹由部署管理员交付。已有账户可在编辑页换钥或关闭登录，修改已有上传凭据还需要对应的重置密码权限。停用账户、撤销公钥或变更账户权限版本后，现有会话在下一次文件操作时失效。
+
+| 用途 | 登录名示例 | 上传后的使用方式 |
+| --- | --- | --- |
+| 个人素材、模型 | `u42`（账户 ID 为 42） | 上传 `models/score.pmml` 后，在模型管理上传框选择「内置 SFTP」，填写 `models/score.pmml`。素材库「从 SFTP 导入」和模型详情「从 SFTP 替换」同样使用本人的个人目录。 |
+| 项目进件、第三方结果 | `u42-p17`（账户已获项目 17 的访问权） | 上传 `reports/order-812.json` 后，向项目 17 的引擎传入 `u42/reports/order-812.json`。上传方只能操作自己的目录，项目内执行可按路径读取不同上传方交付的文件。 |
+
+在变量管理选择 SFTP 来源和「引擎内置 SFTP」，远端路径可引用进件字段或上游接口的返回字段。第三方收到引擎调用后，先用获授权的上传账户将结果写入项目目录，再返回相对路径。建议每笔进件使用唯一文件名，先写临时文件再在同一目录重命名，成功后才返回路径。变量支持文本、JSON、Base64 和项目隔离的缓存；需要每次读取原件时，将跨规则缓存设为 0。个人上传单文件上限为 256 MiB，执行变量读取上限为 10 MiB，图片导入上限为 5 MiB。
+
+上传目录是可写的交接区。素材导入会扫描原件并重编码为 PNG，模型新建和替换会校验 PMML/ONNX、记录摘要并创建审批草稿。入库后的内容存放在独立 SFTP 的受管目录，覆盖交接区的文件不会改变已有版本。
+
+### 服务配置、账户与解封
+
+进入「SFTP 管理 → 引擎 SFTP 服务配置」。页面沿用 SFTP 模块查看权限。在「上传账户」可为既有控制台账户登记或更换公钥、设为读写或只读、暂停登录、恢复权限或撤销公钥。暂停保留公钥和文件。撤销后再次开通需重新登记公钥。账户变更沿用账户管理和密码重置授权，修改自己的上传凭据还需本人改密权限。管理员在控制台预览项目交件时同样限于自己的项目子目录。持有项目凭证的引擎执行继续使用项目服务身份处理该项目的供应商交件。
+
+拥有全局系统编辑权限的管理员可配置以下策略。部署连接地址、服务密码及主机指纹仍由服务端 env 提供。
+
+| 配置项 | 初始值 | 生效范围 |
+|---|---:|---|
+| IP 认证请求数 | 120 次/分钟 | 取实际 SSH 对端 IP，跨连接共享计数，超出后到当前窗口结束或手动解封才允许认证 |
+| 文件读写请求数 | 256 次/秒 | 一个上传账户的个人及项目会话合并，超额的数据包等待下一秒。引擎服务身份的受管文件读写独立运行 |
+| 失败阈值和统计窗口 | 8 次，300 秒 | 来源 IP 累计失败、真实账户连续失败分别计数。仅完整 SSH 登录成功清零账户失败次数 |
+| 失败封禁时长 | 900 秒 | 触发后暂停新的认证，到期自动恢复 |
+
+「封禁记录」列出当前有效的来源、上传账户或引擎服务账户封禁。点击「解封」重置所选对象的计数。同一次登录同时命中来源和账户封禁时，两项独立生效。经 NAT 或 TCP 代理连接时，共用出口的用户可能被识别为同一来源 IP。策略与封禁写入同一个 MySQL，服务重启后保留。认证读取最新策略，文件速率配置最多缓存一秒。已登录会话的紧急撤权请使用「暂停登录」。若引擎服务账户或其来源 IP 被封禁，业务节点重启时会校验主机指纹和封禁记录，并保留控制台解封入口。文件请求继续执行 SSH 认证，解封后可重新连接。使用独立服务的部署在升级 SFTP 进程前执行 `migrations/2026-11-26-sftp-service-security.sql`，保留原账户文件和已登记公钥。外部自管 SFTP 的登录和传输策略由该服务实施。
+
+### 启动独立 SFTP
+
+在一台存储主机部署一个实例。把同版本发布包内的 server.jar 放到稳定路径，在生效的服务端 env 中填写其绝对路径 `SFTP_SERVER_JAR`、SFTP 宿主机内网监听地址 `ENGINE_SFTP_BIND_ADDRESS`、端口 `ENGINE_SFTP_PORT` 和独立生成的 `ENGINE_SFTP_PASSWORD`。该实例还需要能连接控制台使用的 MySQL，以便验证上传账户的公钥、状态和项目授权。以下命令在已整理的安装根目录执行，平铺安装将 env 路径改为 `.env.server`。
+
+```bash
+docker compose --env-file config/.env.server -f docker/docker-compose.sftp.yml up -d --wait sftp
+docker compose --env-file config/.env.server -f docker/docker-compose.sftp.yml logs sftp
+```
+
+在每台业务节点及样例导入器的 env 中设置同一组 `ENGINE_SFTP_HOST`、`ENGINE_SFTP_PORT`、`ENGINE_SFTP_USERNAME`、`ENGINE_SFTP_PASSWORD` 和 `ENGINE_SFTP_HOST_FINGERPRINT`。最后一项取自存储主机可信日志中的完整 `SHA256:…`。容器内的主机地址必须能到达存储主机。业务节点启动时验证主机身份、认证并打开文件仓。单独运行 JAR 时使用 `java -jar server.jar --engine-sftp-server` 启动存储服务，普通 server 继续用原命令启动。JAR 模式的持久目录可通过 `ENGINE_SFTP_DIRECTORY` 设置。
+
+更新独立服务时，将同版本校验通过的 JAR 放在存储主机的稳定路径，再用上述 Compose 配置加 `--force-recreate` 重建 sftp 容器，保留原数据卷和主机密钥。
+
+独立服务的数据卷内，`host-key` 是主机密钥，`files/private` 和 `files/projects` 是个人与项目交接区，`files/managed` 保存模型和素材。上传账户只看到自己的根目录。备份应同时覆盖该卷和管理库。也可配置现有 SFTP，但需在该服务上配置专用账户根目录及目录隔离，禁止上传方创建链接、访问其他用户目录或受管文件。控制台自动开通、换钥和撤销上传账户由随包的独立服务提供。
+
+### 从上一版升级
+
+1. 停止写入，备份业务库、旧文件卷和主机密钥。将旧 `engine-sftp/private`、`engine-sftp/projects` 分别复制到新数据卷的 `files/private`、`files/projects`。要保留既有主机指纹，将旧 `host-key` 放在新卷顶层。旧卷分散在不同主机时，先核对同路径文件摘要，解决冲突后再合并。
+2. 释放原 web 的 SFTP 映射端口，再启动独立服务。已有安装需合并新版 server 与导入器的 SFTP 环境配置，移除旧 web 的 SFTP 端口及 stream 模板挂载。部署脚本会保留现场 Compose，因此需要显式合并这些变更。
+3. 核对指纹并配置所有节点。旧 MySQL 文件仓中的模型、冻结包和素材按原引用校验后复制到 SFTP。历史文件卷需在迁移节点保持可读，可用 `java -jar server.jar --migrate-model-files` 迁移模型。首次读取旧内联图片时会保存到 SFTP。验证新节点的冷读和备份恢复后，再决定旧卷和旧库的保留期限。

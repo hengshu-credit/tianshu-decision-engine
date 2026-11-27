@@ -8,7 +8,7 @@
         <el-form-item label="名称"><el-input v-model="filters.keyword" clearable placeholder="搜索素材名称" style="width:160px" /></el-form-item>
         <el-form-item><el-button type="primary" @click="search">查询</el-button><el-button @click="reset">重置</el-button></el-form-item>
       </el-form>
-      <div class="uiue-btn-bar"><div class="btn-right"><table-column-settings v-model="columns" :columns="columnOptions" storage-key="tianshu:table-columns:ledger-assets" /><el-button size="small" @click="load">刷新</el-button><el-button v-if="canWrite && !picker" size="small" :disabled="!selection.length" type="danger" @click="remove(selection)">删除所选</el-button><el-button v-if="canWrite" size="small" type="primary" :loading="uploading" @click="$refs.upload.click()">上传素材</el-button></div></div>
+      <div class="uiue-btn-bar"><div class="btn-right"><table-column-settings v-model="columns" :columns="columnOptions" storage-key="tianshu:table-columns:ledger-assets" /><el-button size="small" @click="load">刷新</el-button><el-button v-if="canWrite && !picker" size="small" :disabled="!selection.length" type="danger" @click="remove(selection)">删除所选</el-button><el-button v-if="canWrite" size="small" type="primary" :loading="uploading" @click="$refs.upload.click()">上传素材</el-button><el-button v-if="canWrite" size="small" :disabled="uploading" @click="importSftp">从 SFTP 导入</el-button></div></div>
     </div>
     <dismissible-guidance tag="p" guide-id="ledger.assets" label="台账素材说明" class="ledger-help">图片先私有暂存，安全检测通过后可预览和引用。支持 5 MB 以内 PNG、JPEG、WebP；已引用素材不能删除；私有素材可由上传者明确共享范围，已共享素材被引用后不能改范围。</dismissible-guidance>
     <input ref="upload" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden @change="upload">
@@ -53,6 +53,19 @@ export default {
     search() { this.page = 1; this.load() }, changePage(page) { this.page = page; this.load() },
     scopeChanged() { if (this.filters.scope !== 'PROJECT') this.filters.projectId = null; this.search() },
     reset() { this.filters = { scope: this.projectId ? 'PROJECT' : '', projectId: this.projectId, status: '', keyword: '' }; this.search() },
+    async importSftp() {
+      const result = await this.$prompt('填写个人上传目录中的图片路径', '从内置 SFTP 导入素材', { inputPattern: /\S/, inputErrorMessage: '请填写路径' }).catch(() => null)
+      if (!result) return
+      this.uploading = true
+      try {
+        const response = await uploadLedgerAsset(null, result.value.trim())
+        this.$emit('uploaded', response.data)
+        if (response.data.scanStatus !== 'CLEAN') this.$message.warning(response.data.scanMessage)
+        this.filters.scope = 'PRIVATE'
+        this.filters.projectId = null
+        this.search()
+      } finally { this.uploading = false }
+    },
     async upload(event) { const files = Array.from(event.target.files || []); event.target.value = ''; this.uploading = true; try { for (const file of files) { if (file.size > 5 * 1024 * 1024 || !/\.(png|jpe?g|webp)$/i.test(file.name)) { this.$message.warning(`${file.name}：仅支持 5 MB 以内的 PNG、JPEG、WebP 图片`); continue } const response = await uploadLedgerAsset(file); this.$emit('uploaded', response.data); if (response.data.scanStatus !== 'CLEAN') this.$message.warning(response.data.scanMessage) } this.filters.scope = 'PRIVATE'; this.filters.projectId = null; this.search() } catch { /* request 已提示。 */ } finally { this.uploading = false } },
     edit(row) { this.form = { ...row }; this.editVisible = true },
     async save() { this.saving = true; try { await updateLedgerAsset(this.form.id, { name: this.form.name, scope: this.form.scope, projectId: this.form.scope === 'PROJECT' ? this.form.projectId : null, version: this.form.version }); this.editVisible = false; this.load() } catch { /* request 已提示。 */ } finally { this.saving = false } },

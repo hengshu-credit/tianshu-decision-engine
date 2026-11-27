@@ -70,6 +70,11 @@ public class SystemSettingsServiceTest {
         Map<?, ?> saved = (Map<?, ?>) service.saveBrand(brand, "admin").get("font");
         assertEquals(600.0, ((Map<?, ?>) saved.get("coordinates")).get("wght"));
         assertEquals(80.0, ((Map<?, ?>) saved.get("coordinates")).get("BEVL"));
+        var mailFont = service.mailFont(service.get("brand"));
+        assertArrayEquals(bytes, mailFont.file().getContentAsByteArray());
+        assertEquals(parsed.faces().get(0).name(), mailFont.family());
+        assertTrue(mailFont.variation().contains("'BEVL' 80.0"));
+        assertTrue(mailFont.variation().contains("'wght' 600.0"));
         new EngineFontFile(fonts.face(id, 0)).validate();
         assertArrayEquals(bytes, controller.publicFont(id, 0).getBody());
         assertThrows(IllegalArgumentException.class, () -> controller.publicFont(id, 1));
@@ -85,6 +90,7 @@ public class SystemSettingsServiceTest {
         assertThrows(IllegalArgumentException.class, () -> fonts.upload("not a font".getBytes(java.nio.charset.StandardCharsets.UTF_8), "admin"));
         var local = service.get("brand"); local.put("font", Map.of("source", "LOCAL", "family", "Microsoft YaHei", "assetId", "", "face", 0, "instance", 0));
         assertEquals("Microsoft YaHei", ((Map<?, ?>) service.saveBrand(local, "admin").get("font")).get("family"));
+        assertEquals("Microsoft YaHei", service.mailFont(service.get("brand")).family());
         assertThrows(IllegalArgumentException.class, () -> controller.publicFont(id, 0));
     }
 
@@ -197,6 +203,28 @@ public class SystemSettingsServiceTest {
         value.put("scope", "GLOBAL"); value.put("unknown", "value");
         assertThrows(IllegalArgumentException.class, () -> service.normalize(ResourceSnapshot.ofJson(CanonicalJson.write(value))));
     }
+    @Test public void sessionPolicyIsIndependentOfDeploymentManagedEmailSettings() throws Exception {
+        com.hengshucredit.rule.server.sql.TestSchemaTables.create(jdbc, java.util.List.of("console_security_lock", "console_user_session_state"));
+        jdbc.update("INSERT INTO console_security_lock(id) VALUES (1)");
+        assertEquals(false, service.access().get("singleSessionEnabled"));
+        jdbc.update("UPDATE rule_system_setting SET config_json=? WHERE id=3", "{\"baseUrl\":\"https://stored.example\"}");
+        env.getPropertySources().addFirst(new MapPropertySource("commandLineArgs", Map.of("CONSOLE_MAIL_BASE_URL", "https://deploy.example")));
+        login.getMail().setBaseUrl("https://deploy.example");
+        var access = service.access();
+        access.put("singleSessionEnabled", true);
+        var draft = service.normalize(ResourceSnapshot.ofJson(CanonicalJson.write(access)));
+        service.validate(draft);
+        service.persist(draft, "admin");
+        assertEquals(true, service.access().get("singleSessionEnabled"));
+        var legacy = service.access();
+        legacy.remove("singleSessionEnabled");
+        assertEquals(true, CanonicalJson.readMap(service.normalize(ResourceSnapshot.ofJson(CanonicalJson.write(legacy))).snapshotJson()).get("singleSessionEnabled"));
+        access.put("singleSessionEnabled", false); access.put("baseUrl", "https://different.example");
+        assertThrows(IllegalArgumentException.class, () -> service.validate(service.normalize(ResourceSnapshot.ofJson(CanonicalJson.write(access)))));
+        env.getPropertySources().remove("commandLineArgs");
+        assertEquals("https://stored.example", service.access().get("baseUrl"));
+    }
+
     @Test public void explicitDeploymentOverrideWinsAndLocksGroup() {
         var value = service.get("access"); value.put("registrationEnabled", false); value.put("passwordRecoveryEnabled", false);
         service.persist(service.normalize(ResourceSnapshot.ofJson(CanonicalJson.write(value))), "admin");

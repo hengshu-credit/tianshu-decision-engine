@@ -60,7 +60,7 @@ describe('Login Element Plus 输入框契约', () => {
     expect(input).toContain('--el-input-border-color: var(--tianshu-border)')
     expect(input).toContain('--el-input-hover-border-color: var(--el-color-primary-light-3)')
     expect(input).toContain('--el-input-focus-border-color: var(--el-color-primary)')
-    expect(input).toContain('--el-input-placeholder-color: var(--tianshu-text-tertiary)')
+    expect(input).toContain('--el-input-placeholder-color: var(--tianshu-input-hint)')
   })
 
   test('输入框外壳只控制尺寸和圆角，不重复绘制 Element 状态', () => {

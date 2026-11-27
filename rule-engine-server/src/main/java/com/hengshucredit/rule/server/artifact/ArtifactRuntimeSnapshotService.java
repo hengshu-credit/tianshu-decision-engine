@@ -58,21 +58,52 @@ public class ArtifactRuntimeSnapshotService {
     private final Map<ModelContentKey, String> modelContents = new LinkedHashMap<>(16, 0.75f, true);
     private long modelContentBytes;
 
+    // Immutable file references name the content digest. Cache only verified descriptors and
+    // model references; mutable runtime objects and deployment bindings are rebuilt per request.
+    private final CatalogReads catalogs = new CatalogReads();
+    private final Object coldRead = new Object();
+
+    private record ModelReferenceKey(Long projectId, String filename, String digest, int length) {}
+
+    private final com.github.benmanes.caffeine.cache.Cache<ModelReferenceKey, String>
+            verifiedModels =
+                    com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                            .maximumSize(2048)
+                            .build();
+
+    private boolean referenced(DecisionArtifact artifact) {
+        byte[] stored = artifact.getPackageContent();
+        return modelFiles != null
+                && stored != null
+                && stored.length <= 512
+                && ModelFileStore.isReference(new String(stored, StandardCharsets.UTF_8));
+    }
+
     public RuntimeSnapshot load(Long artifactId, Long definitionId, Long executionProjectId) {
-        return materialize(loadArtifact(artifactId), artifactId, definitionId, executionProjectId);
+        return materialize(loadArtifact(artifactId), artifactId, definitionId, executionProjectId, false);
     }
 
     /** 测试目标已经读取和核对了制品实体，继续使用同一份字节解析执行快照。 */
     public RuntimeSnapshot loadFromArtifact(DecisionArtifact artifact, Long definitionId, Long executionProjectId) {
         if (artifact == null || artifact.getId() == null) throw new IllegalStateException("已发布规则缺少不可变决策制品");
-        return materialize(artifact, artifact.getId(), definitionId, executionProjectId);
+        return materialize(artifact, artifact.getId(), definitionId, executionProjectId, false);
     }
 
-    private RuntimeSnapshot materialize(DecisionArtifact artifact, Long artifactId, Long definitionId, Long executionProjectId) {
+    /** Script preparation and reference catalogs verify model components but need only their descriptors. */
+    public RuntimeSnapshot loadVerifiedMetadata(Long artifactId, Long definitionId, Long executionProjectId) {
+        return materialize(loadArtifact(artifactId), artifactId, definitionId, executionProjectId, true);
+    }
+
+    public RuntimeSnapshot loadVerifiedMetadata(DecisionArtifact artifact, Long definitionId, Long executionProjectId) {
+        return materialize(artifact, artifact.getId(), definitionId, executionProjectId, true);
+    }
+
+    private RuntimeSnapshot materialize(DecisionArtifact artifact, Long artifactId, Long definitionId, Long executionProjectId, boolean catalog) {
         if (artifact == null || artifact.getPackageContent() == null) {
             throw new IllegalStateException("已发布规则缺少不可变决策制品");
         }
-        DecisionArtifactPackageCodec.DecodedPackage decoded = decodeVerified(artifact);
+        DecisionArtifactPackageCodec.DecodedPackage decoded =
+                decodeVerified(artifact, null, catalog || referenced(artifact));
         if (!same(artifact.getArtifactDigest(), decoded.getArtifactDigest())
                 || !same(artifact.getPackageDigest(), decoded.getPackageDigest())) {
             throw new IllegalStateException("已发布决策制品摘要校验失败");
@@ -88,7 +119,15 @@ public class ArtifactRuntimeSnapshotService {
             }
         }
 
-        return buildSnapshot(decoded, bindings, deployment != null, artifactId, artifact.getArtifactDigest(), executionProjectId);
+        return buildSnapshot(
+                decoded,
+                bindings,
+                deployment != null,
+                artifactId,
+                artifact.getArtifactDigest(),
+                executionProjectId,
+                catalog,
+                referenced(artifact) ? artifact : null);
     }
 
     /** 与规则制品共用有界解码缓存；模型测试没有部署重绑定或当前目录补齐。 */
@@ -104,12 +143,26 @@ public class ArtifactRuntimeSnapshotService {
         artifact.setPackageDigest(packageDigest);
         var decoded = decodeVerified(artifact);
         if (requireExecutable) ModelApiBindingComponent.verifyModelClosure(decoded.getArtifactPackage());
-        return buildSnapshot(decoded, Collections.emptyMap(), false, null, artifactDigest, projectId);
+        return buildSnapshot(
+                decoded,
+                Collections.emptyMap(),
+                false,
+                null,
+                artifactDigest,
+                projectId,
+                false,
+                null);
     }
 
-    private RuntimeSnapshot buildSnapshot(DecisionArtifactPackageCodec.DecodedPackage decoded,
-                                          Map<String, Long> bindings, boolean imported,
-                                          Long artifactId, String artifactDigest, Long executionProjectId) {
+    private RuntimeSnapshot buildSnapshot(
+            DecisionArtifactPackageCodec.DecodedPackage decoded,
+            Map<String, Long> bindings,
+            boolean imported,
+            Long artifactId,
+            String artifactDigest,
+            Long executionProjectId,
+            boolean catalog,
+            DecisionArtifact reference) {
         RuntimeSnapshot snapshot = new RuntimeSnapshot();
         snapshot.imported = imported;
         snapshot.artifactId = artifactId;
@@ -147,7 +200,13 @@ public class ArtifactRuntimeSnapshotService {
                 function.setStatus(1);
                 snapshot.functions.add(function);
             } else if ("MODEL".equals(resourceType)) {
-                RuleModel frozen = model(component, executionProjectId, decoded.getPackageDigest());
+                RuleModel frozen =
+                        model(
+                                component,
+                                executionProjectId,
+                                decoded.getPackageDigest(),
+                                catalog,
+                                reference);
                 snapshot.models.add(frozen);
                 if (component.getMetadata().get("frozenExternalApiIds") instanceof List<?> apiIds) {
                     snapshot.modelApiIds.put(frozen.getId(), apiIds.stream().map(id -> Long.valueOf(String.valueOf(id))).toList());
@@ -211,8 +270,37 @@ public class ArtifactRuntimeSnapshotService {
     }
 
     DecisionArtifactPackageCodec.DecodedPackage decodeVerified(DecisionArtifact artifact) {
-        byte[] content = modelFiles == null ? artifact.getPackageContent()
-                : modelFiles.resolveArtifact(artifact.getPackageContent(), artifact.getPackageDigest());
+        return decodeVerified(artifact, null, false);
+    }
+
+    DecisionArtifactPackageCodec.DecodedPackage decodeVerified(DecisionArtifact artifact, java.util.Set<String> retainedPaths) {
+        return decodeVerified(artifact, retainedPaths, false);
+    }
+
+    private DecisionArtifactPackageCodec.DecodedPackage decodeVerified(DecisionArtifact artifact, java.util.Set<String> retainedPaths, boolean catalog) {
+        byte[] stored = artifact.getPackageContent();
+        if ((catalog || retainedPaths != null) && referenced(artifact)) {
+            var key =
+                    new CatalogKey(
+                            new String(stored, StandardCharsets.UTF_8),
+                            artifact.getPackageDigest(),
+                            artifact.getArtifactDigest());
+            return catalogs.cache.get(
+                    key,
+                    ref -> {
+                        synchronized (coldRead) {
+                            var verified =
+                                    codec.decodeCatalog(
+                                            modelFiles.resolveArtifact(
+                                                    stored, ref.packageDigest()));
+                            if (!same(verified.getPackageDigest(), ref.packageDigest())
+                                    || !same(verified.getArtifactDigest(), ref.artifactDigest()))
+                                throw new IllegalStateException("已发布决策制品摘要校验失败");
+                            return verified;
+                        }
+                    });
+        }
+        byte[] content = modelFiles == null ? stored : modelFiles.resolveArtifact(stored, artifact.getPackageDigest());
         String digest = Sha256Digests.bytes(content);
         // 每次验证实际字节，不能仅凭数据库里的摘要命中缓存而漏过内容被修改的情况。
         if (!same(digest, artifact.getPackageDigest())) {
@@ -223,13 +311,18 @@ public class ArtifactRuntimeSnapshotService {
             if (cached != null) return cached.decoded();
         }
         // 解压在锁外进行；缓存只保留未绑定的组件，每次执行仍创建独立变量和模型。
-        DecisionArtifactPackageCodec.DecodedPackage decoded = codec.decode(content);
+        DecisionArtifactPackageCodec.DecodedPackage decoded;
+        if (catalog) decoded = codec.decodeCatalog(content);
+        else if (retainedPaths != null) decoded = codec.decode(content, retainedPaths);
+        else if (content.length > MAX_DECODED_BYTES) decoded = codec.decodeRuntime(content);
+        else decoded = codec.decode(content);
         if (!same(decoded.getArtifactDigest(), artifact.getArtifactDigest())) {
             throw new IllegalStateException("已发布决策制品摘要校验失败");
         }
+        if (catalog || retainedPaths != null) return decoded; // A projection must never populate the full execution cache.
         long weight = CanonicalJson.writeBytes(decoded.getArtifactPackage().getMetadata()).length;
         for (DecisionArtifactPackage.Component component : decoded.getArtifactPackage().getComponents().values()) {
-            weight += component.getContent().length + CanonicalJson.writeBytes(component.getMetadata()).length;
+            weight += component.size() + CanonicalJson.writeBytes(component.getMetadata()).length;
         }
         if (weight <= MAX_DECODED_BYTES) {
             synchronized (decodedPackages) {
@@ -246,6 +339,24 @@ public class ArtifactRuntimeSnapshotService {
             }
         }
         return decoded;
+    }
+
+    private record CatalogKey(String reference, String packageDigest, String artifactDigest) { }
+
+    private static final class CatalogReads {
+        final com.github.benmanes.caffeine.cache.Cache<CatalogKey, DecisionArtifactPackageCodec.DecodedPackage> cache =
+                com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumWeight(16L * 1024 * 1024)
+                        .weigher((CatalogKey key, DecisionArtifactPackageCodec.DecodedPackage decoded) -> {
+                            var pack = decoded.getArtifactPackage();
+                            long bytes = 256L + CanonicalJson.writeBytes(pack.getMetadata()).length;
+                            for (var component : pack.getComponents().values()) {
+                                bytes += 128L + CanonicalJson.writeBytes(component.getMetadata()).length;
+                                if (!"MODEL".equals(component.getMetadata().get("resourceType"))) bytes += component.size();
+                            }
+                            return (int)Math.min(Integer.MAX_VALUE, bytes);
+                        }).build();
+
+
     }
 
     private record CachedPackage(DecisionArtifactPackageCodec.DecodedPackage decoded, long weight) { }
@@ -279,8 +390,12 @@ public class ArtifactRuntimeSnapshotService {
         return content;
     }
 
-    private RuleModel model(DecisionArtifactPackage.Component component, Long executionProjectId,
-                            String packageDigest) {
+    private RuleModel model(
+            DecisionArtifactPackage.Component component,
+            Long executionProjectId,
+            String packageDigest,
+            boolean catalog,
+            DecisionArtifact reference) {
         Object modelMetadata = component.getMetadata().get("model");
         if (modelMetadata == null) {
             throw new IllegalStateException("模型制品组件缺少冻结元数据: " + component.getPath());
@@ -289,9 +404,46 @@ public class ArtifactRuntimeSnapshotService {
         model.setProjectId(executionProjectId);
         model.setScope("PROJECT");
         model.setStatus(1);
-        model.setModelContent(modelFiles == null ? modelContent(component, packageDigest)
-                : modelFiles.fromSnapshot(executionProjectId, model.getModelFileName() == null
-                        ? "model." + model.getModelFormat().toLowerCase(java.util.Locale.ROOT) : model.getModelFileName(), component.getContent()));
+        if (catalog) model.setModelContent(null);
+        else if (modelFiles == null) model.setModelContent(modelContent(component, packageDigest));
+        else {
+            String filename =
+                    model.getModelFileName() == null
+                            ? "model." + model.getModelFormat().toLowerCase(java.util.Locale.ROOT)
+                            : model.getModelFileName();
+            if (reference == null)
+                model.setModelContent(
+                        modelFiles.fromVerifiedSnapshot(
+                                executionProjectId,
+                                filename,
+                                component.size(),
+                                component.digest(),
+                                component::getContent));
+            else {
+                var key =
+                        new ModelReferenceKey(
+                                executionProjectId, filename, component.digest(), component.size());
+                model.setModelContent(
+                        verifiedModels.get(
+                                key,
+                                modelKey -> {
+                                    synchronized (coldRead) {
+                                        return modelFiles.fromVerifiedSnapshot(
+                                                executionProjectId,
+                                                filename,
+                                                component.size(),
+                                                component.digest(),
+                                                () ->
+                                                        codec.readVerifiedModel(
+                                                                modelFiles.resolveArtifact(
+                                                                        reference
+                                                                                .getPackageContent(),
+                                                                        packageDigest),
+                                                                component));
+                                    }
+                                }));
+            }
+        }
         model.setInputFields(parseList(component.getMetadata().get("inputFields"), RuleModelInputField.class));
         model.setOutputFields(parseList(component.getMetadata().get("outputFields"), RuleModelOutputField.class));
         return model;
@@ -318,7 +470,7 @@ public class ArtifactRuntimeSnapshotService {
             replaceSingle(config, config.containsKey("dbDatasourceId") ? "dbDatasourceId" : "datasourceId",
                     "DB_DATASOURCE", bindings, fallback);
         } else if ("SFTP".equals(source)) {
-            replaceSingle(config, "sftpDatasourceId", "SFTP", bindings, fallback);
+            if (!Boolean.TRUE.equals(config.get("engineSftp"))) replaceSingle(config, "sftpDatasourceId", "SFTP", bindings, fallback);
         } else if ("LIST".equals(source)) {
             JSONArray ids = config.getJSONArray("listIds");
             if (ids != null) {

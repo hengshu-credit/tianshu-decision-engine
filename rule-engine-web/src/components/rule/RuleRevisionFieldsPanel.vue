@@ -41,7 +41,7 @@
             <template #default="{ row }"><content-reference v-if="row.defaultValue != null" :value="{ kind: 'LITERAL', value: row.defaultValue, valueType: row.fieldType }" /><span v-else>—</span></template>
           </el-table-column>
           <el-table-column v-if="direction === 'input'" label="字段校验引用" min-width="160">
-            <template #default="{ row }"><code>{{ valueText(row.validationRuleIds) }}</code></template>
+            <template #default="{ row }"><code class="revision-field-reference revision-field-path">{{ valueText(row.validationRuleIds) }}</code></template>
           </el-table-column>
         </el-table>
         <p v-if="!fields.length" data-testid="revision-fields-empty" class="revision-field-note">该修订已确认没有{{ direction === 'input' ? '输入' : '输出' }}字段。</p>

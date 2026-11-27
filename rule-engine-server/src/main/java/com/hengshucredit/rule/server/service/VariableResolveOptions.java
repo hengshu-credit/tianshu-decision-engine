@@ -52,6 +52,7 @@ public class VariableResolveOptions {
     private VariableResolutionInvocationCache invocationCache;
     private Map<String, com.hengshucredit.rule.server.derived.HistoricalFieldDefinition> historyFieldDefinitions;
     private boolean captureDatabasePreview;
+    private boolean explainTestValue;
     /** 外数请求配置沿用无副作用函数限制，固定版本也不能绕过。 */
     private boolean apiExpression;
     private java.util.List<Map<String, Object>> databasePreviewRows;

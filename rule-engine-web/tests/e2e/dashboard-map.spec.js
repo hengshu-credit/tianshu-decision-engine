@@ -1,6 +1,50 @@
 const { test, expect } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 
+test('看板设置返回按钮位于配置类型前，切换配置保持工具栏和正文位置', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const settings = { editable: true, fields: [{ metricField: 'REQUEST_ID', label: '请求编号' }], options: [] }
+  const { assertClean } = await installDistRoutes(page, { origin, liveStatic: !!process.env.E2E_DEV_BASE_URL, apiData: {
+    '/api/auth/console/config': { loginEnabled: true },
+    '/api/auth/console/me': { username: 'dashboard-admin', permissions: ['system:edit', 'project:view'] },
+    '/api/auth/console/preferences/theme': null,
+    'POST /api/rule/console/activity': null,
+    '/api/rule/dashboard/settings': ({ url }) => ({ ...settings, projectOverride: url.searchParams.has('projectId') }),
+    '/api/rule/dashboard/settings/defaults': { ...settings, defaultVersion: 1 },
+  } })
+  await page.goto(origin + '/#/dashboard')
+  const openSettings = page.getByRole('button', { name: '看板设置', exact: true })
+  await openSettings.click()
+  const back = page.getByRole('button', { name: '返回看板' })
+  const toolbar = page.locator('.dashboard-settings-page .uiue-filter-toolbar')
+  const mapSettings = page.locator('.dashboard-map-view-settings')
+  const table = page.locator('.dashboard-settings-page .el-table')
+  const modes = toolbar.getByRole('radiogroup')
+  const positions = () => Promise.all([back, modes, toolbar, mapSettings, table].map(el => el.boundingBox()))
+  await expect(table.getByText('请求编号')).toBeVisible()
+  await expect(back).toHaveClass(/uiue-detail-back/)
+  for (const width of [1440, 900, 640, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await toolbar.getByRole('combobox').click()
+    await page.getByRole('option', { name: /E2E 项目/ }).click()
+    await expect(toolbar.getByText('已创建覆盖')).toBeVisible()
+    await back.scrollIntoViewIfNeeded()
+    const before = await positions()
+    expect(before[0].x + before[0].width).toBeLessThanOrEqual(before[1].x)
+    for (const mode of ['公共默认', '我的配置']) {
+      await modes.getByText(mode, { exact: true }).click()
+      await expect(toolbar.getByRole('radio', { name: mode })).toBeChecked()
+      await expect(table).toHaveAttribute('aria-busy', 'false')
+      await expect(toolbar.getByRole('button', { name: '载入我的默认配置' })).toHaveCount(mode === '公共默认' ? 1 : 0)
+      expect(await positions(), width + 'px ' + mode).toEqual(before)
+    }
+  }
+  await back.click()
+  await expect(page).toHaveURL(/#\/dashboard$/)
+  await expect(openSettings).toBeVisible()
+  assertClean()
+})
+
 test('L7 热力图、地区决策占比和行政区下钻使用相同范围', async ({ page }) => {
   const geo = {
     points: [{ longitude: 34, latitude: 0, count: 8, passCount: 5, reviewCount: 2, rejectCount: 1 }],

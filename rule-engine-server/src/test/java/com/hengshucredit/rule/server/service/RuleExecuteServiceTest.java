@@ -945,6 +945,8 @@ public class RuleExecuteServiceTest {
         params.put("age", "22");
         params.put("enabled", "false");
         params.put("tags", "[\"A\",\"B\"]");
+        params.put("emptyFaces", java.util.List.of());
+        params.put("explicitNull", null);
         params.put("profile", "{\"level\":\"A\"}");
         params.put("requestMeta", Collections.<String, Object>singletonMap("channel", "APP"));
         ProjectAuthContext authContext = ProjectAuthContext.temporary(1L, "project_a", 11L,
@@ -972,6 +974,9 @@ public class RuleExecuteServiceTest {
         assertEquals("GRACE", logService.saved.getAuthPhase());
         assertTrue(logService.saved.getInputParams().contains("\"age\":22"));
         assertTrue(logService.saved.getInputParams().contains("\"channel\":\"APP\""));
+        var audit = com.alibaba.fastjson.JSON.parseObject(logService.saved.getInputParams());
+        assertEquals(java.util.List.of(), audit.get("emptyFaces"));
+        assertTrue(audit.containsKey("explicitNull"));
         assertFalse(logService.saved.getInputParams().contains("DERIVED"));
         assertFalse(logService.saved.getInputParams().contains("externalScore"));
         assertEquals(outcome.getResult().getTraceId(), logService.saved.getTraceId());
