@@ -31,16 +31,17 @@ public class DatabaseInitializationSqlTest {
                     + "�|锟斤拷|烫烫烫|屯屯屯)");
 
     @Test
-    public void standaloneMigrationsLeavePermanentTableDdlToTheServer() throws Exception {
-        Pattern ddl = Pattern.compile("(?i)\\b(?:(?:CREATE|ALTER|DROP|RENAME)\\s+TABLE"
-                + "|CREATE\\s+(?:UNIQUE\\s+)?INDEX|DROP\\s+INDEX)\\b");
-        try (var files = Files.newDirectoryStream(sqlDirectory().resolve("migrations"), "*.sql")) {
-            for (Path file : files) {
-                String sql = read(file).replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("(?m)^\\s*--.*$", "");
-                Assert.assertFalse(file + " contains business schema DDL", ddl.matcher(sql).find());
-            }
+    public void serverSqlResourcesContainOnlyCanonicalSchemaAndOptionalInitialData() throws Exception {
+        Path sql = sqlDirectory();
+        Assert.assertFalse(Files.exists(sql.resolve("migrations")));
+        try (var files = Files.walk(sql)) {
+            var resources = files.filter(Files::isRegularFile)
+                    .filter(file -> file.getFileName().toString().endsWith(".sql"))
+                    .map(sql::relativize).map(Path::toString).collect(java.util.stream.Collectors.toSet());
+            Assert.assertEquals(Set.of("schema.sql", "initial-data.sql"), resources);
         }
     }
+
     @Test
     public void schemaContainsOnlyIdempotentConstantInserts() throws Exception {
         String schema = read(sqlDirectory().resolve("schema.sql"));

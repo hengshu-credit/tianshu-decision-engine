@@ -35,6 +35,7 @@ export function releaseSourceFiles(directory) {
     if (typeof file !== 'string' || path.posix.isAbsolute(file) || path.win32.isAbsolute(file)
       || file.includes('\\') || file.split('/').includes('..')) throw new Error('源码清单包含非法相对路径')
     if (file.split('/').some(part => part.startsWith('.env') && !part.endsWith('.example'))) return false
+    if (path.posix.normalize(file).startsWith('rule-engine-server/src/main/resources/sql/migrations/')) return false
     if (/^docker\/rule-engine-elasticsearch\/(data|logs|snapshots)\//.test(path.posix.normalize(file))) return false
     return existsSync(path.join(directory, file)) && statSync(path.join(directory, file)).isFile()
   }).sort()
@@ -43,11 +44,6 @@ export function releaseSourceFiles(directory) {
 export function testDescription(withTests, skipJavaBuild) {
   if (!withTests) return '跳过测试；可用 --with-tests 开启'
   return skipJavaBuild ? '前端 lint 和单元测试；复用 Java 产物，未运行后端测试' : '后端测试、前端 lint 和单元测试'
-}
-
-export function copyDeploymentMigrations(sourceRoot, stageRoot) {
-  cpSync(path.join(sourceRoot, 'rule-engine-server/src/main/resources/sql/migrations'),
-    path.join(stageRoot, 'migrations'), { recursive: true })
 }
 
 export function writeDeploymentReadme(sourceRoot, stageRoot) {
@@ -120,7 +116,6 @@ async function main() {
     cpSync(path.join(sourceRoot, name), path.join(stageRoot, name), { recursive: true })
   }
   await copyKycExample(root, stageRoot)
-  copyDeploymentMigrations(sourceRoot, stageRoot)
   cpSync(path.join(sourceRoot, 'scripts/deploy.py'), path.join(stageRoot, 'deploy.py'))
   const entryScripts = ['install-release.sh', 'compose-down.sh']
   for (const script of entryScripts) cpSync(path.join(sourceRoot, 'scripts', script), path.join(stageRoot, script))
@@ -162,7 +157,7 @@ async function main() {
     `首次部署和日常更新在安装目录执行 bash install-release.sh ${archiveName}.zip，详细说明见 README-DEPLOY.md。`,
     '目录布局：外层 config/docker 管理生效配置和共享服务，deploy-prod/current 为当前应用，previous 保留上一版。',
     '旧 deploy-prod 首次使用 --adopt-layout 整理；外层原 env 仅为备份，不参与启动。普通更新不重启共享基础设施。',
-    '数据库迁移：server 启动时按包内 schema.sql 比对、升级和复核实际表结构；过程见 [SchemaUpgrade] 日志。历史回填等显式迁移按 migrations/README.md 在停应用、备份后执行。'
+    '数据库结构由 server 启动时按 schema.sql 比对、升级和复核，结果见 [SchemaUpgrade] 日志。'
   ].join('\n') + '\n')
   const sums = []
   for (const file of listFiles(stageRoot)) sums.push(`${await sha256(file)}  ${path.relative(stageRoot, file).split(path.sep).join('/')}`)

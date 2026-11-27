@@ -45,7 +45,7 @@ jobs:
           mysql=(docker exec -i "$MYSQL_CONTAINER" mysql -uroot --default-character-set=utf8mb4 --batch --skip-column-names schema_check)
           dump=(docker exec "$MYSQL_CONTAINER" mysqldump -uroot --no-data --skip-triggers --no-tablespaces --set-gtid-purged=OFF schema_check)
           sql_dir=rule-engine-server/src/main/resources/sql
-          generate=(python3 "$sql_dir/migrations/2026-11-11-schema-comments.py" "$sql_dir/schema.sql" "$RUNNER_TEMP/schema-dump.sql")
+          generate=(python3 "scripts/quality-gates/schema-comments.py" "$sql_dir/schema.sql" "$RUNNER_TEMP/schema-dump.sql")
           column="update_by VARCHAR(83) COLLATE utf8mb4_bin NOT NULL DEFAULT 'legacy\\\\path'"
           comment=$("${mysql[@]}" -e "SELECT QUOTE(COLUMN_COMMENT) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='rule_dashboard_default' AND COLUMN_NAME='update_by'")
           "${mysql[@]}" -e "ALTER TABLE rule_dashboard_default MODIFY $column COMMENT $comment"

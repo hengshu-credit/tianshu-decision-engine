@@ -194,7 +194,7 @@ mvn spring-boot:run
 | 实际库中多出的表、列和自定义索引 | 保留，不猜测删除或重命名；只有明确识别的历史兼容规则例外。 |
 | 缩短字段、非空表新增无默认值的必填列、不同生成表达式、主键替换、索引唯一性切换、同名外键改义、字符集/显式排序规则或分区布局改变 | 停止启动，日志指出对象。先停写、备份，在维护窗口完成数据核对和显式迁移，再重启。不要通过放宽 MySQL 严格模式、关闭外键检查或设为 `never` 来跳过修复。 |
 
-结构复核通过后才执行系统常量、视图与原有业务初始化。历史回填、清洗、拆表和发布说明明确要求的脚本仍走 [migrations](../rule-engine-server/src/main/resources/sql/migrations/README.md)；不会自动遍历历史脚本。分区表在新库按 schema 创建，已有库核对 HASH 或 RANGE 的键、数量及边界，不自动搬迁审计行。正式升级前应备份数据库：多条 MySQL DDL 不共享一次回滚，失败后已经成功的步骤保留；解决原因再启动会重新比对，只做剩余差异。
+结构复核通过后才执行系统常量、视图与原有业务初始化。旧库的历史数据回填应按实际数据与源版本单独评估。常规启动流程见[数据库初始化说明](../rule-engine-server/src/main/resources/sql/README.md)。分区表在新库按 schema 创建，已有库核对 HASH 或 RANGE 的键、数量及边界，不自动搬迁审计行。正式升级前应备份数据库：多条 MySQL DDL 不共享一次回滚，失败后已经成功的步骤保留；解决原因再启动会重新比对，只做剩余差异。
 
 运行账号在**当前业务库**除原有表/索引/视图及业务读写权限外，还需 `CREATE TEMPORARY TABLES` 和建立外键的 `REFERENCES`。未显式指定排序规则的表沿用目标库该表已有的同字符集排序规则。使用 MySQL 8 的严格模式、外键/唯一性检查和标准 MySQL 引号转义方式。自定义替换 Spring schema 资源的部署沿用自定义脚本兼容流程；自动比对的权威来源是发布包内的 schema。
 
@@ -315,7 +315,7 @@ node scripts/package-deployment.mjs --with-tests
 
 输出 `output/tianshu-deployment-时间戳.zip` 和 `.zip.sha256`；包内包含 JAR、前端 dist、Compose、对应源码、许可证与逐文件校验清单。`--with-tests` 运行后端测试、前端 lint 和单元测试。服务器不需要 Maven 或 Node.js，也不重新编译，但需要可拉取运行镜像的 Docker 环境。
 
-MySQL、Redis、Kafka 共用外层长期环境，生效配置在 config/，外层原 env 仅作备份。应用版本在 deploy-prod/current，成功更新前的版本保存到 previous；旧 deploy-prod 先用 --adopt-layout 一次性整理。普通更新只替换 JAR 和前端 dist，不覆盖固定配置或重启基础设施。迁移 SQL 独立交付在发布包 `migrations/`，在停止旧应用并完成备份后、新版启动前按适用范围执行。在安装目录运行 `bash install-release.sh 发布包.zip`，自动识别首次部署或已有安装更新，兼容两种现代 Compose 命令。完整上传、校验、更新、启动与回退步骤见 [服务器部署与升级](server-upload.md)。已有配置不会被新包覆盖；`RULE_AUTH_MASTER_KEY`、数据卷、项目名及端口继续沿用原值。
+MySQL、Redis、Kafka 共用外层长期环境，生效配置在 config/，外层原 env 仅作备份。应用版本在 deploy-prod/current，成功更新前的版本保存到 previous；旧 deploy-prod 先用 --adopt-layout 一次性整理。普通更新只替换 JAR 和前端 dist，不覆盖固定配置或重启基础设施。业务表结构由新版 server 启动时自动升级。在安装目录运行 `bash install-release.sh 发布包.zip`，自动识别首次部署或已有安装更新，兼容两种现代 Compose 命令。完整上传、校验、更新、启动与回退步骤见 [服务器部署与升级](server-upload.md)。已有配置不会被新包覆盖；`RULE_AUTH_MASTER_KEY`、数据卷、项目名及端口继续沿用原值。
 
 ## 三、Docker Compose 启动
 

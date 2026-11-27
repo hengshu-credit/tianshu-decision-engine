@@ -52,10 +52,13 @@ public class SchemaInitializationConfig {
                             if (resource.getURL().equals(canonical.getURL())) {
                                 new MysqlSchemaUpgrade(connection).run(resource.getContentAsString(StandardCharsets.UTF_8));
                                 BuiltinMockRules.install(connection);
-                                var migration = new ResourceDatabasePopulator(
-                                        new ClassPathResource("sql/migrations/2026-11-23-data-object-script-name.sql"));
-                                migration.setSqlScriptEncoding(StandardCharsets.UTF_8.name());
-                                migration.populate(connection);
+                                try (var statement = connection.createStatement()) {
+                                    statement.executeUpdate("""
+                                            UPDATE rule_data_object SET script_name = object_code, update_time = update_time
+                                            WHERE (script_name IS NULL OR script_name REGEXP '^[[:space:]]*$')
+                                              AND object_code IS NOT NULL AND CHAR_LENGTH(TRIM(object_code)) > 0
+                                            """);
+                                }
                                 FakerMethods.install(connection);
                                 packaged = true;
                             } else {

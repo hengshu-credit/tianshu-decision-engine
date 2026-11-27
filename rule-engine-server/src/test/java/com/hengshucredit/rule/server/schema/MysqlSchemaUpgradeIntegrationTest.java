@@ -157,6 +157,26 @@ public class MysqlSchemaUpgradeIntegrationTest {
                 + "AND r.match_names='contactPhone' AND r.generator='FIXED' AND JSON_UNQUOTE(r.config_json)='example'"));
     }
 
+    @Test public void packagedStartupFillsOnlyMissingObjectScriptNamesAndKeepsUpdateTimes() throws Exception {
+        var source = new org.springframework.jdbc.datasource.SingleConnectionDataSource(connection, true);
+        var properties = new SqlInitializationProperties();
+        properties.setMode(DatabaseInitializationMode.ALWAYS);
+        properties.setSchemaLocations(List.of("classpath:sql/schema.sql"));
+        upgrade(new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8));
+        execute("""
+                INSERT INTO rule_data_object(project_id, object_code, script_name, update_time)
+                VALUES (0, 'Legacy_CodeA', NULL, '2026-01-02 03:04:05'),
+                       (0, 'Legacy_CodeB', '   ', '2026-01-02 03:04:05'),
+                       (0, 'Legacy_CodeC', 'myAlias', '2026-01-02 03:04:05')
+                """);
+        for (int attempt = 0; attempt < 2; attempt++) {
+            assertTrue(new SchemaInitializationConfig().dataSourceScriptDatabaseInitializer(source, properties).initializeDatabase());
+            assertEquals("Legacy_CodeA,Legacy_CodeB,myAlias", scalar("SELECT GROUP_CONCAT(script_name ORDER BY object_code) "
+                    + "FROM rule_data_object WHERE object_code IN ('Legacy_CodeA','Legacy_CodeB','Legacy_CodeC') "
+                    + "AND update_time='2026-01-02 03:04:05'"));
+        }
+    }
+
     @Test public void customBootstrapRecreatesBothInvokerViewsWithoutInstallingPackagedSeeds() throws Exception {
         upgrade(new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8));
         execute("DROP VIEW rule_execution_statistics_current, rule_execution_log_current");

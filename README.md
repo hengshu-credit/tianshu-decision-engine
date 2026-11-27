@@ -398,7 +398,7 @@ Java/Spring Bean 原生实现属于可信服务器代码能力，配置、导入
 
 ### 在数据库客户端查看 ER 图
 
-服务启动时按 `schema.sql` 创建或补齐物理外键。已有库需要在改表前一次检查整批关系中的孤立引用时，可使用[外键预检与迁移说明](rule-engine-server/src/main/resources/sql/migrations/README.md#数据库客户端-er-图)。
+服务启动时按 `schema.sql` 创建或补齐物理外键。遇到同名约束冲突或 MySQL 因孤立引用拒绝补建外键时，server 记录失败对象并停止启动。
 
 在 DBeaver 刷新业务库，打开「表」目录的 ER 图，点击「自动排列」。查看单个业务域时，可多选相关表打开关系图。例如从 `rule_project`、`rule_definition`、`rule_definition_content`、`rule_definition_input_field` 和 `rule_definition_output_field` 开始，就能看到项目、规则、设计内容及出入参的关系。布局由客户端保存。[DBeaver 图表操作说明](https://dbeaver.com/docs/dbeaver/ER-Diagrams/)
 
@@ -435,7 +435,7 @@ SDK 本地执行日志默认通过 HTTP 上报；需要 Kafka 时显式启用，
 
 需要在 Docker 内一次生成后端、前端和可上传部署 ZIP 时执行 `node scripts/package-deployment.mjs`。公网部署使用 Nginx Proxy Manager 提供 HTTPS、证书和反向代理；Compose 不修改 Ubuntu 的防火墙和既有端口策略，MySQL、Redis、Kafka 按 `.env.server` 与现有安全组对外提供调试访问。
 
-MySQL、Redis、Kafka 共用长期保留的一套环境。外层 `config/` 放生效配置，`docker/` 管理共享服务，外层原 env 仅作备份。应用放在 `deploy-prod/current/`，更新成功后旧版保存到 `previous/`，更早版本留在 `history/`；新包解压到 `deploy-prod/releases/`。现有旧 deploy-prod 用 `--adopt-layout` 一次性整理，以内层原 env 为准；之后只更新 JAR/前端，不覆盖固定配置或重建基础设施。数据库迁移独立交付在发布包 `migrations/`，按适用范围在停止旧应用并完成备份后、新版启动前执行；日常更新和首次部署都在安装目录运行 `bash install-release.sh 发布包.zip`，脚本自动识别安装状态，兼容 `docker compose` / `docker-compose`，完整流程见 [应用更新说明](docs/server-upload.md)。
+MySQL、Redis、Kafka 共用长期保留的一套环境。外层 `config/` 放生效配置，`docker/` 管理共享服务，外层原 env 仅作备份。应用放在 `deploy-prod/current/`，更新成功后旧版保存到 `previous/`，更早版本留在 `history/`；新包解压到 `deploy-prod/releases/`。现有旧 deploy-prod 用 `--adopt-layout` 一次性整理，以内层原 env 为准；之后只更新 JAR/前端，不覆盖固定配置或重建基础设施。库结构由 server 启动时自动复核。日常更新和首次部署都在安装目录运行 `bash install-release.sh 发布包.zip`，脚本自动识别安装状态，兼容 `docker compose` / `docker-compose`，完整流程见 [应用更新说明](docs/server-upload.md)。
 
 当前发布脚本仍采用停止应用后重启的方式，不承诺不停机。16 GB / 4 核或更高环境的目标架构见 [蓝绿部署设计](docs/blue-green-deployment-design.md)：常驻网关、不可变版本、兼容迁移和受控切流。该文档为待实现方案，不能将现有部署命令当作蓝绿发布。
 

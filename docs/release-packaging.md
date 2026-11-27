@@ -38,7 +38,7 @@ node scripts/package-deployment.mjs --with-tests
 - 应用 Compose、Nginx/Kafka 配置和两份 `.env.*.example` 模板。
 - `install-release.sh` 是首次部署和更新的统一入口，内容与 ZIP 旁的脚本一致。它校验并解压 ZIP，调用包内的 `deploy.py` 完成部署和健康检查。
 - `README-DEPLOY.md`、完整文档、许可证、`BUILD-INFO.txt`。
-- 独立的 `migrations/`：从后端 SQL 迁移目录原样复制脚本及执行说明，纳入逐文件校验；已有库按适用范围在停止旧应用后、新版启动前单独执行，不自动批量运行历史 SQL。
+- server 内置的 `schema.sql` 提供数据库目标结构，启动时升级结果记录到 `[SchemaUpgrade]` 日志。
 - 与构建一致的 `source/` 和逐文件 `SHA256SUMS.txt`。
 
 部署入口文档只使用 ASCII 文件名，中文正文仍按 UTF-8 保存。统一入口使用 Python 标准库将包解压到独立目录；旧包中文入口文件名乱码时，也可用该方式重新解压恢复原名，不改写或跳过 SHA256 校验。

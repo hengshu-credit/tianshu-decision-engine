@@ -39,7 +39,6 @@ Nginx Proxy Manager（保持原有职责）
 ├── deploy-prod/
 │   ├── releases/<release-id>/         # 校验后的完整发布包，发布后不可修改
 │   │   ├── docker/runtime/            # server.jar、runtime.jar、dist
-│   │   ├── migrations/
 │   │   └── BUILD-INFO.txt
 │   ├── current                       # 活动版本的目录引用，拟改为原子更新的指针
 │   ├── previous                      # 上一个成功版本的目录引用

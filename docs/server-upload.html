@@ -29,7 +29,7 @@
 │   │   ├── dist/
 │   │   └── BUILD-INFO.txt
 │   ├── previous/                    # 上一次成功更新前的完整 current
-│   ├── releases/update-XXXXXXXX/    # 新包独立解压目录，含 deploy.py 和 migrations/
+│   ├── releases/update-XXXXXXXX/    # 新包独立解压目录，含 deploy.py 和运行制品
 │   └── history/update-XXXXXXXX/     # 历史备份、失败尝试及更早的 previous
 ├── legacy/before-layout-XXXXXXXX/   # 一次性整理前的旧 env、文档及源码
 ├── .deployment-layout.json          # 原项目名、部署文件和服务记录，不含密码
@@ -69,11 +69,11 @@ python3 -X utf8 &quot;$RELEASE_DIR/deploy.py&quot; --target &quot;$PWD&quot;
 <p>整理后正常运维用 <code>--env-file config/.env.server</code> 或 <code>config/.env.client</code>，Compose 文件仍在 <code>docker/</code>。项目名以原部署和 <code>.deployment-layout.json</code> 记录为准，不能改名，也不要执行 <code>down -v</code> 或 <code>--remove-orphans</code>。Nginx Proxy Manager、HTTPS、端口和主密钥保持原值。</p>
 <p>本页的自动整理面向已经运行的旧 deploy-prod 安装。尚未安装的机器先按 <a href="../docker/README.md">Docker 部署说明</a> 初始化原部署；旧平铺安装的手工操作与回退保留在 <a href="deployment-flat-legacy.md">旧版维护说明</a>，不要把其中根目录 env 的用法套到整理后的环境。</p>
 <h2>有数据库迁移的应用更新</h2>
-<p>迁移 SQL 单独位于本次包的 <code>migrations/</code>。选择适用且尚未执行的脚本后，在普通更新的最后一行追加：</p>
+<p>业务库结构由 server 启动时统一升级。如需执行自备维护脚本，可在普通更新的最后一行追加以下参数。</p>
 <pre><code class="language-text">--migration-script /root/tianshu-decision-engine/本次迁移.sh
 </code></pre>
-<p>迁移脚本在应用停止后、替换制品前执行，须先完成数据库备份，遇错非零退出；跨机器旧节点须提前停止。Bash 脚本可读取 <code>TIANSHU_RELEASE_DIR</code>、<code>TIANSHU_DEPLOY_DIR</code>、<code>TIANSHU_BACKUP_DIR</code>。共享基础设施在普通更新和 SQL 迁移期间保持运行，不自动遍历历史 SQL。若本包有 <code>migrations/upgrade.sh</code> 而没有显式指定迁移脚本，普通更新会在停机前拒绝继续。</p>
-<p>目录整理参数 <code>--adopt-layout</code> 不能与数据库迁移参数一起使用。历史迁移说明见包内 <code>migrations/README.md</code>；例如尚未完成 2026-11-04 账户记录隔离的旧库，升级前需执行对应 SQL。</p>
+<p>迁移脚本在应用停止后、替换制品前执行，须先完成数据库备份，遇错非零退出；跨机器旧节点须提前停止。Bash 脚本可读取 <code>TIANSHU_RELEASE_DIR</code>、<code>TIANSHU_DEPLOY_DIR</code>、<code>TIANSHU_BACKUP_DIR</code>。共享基础设施在普通更新和 SQL 迁移期间保持运行，不自动遍历历史 SQL。</p>
+<p>目录整理参数 <code>--adopt-layout</code> 不能与数据库迁移参数一起使用。历史数据操作依照适用版本在维护窗口执行。</p>
 <h2>验收与回退</h2>
 <p>更新成功后检查登录、项目列表、规则详情、设计器、规则测试和执行日志，并由调用方验证项目鉴权、SDK 同步及日志上报。两个 server 可能同时重启，本流程不承诺零停机。</p>
 <p><code>previous/</code> 始终用于保存上一次成功更新前的应用内容，不能通过换回文件来撤销数据库迁移。需要回退时先确认数据库兼容性，在维护窗口停止应用，保留失败版本后恢复 previous 中的制品，再以原 Compose/项目名重建并验收。不要直接对整个安装目录做删除或覆盖。失败或强制中断遗留 <code>.deploy.lock</code> 时，先确认没有其他部署进程；不能在另一个更新仍运行时删除锁。</p>

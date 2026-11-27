@@ -55,7 +55,7 @@ python3 deploy.py --target "$PWD"
 
 首次还需 SDK 时，同样准备 `.env.client`，最后一行追加 `--sdk`。脚本默认只启动应用，不创建第二套基础设施。首次没有容器记录时使用 env 中的项目名；已有容器则从 Docker 标签恢复原项目名，包括原来通过 `-p` 指定的名称。使用额外 Compose 文件的现有部署按容器记录保留，缺失文件会在停止应用前报错。
 
-**有数据库迁移时**，在最后一条命令加 `--migration-script /root/tianshu-decision-engine/本次迁移.sh`。脚本停止本机应用后、替换制品前运行此 Bash 脚本；迁移脚本负责先完成数据库备份，再执行已选定的 SQL，遇错必须非零退出。跨机器旧节点需提前协调停止。脚本可读取 `TIANSHU_RELEASE_DIR`、`TIANSHU_DEPLOY_DIR`、`TIANSHU_BACKUP_DIR`，不自动遍历历史 SQL。若发布包提供 `migrations/upgrade.sh`，未显式指定迁移脚本时会在停机前阻止更新，避免漏跑。
+**有数据库迁移时**，在最后一条命令加 `--migration-script /root/tianshu-decision-engine/本次迁移.sh`。脚本停止本机应用后、替换制品前运行此 Bash 脚本；迁移脚本负责先完成数据库备份，再执行已选定的 SQL，遇错必须非零退出。跨机器旧节点需提前协调停止。脚本可读取 `TIANSHU_RELEASE_DIR`、`TIANSHU_DEPLOY_DIR`、`TIANSHU_BACKUP_DIR`，不自动遍历历史 SQL。
 
 入口会在操作 Docker 前拒绝把 `/root` 或文件系统根目录用作安装目标；更新包必须位于该安装目录的 `releases/` 下。备份位于原安装目录 `backups/update-*`。健康检查失败会停止新应用并恢复原制品，但不会自动启动旧版，因为数据库可能已升级。中断后若遗留 `.deploy.lock`，确认没有其他部署进程后再移除锁。详细迁移、手工更新与回退步骤如下，仅排障或特殊部署时需要。
 
@@ -77,7 +77,7 @@ sha256sum -c SHA256SUMS.txt
 docker compose version
 ```
 
-不要直接解压覆盖运行目录。新包中的 `migrations/README.md` 列出独立数据库迁移的适用范围、顺序和执行时机；没有尚未执行的适用迁移就跳过迁移步骤。
+不要直接解压覆盖运行目录。业务表结构由新版 server 启动时核对和升级。
 
 ## 2. 首次安装（仅执行一次）
 
@@ -148,18 +148,8 @@ MySQL、Redis、Kafka 保持运行。由数据库运维完成可恢复备份；�
 
 ## 4. 按需迁移数据库，然后替换应用制品
 
-**升级前预检和具备所需结构的数据迁移在此执行。** 若回填依赖新增表、列或视图，保持停流，先启动新版 server 完成结构升级，再停止写入节点、回填并核验。查看 `$RELEASE_DIR/migrations/README.md`，按当前版本与运维记录逐条选择尚未执行的适用 SQL。没有适用迁移则直接替换制品；不要循环执行全部历史脚本，也不要用 `schema.sql` 或样例数据代替增量迁移。
-
-例如，旧库已有逻辑执行日志视图和稳定字段快照，需要回填历史统计索引时，使用原 MySQL 容器执行对应脚本。
-
-```bash
-docker compose --project-name tianshu-server --env-file .env.server \
-  -f docker/docker-compose.mysql.yml exec -T mysql sh -ec \
-  'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql --default-character-set=utf8mb4 --binary-mode=1 --host=127.0.0.1 --user="$MYSQL_USER" --database="$MYSQL_DATABASE"' \
-  < "$RELEASE_DIR/migrations/2026-11-13-history-field-index.sql"
-```
-
-确认容器内目标库/账号与 server 一致且有 DDL 权限。外部 MySQL 由运维使用受保护的客户端配置执行同一 SQL。每条成功后记录文件名、SHA256、目标库和结果。禁止 `mysql --force`；失败时保持应用停止，检查已完成的 DDL，不继续启动新版。
+**升级前预检和具备所需结构的数据迁移在此执行。** 若回填依赖新增表、列或视图，保持停流，先启动新版 server 完成结构升级，再停止写入节点、回填并核验。业务数据操作按现场已验证的维护方案执行。
+如使用自备维护脚本，确认目标库和账号，记录脚本摘要和执行结果。脚本失败时保持停流并核查现场状态。
 
 适用迁移全部成功后，替换应用目录；原目录作为备份保留，因此旧前端文件不会混进新版本：
 
