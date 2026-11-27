@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.schema;
 
 import com.hengshucredit.rule.server.config.SchemaInitializationConfig;
+import com.hengshucredit.rule.server.testdata.BuiltinMockRules;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -106,6 +107,7 @@ public class MysqlSchemaUpgradeIntegrationTest {
             assertTrue(second.get(90, TimeUnit.SECONDS));
             assertEquals("1", scalar("SELECT COUNT(*) FROM rule_variable WHERE var_code='DECISION_PASS'"));
             assertEquals("4", scalar("SELECT COUNT(*) FROM rule_system_setting"));
+            assertEquals("17", scalar("SELECT COUNT(*) FROM rule_mock_rule WHERE generator <> 'FAKER'"));
             execute("ALTER TABLE rule_project MODIFY description VARCHAR(1000) DEFAULT NULL COMMENT '旧版本较长说明'");
             properties.setContinueOnError(true);
             assertThrows(IllegalStateException.class, () -> new SchemaInitializationConfig()
@@ -132,6 +134,46 @@ public class MysqlSchemaUpgradeIntegrationTest {
         assertEquals(0, upgrade(schema));
         execute("ALTER TABLE rule_definition_version COALESCE PARTITION 1");
         assertTrue(assertThrows(IllegalStateException.class, () -> upgrade(schema)).getMessage().contains("分区"));
+    }
+
+    @Test public void packagedMockSeedsUpgradeInPlaceAndPreserveFieldBindingsAndUserEdits() throws Exception {
+        String schema = new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8);
+        upgrade(schema);
+        BuiltinMockRules.install(connection);
+        assertEquals("17", scalar("SELECT COUNT(*) FROM rule_mock_rule"));
+        String id = scalar("SELECT id FROM rule_mock_rule WHERE seed_key='v2.mobile'");
+        execute("UPDATE rule_mock_rule SET seed_key='mobile', name='人工手机', match_names='contactPhone', "
+                + "generator='FIXED', config_json=JSON_QUOTE('example') WHERE id=" + id);
+        execute("UPDATE rule_mock_rule SET seed_key='number', match_names='*' WHERE seed_key='v2.number'");
+        execute("UPDATE rule_variable SET mock_rule_id=" + id + " WHERE var_code='trace_id' AND project_id=0");
+        execute("DELETE FROM rule_mock_rule WHERE seed_key='decimal'");
+        BuiltinMockRules.install(connection);
+        BuiltinMockRules.install(connection);
+        assertEquals("17", scalar("SELECT COUNT(*) FROM rule_mock_rule"));
+        assertEquals("", scalar("SELECT match_names FROM rule_mock_rule WHERE seed_key='v2.number'"));
+        assertEquals("1", scalar("SELECT COUNT(*) FROM rule_mock_rule WHERE seed_key='decimal'"));
+        assertEquals(id, scalar("SELECT r.id FROM rule_mock_rule r JOIN rule_variable v ON v.mock_rule_id=r.id "
+                + "WHERE v.var_code='trace_id' AND r.seed_key='v2.mobile' AND r.name='人工手机' "
+                + "AND r.match_names='contactPhone' AND r.generator='FIXED' AND JSON_UNQUOTE(r.config_json)='example'"));
+    }
+
+    @Test public void customBootstrapRecreatesBothInvokerViewsWithoutInstallingPackagedSeeds() throws Exception {
+        upgrade(new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8));
+        execute("DROP VIEW rule_execution_statistics_current, rule_execution_log_current");
+        var script = java.nio.file.Files.createTempFile("tianshu-custom-schema-", ".sql");
+        try {
+            java.nio.file.Files.writeString(script, "SELECT 1;");
+            var properties = new SqlInitializationProperties();
+            properties.setMode(DatabaseInitializationMode.ALWAYS);
+            properties.setSchemaLocations(List.of(script.toUri().toString()));
+            var source = new org.springframework.jdbc.datasource.SingleConnectionDataSource(connection, true);
+            assertTrue(new SchemaInitializationConfig().dataSourceScriptDatabaseInitializer(source, properties).initializeDatabase());
+            assertEquals("2", scalar("SELECT COUNT(*) FROM information_schema.views WHERE table_schema=DATABASE() "
+                    + "AND table_name IN ('rule_execution_log_current','rule_execution_statistics_current') AND security_type='INVOKER'"));
+            assertEquals("0", scalar("SELECT COUNT(*) FROM rule_mock_rule WHERE seed_key='decimal'"));
+        } finally {
+            java.nio.file.Files.deleteIfExists(script);
+        }
     }
 
     @Test public void rejectsInvalidLegacyJsonAndConvertsValidConfiguration() throws Exception {

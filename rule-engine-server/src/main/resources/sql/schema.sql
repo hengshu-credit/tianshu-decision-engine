@@ -1367,7 +1367,7 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log_identity` (
   UNIQUE KEY `uk_execution_log_identity_row` (`log_id`, `log_create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='逻辑执行日志的稳定物理位置';
 
--- 逻辑读取视图由 SchemaSync 补齐旧库列之后执行 logical-execution-log-view.sql 创建。
+-- 逻辑读取视图在下方创建，依赖执行日志表及逻辑身份表。
 
 CREATE TABLE IF NOT EXISTS `rule_file_object` (
   `digest` CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '解压还原后原始文件的 SHA-256，是全库内容身份',

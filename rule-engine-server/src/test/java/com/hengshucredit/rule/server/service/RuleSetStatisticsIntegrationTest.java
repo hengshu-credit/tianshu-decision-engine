@@ -191,8 +191,8 @@ public class RuleSetStatisticsIntegrationTest {
             int start = schema.indexOf("CREATE TABLE IF NOT EXISTS `" + table + "`");
             assertTrue(start >= 0); db.jdbc.execute(schema.substring(start, schema.indexOf(';', start) + 1));
         }
-        db.jdbc.execute(new ClassPathResource("sql/logical-execution-log-view.sql").getContentAsString(StandardCharsets.UTF_8));
-        db.jdbc.execute(new ClassPathResource("sql/logical-execution-statistics-view.sql").getContentAsString(StandardCharsets.UTF_8));
+        db.jdbc.execute(SchemaSyncService.executionViewDdl(schema, "rule_execution_log_current"));
+        db.jdbc.execute(SchemaSyncService.executionViewDdl(schema, "rule_execution_statistics_current"));
     }
 
     static RuleExecutionLogService logs(BillingSummaryTestDatabase db) {

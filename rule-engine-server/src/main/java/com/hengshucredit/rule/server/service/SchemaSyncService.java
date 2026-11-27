@@ -198,9 +198,7 @@ public class SchemaSyncService {
         // 该视图是日志、看板及历史派生的共同读模型；缺失时不能静默启动为可用状态。
         ensureRuleSetStatisticsSchema();
         ensureLogicalExecutionLogSchema();
-        try {
-            jdbcTemplate.execute(new ClassPathResource("sql/logical-execution-statistics-view.sql").getContentAsString(StandardCharsets.UTF_8));
-        } catch (IOException failure) { throw new IllegalStateException("无法创建规则集统计读视图", failure); }
+        createExecutionView("rule_execution_statistics_current");
         // 新事件的计费事实与恢复确认依赖这些列，缺失时不能继续接受执行。
         ensureExecutionBillingSnapshotSchema();
         ensureLedgerCodesSchema();
@@ -319,13 +317,24 @@ public class SchemaSyncService {
         addColumnIfMissing("rule_execution_log", "attempt_no",
                 "`attempt_no` INT DEFAULT NULL COMMENT '逻辑执行恢复尝试次数'");
         ensureTablesFromSchema(List.of("rule_execution_log_identity"));
+        createExecutionView("rule_execution_log_current");
+    }
+
+    private void createExecutionView(String view) {
         try {
-            String view = new ClassPathResource("sql/logical-execution-log-view.sql")
-                    .getContentAsString(StandardCharsets.UTF_8);
-            jdbcTemplate.execute(view);
+            jdbcTemplate.execute(executionViewDdl(readSchema(), view));
         } catch (IOException error) {
-            throw new IllegalStateException("无法读取逻辑执行日志数据库结构", error);
+            throw new IllegalStateException("无法读取逻辑执行视图 " + view, error);
         }
+    }
+
+    // The manual bootstrap guards each view with IF(..., 'CREATE ...', 'SELECT 1').
+    // Compatibility initialization already repaired the columns and must execute the DDL or fail.
+    static String executionViewDdl(String schema, String view) {
+        var definition = Pattern.compile("(?im)^\\h*'(CREATE OR REPLACE SQL SECURITY INVOKER VIEW `"
+                + Pattern.quote(view) + "`\\s+AS\\s+(?:[^']++|'')++)'\\h*,").matcher(schema);
+        if (!definition.find()) throw new IllegalStateException("schema.sql 缺少视图定义 " + view);
+        return definition.group(1).replace("''", "'");
     }
 
     /**

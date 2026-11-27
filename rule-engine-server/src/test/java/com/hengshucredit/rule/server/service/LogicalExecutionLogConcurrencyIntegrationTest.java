@@ -500,7 +500,11 @@ public class LogicalExecutionLogConcurrencyIntegrationTest {
             String schema = new ClassPathResource("sql/schema.sql").getContentAsString(StandardCharsets.UTF_8);
             Matcher identityDdl = Pattern.compile("CREATE TABLE IF NOT EXISTS `rule_execution_log_identity`[\\s\\S]*?;").matcher(schema);
             assertTrue(identityDdl.find());
-            String initialization = identityDdl.group();
+            String lastStatement = "DEALLOCATE PREPARE schema_log_view_stmt;";
+            int guard = schema.indexOf("SET @schema_log_view_sql = IF(");
+            int end = schema.indexOf(lastStatement, guard);
+            assertTrue(guard >= 0 && end > guard);
+            String initialization = identityDdl.group() + "\n" + schema.substring(guard, end + lastStatement.length());
             try (var connection = source.getConnection()) {
                 // schema.sql 中的逻辑视图使用字段存在性守卫，旧库由 SchemaSyncService 补齐后创建。
                 ScriptUtils.executeSqlScript(connection, new ByteArrayResource(renameLogTables(
@@ -508,12 +512,11 @@ public class LogicalExecutionLogConcurrencyIntegrationTest {
             }
             assertEquals(Integer.valueOf(0), jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.columns "
                     + "WHERE table_schema = DATABASE() AND table_name = ? AND column_name = 'attempt_no'", Integer.class, audit));
+            assertEquals(Integer.valueOf(0), jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.views "
+                    + "WHERE table_schema = DATABASE() AND table_name = ?", Integer.class, view));
             jdbc.execute("ALTER TABLE `" + audit + "` ADD COLUMN attempt_no INT DEFAULT NULL");
-            String deferredView = new ClassPathResource("sql/logical-execution-log-view.sql").getContentAsString(StandardCharsets.UTF_8);
-            try (var connection = source.getConnection()) {
-                ScriptUtils.executeSqlScript(connection, new ByteArrayResource(renameLogTables(
-                        deferredView, audit, identity, view).getBytes(StandardCharsets.UTF_8)));
-            }
+            String deferredView = SchemaSyncService.executionViewDdl(schema, "rule_execution_log_current");
+            jdbc.execute(renameLogTables(deferredView, audit, identity, view));
             String trace = UUID.randomUUID().toString();
             jdbc.update("INSERT INTO `" + audit + "` (id, trace_id, create_time, attempt_no) VALUES (1, ?, '2026-01-15', 2), (2, ?, '2026-02-15', 1)", trace, trace);
             assertEquals(Integer.valueOf(2), jdbc.queryForObject("SELECT COUNT(*) FROM `" + audit + "`", Integer.class));
@@ -601,8 +604,8 @@ public class LogicalExecutionLogConcurrencyIntegrationTest {
         ReflectionTestUtils.setField(migration, "jdbcTemplate", jdbc);
         java.lang.reflect.Method statistics = SchemaSyncService.class.getDeclaredMethod("ensureRuleSetStatisticsSchema");
         statistics.setAccessible(true); statistics.invoke(migration);
-        jdbc.execute(new ClassPathResource("sql/logical-execution-log-view.sql").getContentAsString(StandardCharsets.UTF_8));
-        jdbc.execute(new ClassPathResource("sql/logical-execution-statistics-view.sql").getContentAsString(StandardCharsets.UTF_8));
+        jdbc.execute(SchemaSyncService.executionViewDdl(schema, "rule_execution_log_current"));
+        jdbc.execute(SchemaSyncService.executionViewDdl(schema, "rule_execution_statistics_current"));
         assertTrue("必须在真实分区日志表验证，而不是无分区的替代空表", jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.partitions WHERE table_schema = DATABASE() "
                         + "AND table_name = 'rule_execution_log' AND partition_name IS NOT NULL", Integer.class) > 0);

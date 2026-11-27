@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.config;
 
 import com.hengshucredit.rule.server.schema.MysqlSchemaUpgrade;
 import com.hengshucredit.rule.server.service.SchemaSyncService;
+import com.hengshucredit.rule.server.testdata.BuiltinMockRules;
 import com.hengshucredit.rule.server.testdata.FakerMethods;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -50,11 +51,11 @@ public class SchemaInitializationConfig {
                         for (var resource : scripts) {
                             if (resource.getURL().equals(canonical.getURL())) {
                                 new MysqlSchemaUpgrade(connection).run(resource.getContentAsString(StandardCharsets.UTF_8));
-                                // 在同一结构锁内补齐内置 Mock 规则，保留用户编辑过的配置。
-                                var defaults = new ResourceDatabasePopulator(new ClassPathResource("sql/mock-defaults.sql"),
+                                BuiltinMockRules.install(connection);
+                                var migration = new ResourceDatabasePopulator(
                                         new ClassPathResource("sql/migrations/2026-11-23-data-object-script-name.sql"));
-                                defaults.setSqlScriptEncoding(StandardCharsets.UTF_8.name());
-                                defaults.populate(connection);
+                                migration.setSqlScriptEncoding(StandardCharsets.UTF_8.name());
+                                migration.populate(connection);
                                 FakerMethods.install(connection);
                                 packaged = true;
                             } else {

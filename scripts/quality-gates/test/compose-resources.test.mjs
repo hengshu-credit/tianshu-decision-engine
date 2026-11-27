@@ -29,7 +29,13 @@ test('ES 主文件及快照覆盖文件使用安装目录的持久化路径', ()
     for (const mount of service.volumes) {
       assert.equal(mount.type, 'bind')
       assert.equal(path.resolve(mount.source), path.join(root, 'docker', 'rule-engine-elasticsearch', expected[mount.target]))
-      assert.equal(mount.bind.create_host_path, false)
+      // Some Compose v2 releases omit false from rendered JSON. Check the explicit
+      // policy in the source mount as well as its effective value after merging.
+      const file = expected[mount.target] === 'snapshots' ? files[1] : base.at(-1)
+      const block = readFileSync(path.join(root, file), 'utf8').replaceAll('\r\n', '\n').split(/^\s*- type: bind\s*$/m)
+        .find(section => section.includes(`target: ${mount.target}\n`))
+      assert.match(block ?? '', /^\s*bind:\s*\n\s+create_host_path: false\s*$/m)
+      assert.equal(mount.bind?.create_host_path ?? false, false)
     }
     assert.equal(service.environment['path.repo'], snapshots ? '/mnt/tianshu-snapshots' : undefined)
   }
