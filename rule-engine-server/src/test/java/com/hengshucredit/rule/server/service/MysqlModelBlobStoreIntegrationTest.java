@@ -5,11 +5,12 @@ import com.hengshucredit.rule.server.artifact.DecisionArtifactPackageCodec;
 import com.hengshucredit.rule.server.artifact.Sha256Digests;
 import org.junit.Assume;
 import org.junit.Test;
-import org.springframework.core.io.ClassPathResource;
+import com.hengshucredit.rule.server.config.SchemaInitializationConfig;
+import org.springframework.boot.autoconfigure.sql.init.SqlInitializationProperties;
+import org.springframework.boot.sql.init.DatabaseInitializationMode;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
@@ -34,8 +35,24 @@ public class MysqlModelBlobStoreIntegrationTest {
             String url=admin.getUrl();
             int query=url.indexOf('?');
             var ds=new DriverManagerDataSource(url.substring(0,url.lastIndexOf('/',query)+1)+name+url.substring(query)+"&maxAllowedPacket=4194304",admin.getUsername(),admin.getPassword());
-            new ResourceDatabasePopulator(new ClassPathResource("sql/migrations/2026-11-20-shared-model-files.sql")).execute(ds);
             var db=new JdbcTemplate(ds);
+            // A deployed legacy chunk must survive the server's MEDIUMBLOB -> LONGBLOB upgrade.
+            db.execute("""
+                    CREATE TABLE rule_file_chunk (
+                        digest CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY COMMENT '本块实际存储字节的 SHA-256',
+                        content MEDIUMBLOB NOT NULL COMMENT '旧版文件分块内容'
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='旧版文件块'
+                    """);
+            byte[] legacyBytes = {0, 1, (byte) 0xff};
+            String legacyDigest = Sha256Digests.bytes(legacyBytes);
+            db.update("INSERT INTO rule_file_chunk(digest,content) VALUES (?,?)", legacyDigest, legacyBytes);
+            var init = new SqlInitializationProperties();
+            init.setMode(DatabaseInitializationMode.ALWAYS);
+            init.setSchemaLocations(java.util.List.of("classpath:sql/schema.sql"));
+            assertTrue(new SchemaInitializationConfig().dataSourceScriptDatabaseInitializer(ds, init).initializeDatabase());
+            assertEquals("longblob", db.queryForObject("SELECT DATA_TYPE FROM information_schema.columns "
+                    + "WHERE table_schema=DATABASE() AND table_name='rule_file_chunk' AND column_name='content'", String.class));
+            assertArrayEquals(legacyBytes, db.queryForObject("SELECT content FROM rule_file_chunk WHERE digest=?", byte[].class, legacyDigest));
             var manager=new DataSourceTransactionManager(ds);
             var a=new MysqlModelBlobStore(db,manager);
             var b=new MysqlModelBlobStore(new JdbcTemplate(ds),new DataSourceTransactionManager(ds));

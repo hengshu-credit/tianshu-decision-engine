@@ -1,5 +1,5 @@
 -- MySQL 8。停止业务写入并备份，在一个连接中以遇错即停模式运行。
--- 清单只含已确认的单目标关系。先检查整份清单，再执行会隐式提交的 DDL。
+-- 清单只含已确认的单目标关系。逐项检查既有约束及孤立引用，业务表与外键由 server 统一升级。
 SET NAMES utf8mb4;
 DROP TEMPORARY TABLE IF EXISTS ts_er_relations;
 CREATE TEMPORARY TABLE ts_er_relations (
@@ -8,7 +8,6 @@ CREATE TEMPORARY TABLE ts_er_relations (
   parent_table VARCHAR(64) NOT NULL,
   fk_name VARCHAR(64) NOT NULL PRIMARY KEY,
   delete_rule VARCHAR(16) NOT NULL,
-  add_clause TEXT,
   orphan_example BIGINT
 );
 INSERT INTO ts_er_relations (child_table, child_column, parent_table, fk_name, delete_rule) VALUES
@@ -106,14 +105,9 @@ BEGIN
   DECLARE child, col, parent, fk VARCHAR(64);
   DECLARE del_rule VARCHAR(16);
   DECLARE msg VARCHAR(128);
-  DECLARE alter_clause TEXT;
-  DECLARE add_projection BOOLEAN;
   DECLARE edges CURSOR FOR
     SELECT child_table, child_column, parent_table, fk_name, delete_rule
       FROM ts_er_relations ORDER BY child_table, fk_name;
-  DECLARE changes CURSOR FOR
-    SELECT child_table, add_clause FROM ts_er_relations
-     WHERE add_clause IS NOT NULL ORDER BY child_table, fk_name;
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
 
   IF @@SESSION.foreign_key_checks <> 1 OR NOT EXISTS (
@@ -130,20 +124,17 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=child) THEN
       ITERATE preflight;
     END IF;
-    SET add_projection=FALSE;
-    IF col='project_ref_id' THEN
-      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE()
-                 AND table_name=child AND column_name=col) THEN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE()
-                       AND table_name=child AND column_name=col AND column_type='bigint'
-                       AND extra LIKE '%STORED GENERATED%'
-                       AND LOWER(REPLACE(REPLACE(generation_expression,'`',''),' ',''))='nullif(project_id,0)') THEN
-          SET msg=CONCAT('Unexpected generated column: ',child,'.',col);
-          SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT=msg;
-        END IF;
-      ELSE
-        SET add_projection=TRUE;
-      END IF;
+    IF col='project_ref_id' AND EXISTS (
+      SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE()
+       AND table_name=child AND column_name=col
+    ) AND NOT EXISTS (
+      SELECT 1 FROM information_schema.columns WHERE table_schema=DATABASE()
+       AND table_name=child AND column_name=col AND column_type='bigint'
+       AND extra LIKE '%STORED GENERATED%'
+       AND LOWER(REPLACE(REPLACE(generation_expression,'`',''),' ',''))='nullif(project_id,0)'
+    ) THEN
+      SET msg=CONCAT('Unexpected generated column: ',child,'.',col);
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT=msg;
     END IF;
 
     -- 避免将同名异义、复合键或不同删除策略误认成已安装的外键。
@@ -169,10 +160,6 @@ BEGIN
         SET msg=CONCAT('Review existing foreign key on ',child,'.',col);
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT=msg;
       END IF;
-      SET alter_clause=CONCAT(
-        IF(add_projection,'ADD COLUMN `project_ref_id` BIGINT GENERATED ALWAYS AS (NULLIF(`project_id`,0)) STORED COMMENT ''所属项目外键，全局资源为空'' AFTER `project_id`, ',''),
-        'ADD CONSTRAINT `',fk,'` FOREIGN KEY (`',col,'`) REFERENCES `',parent,'` (`id`) ON DELETE ',del_rule);
-      UPDATE ts_er_relations SET add_clause=alter_clause WHERE fk_name=fk;
     END IF;
 
     -- 使用原始项目列预检，兼容尚未添加派生列的旧库。NULL 和全局 0 都有效。
@@ -192,17 +179,6 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Orphan references found; review the reported IDs. No foreign keys were added in this run';
   END IF;
 
-  SET done=FALSE;
-  OPEN changes;
-  apply_changes: LOOP
-    FETCH changes INTO child, alter_clause;
-    IF done THEN LEAVE apply_changes; END IF;
-    SET @er_sql=CONCAT('ALTER TABLE `',child,'` ',alter_clause);
-    PREPARE er_stmt FROM @er_sql;
-    EXECUTE er_stmt;
-    DEALLOCATE PREPARE er_stmt;
-  END LOOP;
-  CLOSE changes;
 END$$
 DELIMITER ;
 CALL ts_migrate_20261111_er_fk();

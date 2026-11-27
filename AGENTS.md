@@ -153,7 +153,7 @@ docker compose --env-file .env.client --env-file .env.server -f docker/docker-co
 - `install-release.sh` 校验、解压指定 ZIP，并调用本包的 `deploy.py` 完成首次安装准备或已有应用的备份、替换、重建和健康检查。部署与构建自动兼容现代 `docker compose` 和 `docker-compose`；优先前者，不支持旧 Python Compose v1。迁移通过显式 `--migration-script` 在停应用后、替换前执行，失败不得启动新版。
 
 - MySQL、Redis、Kafka 共用长期保留的一套环境。普通应用更新只替换 JAR 和前端 `dist/`，保留原 env、Compose、Nginx、项目名、网络、端口及数据卷；不删除整个安装目录或重复部署基础设施。部署定义确需改变时，在发布说明单独列出兼容变更。
-- 已有库的增量迁移独立维护在 `rule-engine-server/src/main/resources/sql/migrations/`，同步维护该目录的 README；打包原样交付到顶层 `migrations/` 并纳入校验。执行点为停止旧应用并完成数据库备份后、新版启动前；只执行尚未完成的适用脚本，失败不得继续启动，不自动遍历全部历史 SQL。
+- 表、列、索引、外键和分区的目标定义统一维护在 `schema.sql`，由 server 启动比对、升级和复核。今后不新增按版本单独执行的建表、加列 SQL。`rule-engine-server/src/main/resources/sql/migrations/` 维护外键预检、历史业务数据回填及兼容工具，连同 README 原样打包至顶层 `migrations/`。按适用范围和结构前置条件选择脚本，停写并备份后执行，失败保持停流。
 
 - 规则发布：已有启用固定用例时须全部通过；无固定用例明确提示并保留原发布流程。回归证据由服务端记录，绑定修订、依赖和用例摘要，配置变化后旧报告不能用于发布。
 - 凭据编辑：空白保留、填写替换、显式勾选清除三种含义必须区分；清除意图需要经过草稿、审批和实际持久化，秘密不得回传或进入浏览器持久缓存。

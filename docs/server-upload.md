@@ -133,7 +133,7 @@ bash install-release.sh "$PKG"
 
 ## 有数据库迁移的应用更新
 
-迁移 SQL 单独位于本次包的 `migrations/`。选择适用且尚未执行的脚本后，在 `bash install-release.sh 发布包.zip` 后追加以下参数。
+独立 SQL 仅供旧库数据回填和外键预检。表结构由 server 启动时统一升级。目标库已经具备所需结构时，升级前的操作可在 `bash install-release.sh 发布包.zip` 后追加以下参数。
 
 ```text
 --migration-script /root/tianshu-decision-engine/本次迁移.sh
@@ -141,7 +141,7 @@ bash install-release.sh "$PKG"
 
 迁移脚本在应用停止后、替换制品前执行，须先完成数据库备份，遇错非零退出；跨机器旧节点须提前停止。Bash 脚本可读取 `TIANSHU_RELEASE_DIR`、`TIANSHU_DEPLOY_DIR`、`TIANSHU_BACKUP_DIR`。共享基础设施在普通更新和 SQL 迁移期间保持运行，不自动遍历历史 SQL。若本包有 `migrations/upgrade.sh` 而没有显式指定迁移脚本，普通更新会在停机前拒绝继续。
 
-目录整理参数 `--adopt-layout` 不能与数据库迁移参数一起使用。适用的历史数据回填脚本和前置条件见包内 `migrations/README.md`。
+目录整理参数 `--adopt-layout` 不能与数据库迁移参数一起使用。若回填依赖新版新增的列、表或视图，先保持停流，让新版 server 完成结构升级并复核，再停止相关写入节点、执行回填，验证后恢复业务。适用脚本见包内 `migrations/README.md`。
 
 ## 验收与回退
 

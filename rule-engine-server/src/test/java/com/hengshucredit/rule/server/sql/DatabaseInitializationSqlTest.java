@@ -29,6 +29,18 @@ public class DatabaseInitializationSqlTest {
                     + "â[\\u0080-\\u024F\\u2000-\\u20FF]|"
                     + "[åæçèéä][\\u0080-\\u024F\\u2000-\\u20FF]|"
                     + "�|锟斤拷|烫烫烫|屯屯屯)");
+
+    @Test
+    public void standaloneMigrationsLeavePermanentTableDdlToTheServer() throws Exception {
+        Pattern ddl = Pattern.compile("(?i)\\b(?:(?:CREATE|ALTER|DROP|RENAME)\\s+TABLE"
+                + "|CREATE\\s+(?:UNIQUE\\s+)?INDEX|DROP\\s+INDEX)\\b");
+        try (var files = Files.newDirectoryStream(sqlDirectory().resolve("migrations"), "*.sql")) {
+            for (Path file : files) {
+                String sql = read(file).replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("(?m)^\\s*--.*$", "");
+                Assert.assertFalse(file + " contains business schema DDL", ddl.matcher(sql).find());
+            }
+        }
+    }
     @Test
     public void schemaContainsOnlyIdempotentConstantInserts() throws Exception {
         String schema = read(sqlDirectory().resolve("schema.sql"));
