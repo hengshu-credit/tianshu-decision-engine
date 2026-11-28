@@ -12,6 +12,8 @@ import com.hengshucredit.rule.server.derived.HistoryFieldIndex;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -23,6 +25,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.zip.GZIPInputStream;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -78,7 +81,7 @@ public class LogSearchDocuments {
         meta.put("cost_ms", log.getExecuteTimeMs());
         meta.put("artifact_digest", log.getArtifactDigest());
         var execution = new LinkedHashMap<>(meta);
-        execution.put("body", seal(ElasticLogClient.EXECUTION, ref, log));
+        execution.put("body", encodeBody(ElasticLogClient.EXECUTION, ref, log));
         var history = new LinkedHashMap<>(meta);
         boolean eligible = current && HistoryFieldIndex.eligible(log);
         history.put("eligible", eligible);
@@ -89,7 +92,7 @@ public class LogSearchDocuments {
                 indexFields(history, data.getJSONObject("fields"));
             // Preserve the original JSON, including explicit nulls, decimal precision and old API
             // IDs.
-            history.put("body", seal(ElasticLogClient.HISTORY, ref, snapshot));
+            history.put("body", encodeBody(ElasticLogClient.HISTORY, ref, snapshot));
         }
         var steps = new LinkedHashMap<>(meta);
         steps.put("eligible", current);
@@ -123,45 +126,37 @@ public class LogSearchDocuments {
         doc.put("provider_request", log.getProviderRequest());
         doc.put("cost_ms", log.getCostTimeMs());
         doc.put("attempt_no", log.getAttemptNo());
-        doc.put("body", seal(ElasticLogClient.CALL, ref, log));
+        doc.put("body", encodeBody(ElasticLogClient.CALL, ref, log));
         return new ElasticLogClient.Document(ElasticLogClient.CALL, ref, doc);
     }
 
-    private String seal(String kind, ElasticLogClient.Ref ref, Object value) {
+    private String encodeBody(String kind, ElasticLogClient.Ref ref, Object value) {
         try {
-            String plain =
-                    json.writeValueAsString(
-                            Map.of("kind", kind, "stamp", ref.stamp(), "value", value));
-            if (plain.length() < 4096) return cipher.encrypt(plain);
-            var buffer = new java.io.ByteArrayOutputStream();
-            try (var gzip = new java.util.zip.GZIPOutputStream(buffer)) {
-                gzip.write(plain.getBytes(StandardCharsets.UTF_8));
-            }
-            String compressed = "gz:" + Base64.getEncoder().encodeToString(buffer.toByteArray());
-            return cipher.encrypt(compressed.length() < plain.length() ? compressed : plain);
-        } catch (java.io.IOException e) {
+            return json.writeValueAsString(
+                    Map.of("kind", kind, "stamp", ref.stamp(), "value", value));
+        } catch (IOException e) {
             throw new IllegalArgumentException("日志快照序列化失败", e);
         }
     }
 
-    public <T> T open(String kind, ElasticLogClient.Ref ref, String encrypted, Class<T> type) {
-        if (encrypted == null) return null;
+    public <T> T open(String kind, ElasticLogClient.Ref ref, String body, Class<T> type) {
+        if (body == null) return null;
         try {
-            String plain = cipher.decrypt(encrypted);
-            if (plain.startsWith("gz:")) {
-                try (var gzip =
-                        new java.util.zip.GZIPInputStream(
-                                new java.io.ByteArrayInputStream(
-                                        Base64.getDecoder().decode(plain.substring(3))))) {
-                    plain = new String(gzip.readAllBytes(), StandardCharsets.UTF_8);
-                }
-            }
-            var envelope = json.readTree(plain);
+            var envelope = json.readTree(body.startsWith("v1:") ? decodeLegacyBody(body) : body);
             if (!kind.equals(envelope.path("kind").asText())
                     || !ref.stamp().equals(envelope.path("stamp").asText())) return null;
             return json.treeToValue(envelope.get("value"), type);
-        } catch (java.io.IOException | RuntimeException damaged) {
+        } catch (IOException | RuntimeException damaged) {
             return null;
+        }
+    }
+
+    private String decodeLegacyBody(String body) throws IOException {
+        String plain = cipher.decrypt(body);
+        if (!plain.startsWith("gz:")) return plain;
+        byte[] compressed = Base64.getDecoder().decode(plain.substring(3));
+        try (var gzip = new GZIPInputStream(new ByteArrayInputStream(compressed))) {
+            return new String(gzip.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 

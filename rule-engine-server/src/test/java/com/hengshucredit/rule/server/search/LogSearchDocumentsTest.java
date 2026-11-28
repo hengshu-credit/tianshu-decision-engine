@@ -10,21 +10,30 @@ import com.hengshucredit.rule.server.auth.ProjectAuthProperties;
 
 import org.junit.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.GZIPOutputStream;
 
 public class LogSearchDocumentsTest {
     public static LogSearchDocuments codec() {
-        var keys = new ProjectAuthProperties();
-        keys.setActiveKeyId("test");
-        keys.setMasterKeys(Map.of("test", "local synthetic test key material"));
+        var keys = testKeys();
         return new LogSearchDocuments(
                 new CredentialCipher(keys), keys, new ObjectMapper().findAndRegisterModules());
     }
 
+    private static ProjectAuthProperties testKeys() {
+        var keys = new ProjectAuthProperties();
+        keys.setActiveKeyId("test");
+        keys.setMasterKeys(Map.of("test", "local synthetic test key material"));
+        return keys;
+    }
+
     @Test
-    public void controlledFieldsSurviveRotationBoundariesWithoutPublishingPlainIdentifiers() {
+    public void executionAndHistoryBodiesAreReadableAndMatchTokensRemainTyped() throws Exception {
         var codec = codec();
         var ref = new ElasticLogClient.Ref(12, LocalDateTime.parse("2026-11-26T09:00:00"), 3);
         var log = new RuleExecutionLog();
@@ -45,9 +54,13 @@ public class LogSearchDocumentsTest {
                         ElasticLogClient.HISTORY,
                         ElasticLogClient.STEPS),
                 docs.stream().map(ElasticLogClient.Document::kind).toList());
-        assertFalse(docs.toString().contains("secret-device"));
-        assertFalse(docs.toString().contains("trace-detail"));
+        var json = new ObjectMapper();
+        var execution = json.readTree((String) docs.get(0).source().get("body"));
+        assertEquals(log.getTraceInfo(), execution.path("value").path("traceInfo").textValue());
         var feature = docs.get(1).source();
+        assertEquals(
+                snapshot, json.readTree((String) feature.get("body")).path("value").textValue());
+        assertFalse(feature.get("match_keys").toString().contains("secret-device"));
         assertEquals("2026-11-26T09:00:00", feature.get("started_at"));
         assertEquals(
                 snapshot,
@@ -85,7 +98,7 @@ public class LogSearchDocumentsTest {
     }
 
     @Test
-    public void runtimeRawBodyIsProtectedAndRoundTripsOnlyWithItsOwnIdentity() {
+    public void runtimeBodyExposesRetainedPayloadAsJson() throws Exception {
         var codec = codec();
         var ref = new ElasticLogClient.Ref(1, LocalDateTime.now(), 1);
         var call = new RuleRuntimeCallLog();
@@ -94,7 +107,9 @@ public class LogSearchDocumentsTest {
         call.setModuleType("DATASOURCE");
         call.setActionType("API_INVOKE");
         var doc = codec.call(ref, call);
-        assertFalse(doc.source().toString().contains("sensitive-request"));
+        var value = new ObjectMapper().readTree((String) doc.source().get("body")).path("value");
+        assertEquals("sensitive-request", value.path("rawRequestBody").textValue());
+        assertEquals("different-original", value.path("originalRequestBody").textValue());
         var restored =
                 codec.open(
                         ElasticLogClient.CALL,
@@ -103,5 +118,28 @@ public class LogSearchDocumentsTest {
                         RuleRuntimeCallLog.class);
         assertEquals("sensitive-request", restored.getRawRequestBody());
         assertEquals("different-original", restored.getOriginalRequestBody());
+    }
+
+    @Test
+    public void readsLegacyEncryptedAndCompressedBodiesForTheExpectedRevision() throws Exception {
+        var codec = codec();
+        var cipher = new CredentialCipher(testKeys());
+        var ref = new ElasticLogClient.Ref(12, LocalDateTime.parse("2026-11-26T09:00:00"), 3);
+        String envelope = new ObjectMapper().writeValueAsString(
+                Map.of("kind", ElasticLogClient.EXECUTION, "stamp", ref.stamp(),
+                        "value", Map.of("traceInfo", "旧追踪")));
+        var bytes = new ByteArrayOutputStream();
+        try (var gzip = new GZIPOutputStream(bytes)) {
+            gzip.write(envelope.getBytes(StandardCharsets.UTF_8));
+        }
+        String compressed = "gz:" + Base64.getEncoder().encodeToString(bytes.toByteArray());
+        for (String legacy : List.of(envelope, compressed)) {
+            String encrypted = cipher.encrypt(legacy);
+            var restored = codec.open(ElasticLogClient.EXECUTION, ref, encrypted, RuleExecutionLog.class);
+            assertEquals("旧追踪", restored.getTraceInfo());
+            var otherRevision = new ElasticLogClient.Ref(ref.id(), ref.time(), 4);
+            assertNull(codec.open(
+                    ElasticLogClient.EXECUTION, otherRevision, encrypted, RuleExecutionLog.class));
+        }
     }
 }

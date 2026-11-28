@@ -86,6 +86,9 @@ public class LogSearchDeliveryIntegrationTest {
                 call.setRawResponseBody(null);
                 assertNull(call.getOriginalResponseBody());
                 var ref = new ElasticLogClient.Ref(log.getId(), log.getCreateTime(), 1);
+                String body = search.bodies(ElasticLogClient.EXECUTION, List.of(ref)).get(ref);
+                assertEquals(
+                        full, new ObjectMapper().readTree(body).path("value").path("traceInfo").textValue());
                 assertEquals(
                         log.getHistoryFields(),
                         codec.open(
