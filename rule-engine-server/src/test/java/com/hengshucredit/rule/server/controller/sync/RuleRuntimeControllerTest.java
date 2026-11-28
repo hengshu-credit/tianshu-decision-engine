@@ -22,6 +22,30 @@ import java.lang.reflect.Proxy;
 public class RuleRuntimeControllerTest {
 
     @Test
+    public void institutionOrderIsVisibleOnlyToItsCredentialAndRenewedToken() {
+        var owner = ProjectAuthContext.institution(20L, 7L, "I7", "HMAC_SHA256", null, true);
+        var dispatch = com.hengshucredit.rule.server.service.ExecutionDispatch.of(owner, "app", false, null);
+        String saved = com.hengshucredit.rule.server.artifact.CanonicalJson.write(dispatch);
+        var state = new RuleExecutionStateService.State(1L, 0L, 9L, "R", "key", "digest", "trace", "SUCCEEDED", 1,
+                3L, 3L, "artifact", null, "{\"success\":true}", null, null, null, null, saved);
+        RuleRuntimeController controller = new RuleRuntimeController();
+        ReflectionTestUtils.setField(controller, "stateService", new RuleExecutionStateService() {
+            @Override public State findByRootTraceId(String traceId) { return state; }
+        });
+        var request = new MockHttpServletRequest();
+        owner.withToken(32L, "new", "VALID").attach(request);
+        Assert.assertEquals("000000", controller.getExecutionResult("trace", request).getCode());
+        for (var other : java.util.List.of(ProjectAuthContext.institution(20L, 8L, "I8", "API_KEY", null, true),
+                ProjectAuthContext.institution(21L, 9L, "I9", "API_KEY", null, true),
+                ProjectAuthContext.direct(55L, "P55", 10L, "P", "API_KEY"))) {
+            other.attach(request);
+            Assert.assertEquals("501001", controller.getExecutionStatus("trace", request).getCode());
+            Assert.assertEquals("501001", controller.getExecutionResult("trace", request).getCode());
+            Assert.assertEquals("501001", controller.resumeExecution("trace", Map.of(), request).getCode());
+        }
+    }
+
+    @Test
     public void externalCallPayloadIsProjectScoped() {
         RecordingRuntimeCallLogService logs = new RecordingRuntimeCallLogService();
         RuleRuntimeController controller = new RuleRuntimeController();

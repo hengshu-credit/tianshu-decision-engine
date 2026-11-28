@@ -17,6 +17,7 @@ public class RuleAuthAccessLog implements AccountOwnedRecord {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long projectId;
+    private Long institutionId;
     private String projectCode;
     private Long authId;
     private String authCode;

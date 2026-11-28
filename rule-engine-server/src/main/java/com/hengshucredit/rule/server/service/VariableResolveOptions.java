@@ -1,6 +1,9 @@
 package com.hengshucredit.rule.server.service;
 
 import lombok.Data;
+import com.hengshucredit.rule.core.engine.RequestContext;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 
 import java.time.LocalDateTime;
 import java.util.Set;
@@ -58,6 +61,22 @@ public class VariableResolveOptions {
     private java.util.List<Map<String, Object>> databasePreviewRows;
     private com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot;
     private Long executionProjectId;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private ProjectAuthContext projectAuthContext;
+
+    private record VerifiedIdentity(ProjectAuthContext auth) implements RequestContext.CallIdentity {}
+
+    void installCallIdentity(RequestContext context) {
+        context.setCallIdentity(projectAuthContext == null ? null : new VerifiedIdentity(projectAuthContext));
+    }
+
+    static ProjectAuthContext projectAuthContext(RequestContext context) {
+        return context.callIdentity() instanceof VerifiedIdentity identity ? identity.auth() : null;
+    }
+
+    public static ProjectAuthContext currentProjectAuthContext() {
+        return projectAuthContext(RuntimeContextBridge.currentContext());
+    }
     /** Freeze business-version heads for one execution, including nested resource resolutions. */
     private Map<String, com.hengshucredit.rule.model.entity.GovernedResourceVersion> businessVersionHeads = new java.util.concurrent.ConcurrentHashMap<>();
 

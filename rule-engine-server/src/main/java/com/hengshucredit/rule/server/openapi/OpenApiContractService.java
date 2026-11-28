@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.openapi;
 
 import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
@@ -51,12 +52,14 @@ public class OpenApiContractService {
         authQuery.eq(RuleProjectAuth::getId, authenticatedAuthId);
         RuleProjectAuth auth = authMapper.selectOne(authQuery);
         if (auth == null) throw new OpenApiException(OpenApiStatuses.productUnauthorized());
-        RuleProject project = projectService.getById(auth.getProjectId());
-        if (project == null || !Integer.valueOf(1).equals(project.getStatus())) {
+        boolean institution = auth.getInstitutionId() != null;
+        RuleProject project = institution ? null : projectService.getById(auth.getProjectId());
+        if (!institution && (project == null || !Integer.valueOf(1).equals(project.getStatus()))) {
             throw new OpenApiException(OpenApiStatuses.accountDisabled());
         }
-        PublishedOpenApiContract projection = publishedMapper.selectOpenApiContract(
-                project.getId(), project.getProjectCode(), ruleCode);
+        PublishedOpenApiContract projection = institution ? publishedMapper.selectGlobalOpenApiContract(ruleCode)
+                : publishedMapper.selectOpenApiContract(
+                project.getId(), ruleCode);
         if (projection == null || !hasText(projection.getOpenApiConfigJson())) {
             throw new OpenApiException(OpenApiStatuses.requestProductUnauthorized());
         }
@@ -140,6 +143,13 @@ public class OpenApiContractService {
 
         public RuleProjectAuth getAuth() { return auth; }
         public RuleProject getProject() { return project; }
+        public Long executionProjectId() { return project == null ? Long.valueOf(0) : project.getId(); }
+        public String newTraceId() {
+            if (project == null) return TraceIdGenerator.generate("AP", "G", TraceIdGenerator.GLOBAL_SCOPE_CODE);
+            String code = project.getTraceScopeCode();
+            return TraceIdGenerator.generate("AP", "P", code == null || code.isBlank()
+                    ? TraceIdGenerator.projectScopeCode(project.getId()) : code);
+        }
         public RulePublished getPublished() { return published; }
         public OpenApiContract getContract() { return contract; }
         public List<RuleDefinitionInputField> getInputFields() { return inputFields; }

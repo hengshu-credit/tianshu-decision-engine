@@ -40,7 +40,7 @@ public class EngineSftpProtection {
     private final TransactionTemplate transaction;
     private final LongSupplier clock;
     private final AtomicLong nextCleanup = new AtomicLong();
-    private final Cache<Long,Window> transfers = Caffeine.newBuilder().expireAfterAccess(Duration.ofSeconds(3)).build();
+    private final Cache<String,Window> transfers = Caffeine.newBuilder().expireAfterAccess(Duration.ofSeconds(3)).build();
     private final Cache<Integer,Policy> filePolicy = Caffeine.newBuilder().expireAfterWrite(Duration.ofSeconds(1)).build();
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -189,6 +189,8 @@ public class EngineSftpProtection {
     private boolean known(String subject) {
         if (subject == null) return false;
         if ("SERVICE".equals(subject)) return true;
+        // AUTH 的真实主键已经过唯一登录名查询，未知请求不会生成任意账户封禁行。
+        if (subject.startsWith("AUTH:")) return true;
         return Boolean.TRUE.equals(db.queryForObject("SELECT EXISTS(SELECT 1 FROM engine_sftp_account WHERE account_id=?)",
                 Boolean.class, Long.parseLong(subject.substring("USER:".length()))));
     }
@@ -199,10 +201,10 @@ public class EngineSftpProtection {
                 + "WHERE subject_key=? AND blocked_until_ms=0",subject);
     }
 
-    boolean allowFileRequest(long user) {
+    boolean allowFileRequest(String subject) {
         int limit = filePolicy.get(1, k -> policy()).fileRequestsPerSecond();
         long second = clock.getAsLong() / 1000;
-        Window window = transfers.asMap().compute(user, (k,old) -> old == null || old.second()!=second
+        Window window = transfers.asMap().compute(subject, (k,old) -> old == null || old.second()!=second
                 ? new Window(second,1) : new Window(second,Math.min(100001,old.count()+1)));
         return window.count() <= limit;
     }

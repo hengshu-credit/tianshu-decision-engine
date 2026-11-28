@@ -51,6 +51,8 @@ docker compose --env-file .env.server -f docker/docker-compose.sftp.yml -f docke
 
 ## 开通外部账号并验收
 
+合作机构使用 Basic、API Key 或 HMAC 凭据时，在规则管理或分流管理的「机构鉴权」中开通 SFTP，可直接使用标准客户端进行一次 SSH 密码登录。[机构凭据与登录名](institution-sftp.md)
+
 在 **SFTP 管理 → 引擎 SFTP 服务配置 → 上传账户** 中，选择获授权的控制台账户，登记对方的单行 OpenSSH 公钥，并选择只读或读写。上传方保管私钥。个人目录示例登录名为 `u42`，已获项目 17 权限的账户可用 `u42-p17` 进入自己的项目交件目录。实际登录名以控制台和项目授权为准。`engine-storage` 和 `ENGINE_SFTP_PASSWORD` 是引擎服务凭据，只保存在部署侧。
 
 从可信存储主机查看并向对方提供主机指纹。首次连接时，请核对客户端显示的 SHA-256 指纹。

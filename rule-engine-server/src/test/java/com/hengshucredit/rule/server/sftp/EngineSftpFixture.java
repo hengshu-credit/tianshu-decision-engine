@@ -20,11 +20,16 @@ public final class EngineSftpFixture implements AutoCloseable {
     final String pin;
     public final DefaultSftpClient nodeA, nodeB;
 
+    public EngineSftpFiles files(com.hengshucredit.rule.server.security.ConsoleProjectAccess access) {
+        return new EngineSftpFiles(nodeB, access, accounts);
+    }
+
+    public JdbcTemplate database() { return db; }
+
     public EngineSftpFixture(Path root) throws Exception {
-        TestSchemaTables.create(db, List.of("engine_sftp_account","engine_sftp_policy","engine_sftp_auth_state"));
+        TestSchemaTables.create(db, List.of("engine_sftp_account","engine_sftp_policy","engine_sftp_auth_state","rule_project_auth"));
         db.update("INSERT INTO console_user(id,username,display_name,password_hash,project_access_mode) VALUES(7,'sender','上传方','unused','SELECTED')");
-        db.execute("CREATE TABLE rule_project(id BIGINT PRIMARY KEY)");
-        db.update("INSERT INTO rule_project VALUES(12),(13)");
+        db.update("INSERT INTO rule_project(id,project_code,project_name) VALUES(12,'p12','十二'),(13,'p13','十三')");
         db.execute("CREATE TABLE console_user_project(user_id BIGINT,project_id BIGINT)");
         db.update("INSERT INTO console_user_project VALUES(7,12)");
         server = new EngineSftpServer(root, accounts, protection, "127.0.0.1", 0, "system", password);

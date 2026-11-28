@@ -84,17 +84,17 @@ public class OpenRuleController {
             Map<String, Object> params = requestMapper.map(resolved.getContract(), body,
                     firstHeaders(headers), resolved.getInputReferences());
             fieldValidationService.validateInputFields(resolved.getInputFields(), params);
+            var dispatch = ExecutionDispatch.open(authContext, resolved.getContract().isRecordTrace()
+                    || resolved.getContract().isReturnTrace(), resolved.getContract().isRecordTrace());
             RuleIdempotencyService.Decision idempotency = idempotencyService == null ? null
-                    : executionQueue == null ? idempotencyService.begin(resolved.getPublished(), resolved.getProject().getId(), params)
-                    : idempotencyService.enqueue(resolved.getPublished(), resolved.getProject().getId(), params,
-                        ExecutionDispatch.open(authContext,
-                            resolved.getContract().isRecordTrace() || resolved.getContract().isReturnTrace(), resolved.getContract().isRecordTrace()));
+                    : idempotencyService.submit(resolved.getPublished(), resolved.executionProjectId(), params,
+                            dispatch, executionQueue != null);
             if (idempotency != null && hasText(idempotency.getRootTraceId())) traceId = idempotency.getRootTraceId();
             activeIdempotency = idempotency != null && idempotency.isClaimed() ? idempotency : null;
             if (idempotency == null) {
                 OpenApiContractService.ResolvedContract executionContract = resolved;
                 RuleResult result = executionExecutor.execute(() -> executeService.executePublished(
-                        executionContract.getPublished(), params, executionContract.getProject().getId(),
+                        executionContract.getPublished(), params, executionContract.executionProjectId(),
                         "OPEN_API", authContext,
                         executionContract.getContract().isRecordTrace()
                                 || executionContract.getContract().isReturnTrace(),
@@ -132,7 +132,7 @@ public class OpenRuleController {
             var decision = idempotency;
             java.util.function.Supplier<RuleResult> run = () -> idempotencyService.withDecision(decision,
                     () -> executeService.executePublished(
-                            executionContract.getPublished(), params, executionContract.getProject().getId(),
+                            executionContract.getPublished(), params, executionContract.executionProjectId(),
                             "OPEN_API", authContext,
                             executionContract.getContract().isRecordTrace()
                                     || executionContract.getContract().isReturnTrace(),
@@ -320,9 +320,7 @@ public class OpenRuleController {
     }
 
     private String traceId(OpenApiContractService.ResolvedContract resolved) {
-        String scopeCode = resolved.getProject().getTraceScopeCode();
-        if (!hasText(scopeCode)) scopeCode = TraceIdGenerator.projectScopeCode(resolved.getProject().getId());
-        return TraceIdGenerator.generate("AP", "P", scopeCode);
+        return resolved.newTraceId();
     }
 
     private String fallbackTraceId(OpenApiContractService.ResolvedContract resolved) {

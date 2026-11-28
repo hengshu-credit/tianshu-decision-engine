@@ -54,6 +54,8 @@ public class IndexedHistoryCount {
         if (windows.isEmpty()) throw new IllegalArgumentException("缺少历史统计窗口");
         if (permissions != null) permissions.requireHistoryScope(selection.scope().type(), selection.scope().projectId());
         var scope = selection.scope();
+        // 预汇总表没有机构凭据维度；调用方回到按原始执行凭据过滤的明细查询。
+        if (scope.credentialId() != null) return Map.of();
         if (scope.excludedTrace() != null) {
             // 重放同一根请求时，汇总桶无法扣除该进件，转到逐条去除 trace_id 的路径。
             if (!jdbc.queryForList("SELECT 1 FROM rule_execution_log WHERE trace_id=? AND started_at<? AND success=1 LIMIT 1",

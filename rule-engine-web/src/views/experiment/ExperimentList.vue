@@ -50,6 +50,7 @@
         <div class="btn-right">
           <table-column-settings v-model="tableColumnOrders.experimentColumns" :columns="experimentColumns" storage-key="tianshu:table-columns:experiment-list" />
           <governance-workspace-toolbar resource-type="EXPERIMENT" />
+          <institution-auth-action />
           <el-button
             v-permission="'experiment:edit'"
             size="small"
@@ -81,7 +82,9 @@
         label="项目编码"
         min-width="120"
         show-overflow-tooltip
-      />
+      >
+        <template #default="{ row }">{{ row.projectCode || (row.projectId > 0 ? '项目 #' + row.projectId : '全局') }}</template>
+      </el-table-column>
       <el-table-column v-if="columnKey === 'champion'" label="冠军挑战" width="110" align="center">
         <template v-slot="{ row }">{{
           routeModeLabel(row.routingMode)
@@ -463,6 +466,7 @@ import ResourceVersionSelect from '@/components/common/ResourceVersionSelect.vue
 import { formatExperimentJson } from '@/utils/experimentResponse'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import InstitutionAuthAction from '@/components/InstitutionAuthAction.vue'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
 import { completeResourceChange } from '@/utils/governanceWorkspace'
 import { markRaw } from 'vue'
@@ -545,7 +549,7 @@ export default {
     }
   },
   name: 'ExperimentList',
-  components: { GuidanceGroup, ResourceVersionSelect, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { GuidanceGroup, ResourceVersionSelect, GovernancePublishAction, GovernanceWorkspaceToolbar, InstitutionAuthAction,
     GovernanceResourceStatus,
     TableColumnSettings,
     MonacoEditor,

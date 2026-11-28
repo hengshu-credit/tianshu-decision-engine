@@ -53,6 +53,47 @@ public class RuleExperimentServiceTest {
     }
 
     @Test
+    public void institutionMayRunZeroOrNullOwnerExperimentsButCannotRunProjectExperiments() {
+        var institution = com.hengshucredit.rule.server.auth.ProjectAuthContext.institution(3L, 7L, "AUTH", "API_KEY", null, false);
+        var project = com.hengshucredit.rule.server.auth.ProjectAuthContext.direct(42L, "P", 8L, "P_AUTH", "API_KEY");
+        var experiment = new RuleExperiment();
+        assertTrue(RuleExperimentService.availableToCaller(experiment, institution));
+        experiment.setProjectId(0L);
+        assertTrue(RuleExperimentService.availableToCaller(experiment, institution));
+        org.junit.Assert.assertFalse(RuleExperimentService.availableToCaller(experiment, project));
+        experiment.setProjectId(42L);
+        org.junit.Assert.assertFalse(RuleExperimentService.availableToCaller(experiment, institution));
+        assertTrue(RuleExperimentService.availableToCaller(experiment, project));
+    }
+
+    @Test
+    public void globalExperimentRejectsPrivateGroupAndConditionEvenWhenTheGroupUsesLatest() throws Exception {
+        var experiment = experiment("RATIO", "RATIO");
+        var champion = group("main", "CHAMPION", 100, 0, null, null);
+        champion.setRuleId(12L);
+        champion.setVersionMode("LATEST");
+        experiment.setGroups(List.of(champion));
+        var available = new java.util.ArrayList<com.hengshucredit.rule.model.entity.RulePublished>();
+        var type = com.hengshucredit.rule.server.mapper.RulePublishedMapper.class;
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(new org.apache.ibatis.builder.MapperBuilderAssistant(
+                new com.baomidou.mybatisplus.core.MybatisConfiguration(), "global-experiment"), com.hengshucredit.rule.model.entity.RulePublished.class);
+        setField(service, "publishedMapper", java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type},
+                (proxy, method, args) -> {
+                    var query = (com.baomidou.mybatisplus.core.conditions.Wrapper<?>) args[0];
+                    assertTrue(query.getSqlSegment().contains(com.hengshucredit.rule.server.mapper.RulePublishedMapper.GLOBAL_DEFINITION));
+                    return available;
+                }));
+        org.junit.Assert.assertThrows(IllegalArgumentException.class, () -> service.validateExperiment(experiment));
+        var global = new com.hengshucredit.rule.model.entity.RulePublished();
+        global.setDefinitionId(12L);
+        global.setRuleCode("PUBLIC");
+        available.add(global);
+        service.validateExperiment(experiment);
+        experiment.setConditionRuleCode("PRIVATE");
+        org.junit.Assert.assertThrows(IllegalArgumentException.class, () -> service.validateExperiment(experiment));
+    }
+
+    @Test
     public void failedConditionEvaluationIsReportedToTheSelectedRoutingPolicy() throws Exception {
         var experiment = experiment("CONDITION", "CONDITION");
         var broken = group("challenger", "CHALLENGER", 0, 0, "1 / (income - income) > 1", null);

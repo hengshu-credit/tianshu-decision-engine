@@ -411,6 +411,9 @@ public class RuleRuntimeInvoker {
             targetRuleCode = definition != null && hasText(definition.getRuleCode())
                     ? definition.getRuleCode() : published.getRuleCode();
         }
+        var caller = VariableResolveOptions.currentProjectAuthContext();
+        if (caller != null && caller.isInstitutionAccess() && !RuleExecuteService.globalDefinition(definition))
+            throw new IllegalArgumentException("调用规则不可用");
         String publishedProjectCode = published == null ? null : published.getProjectCode();
         Long previousProjectId = session.getCurrentProjectId();
         String previousProjectCode = session.getCurrentProjectCode();
@@ -583,18 +586,11 @@ public class RuleRuntimeInvoker {
 
     private void applyProjectScope(LambdaQueryWrapper<RulePublished> wrapper,
                                    Long projectId, String projectCode) {
-        if (hasText(projectCode) || (projectId != null && projectId > 0)) {
-            wrapper.and(w -> {
-                boolean hasProjectCode = hasText(projectCode);
-                if (hasProjectCode) {
-                    w.eq(RulePublished::getProjectCode, projectCode);
-                    if (projectId != null && projectId > 0) {
-                        w.or().exists(buildLinkedGlobalRuleExistsSql(projectId));
-                    }
-                } else {
-                    w.exists(buildLinkedGlobalRuleExistsSql(projectId));
-                }
-            });
+        var caller = VariableResolveOptions.currentProjectAuthContext();
+        if (caller != null && caller.isInstitutionAccess()) {
+            wrapper.inSql(RulePublished::getDefinitionId, RulePublishedMapper.GLOBAL_DEFINITION);
+        } else if (hasText(projectCode) || projectId != null && projectId > 0) {
+            RulePublishedMapper.restrictToProject(wrapper, projectId);
         }
     }
 
@@ -768,12 +764,6 @@ public class RuleRuntimeInvoker {
                 current = (Map<String, Object>) child;
             }
         }
-    }
-
-    private static String buildLinkedGlobalRuleExistsSql(Long projectId) {
-        return "SELECT 1 FROM rule_definition_ref rdr " +
-                "WHERE rdr.definition_id = rule_published.definition_id " +
-                "AND rdr.project_id = " + projectId;
     }
 
     private static String buildCyclePath(Deque<String> stack, String next) {

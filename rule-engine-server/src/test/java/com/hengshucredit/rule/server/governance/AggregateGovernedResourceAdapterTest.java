@@ -9,6 +9,8 @@ import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExperimentGroup;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
+import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.model.entity.RuleVariableOption;
 import com.hengshucredit.rule.model.entity.RuleRevision;
@@ -469,7 +471,16 @@ public class AggregateGovernedResourceAdapterTest {
                 new ExperimentGovernedResourceAdapter(
                         store(experiment, RuleExperiment::setId),
                         groupMapper, codec());
-        org.springframework.test.util.ReflectionTestUtils.setField(adapter, "experimentService", new com.hengshucredit.rule.server.service.RuleExperimentService());
+        var service = new com.hengshucredit.rule.server.service.RuleExperimentService();
+        var published = new RulePublished();
+        published.setDefinitionId(77L);
+        published.setStatus(1);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(new org.apache.ibatis.session.Configuration(), ""),
+                RulePublished.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "publishedMapper",
+                mapper(RulePublishedMapper.class, Map.of("selectList", List.of(published)), new ArrayList<>()));
+        org.springframework.test.util.ReflectionTestUtils.setField(adapter, "experimentService", service);
 
         ResourceSnapshot snapshot = adapter.loadEffective(6L);
 

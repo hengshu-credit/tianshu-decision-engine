@@ -8,6 +8,8 @@
 
 新增敏感字段必须同步添加字段 TypeHandler、启动迁移及测试。直接 JDBC/SQL 和 UpdateWrapper 的字段赋值不自动经过实体 TypeHandler；不得用这些路径写入明文凭据。业务版本影响分析中的直接 SQL 已显式解密鉴权配置，保留原有 ID 依赖检查。
 
+机构凭据沿用项目凭据的标识和密钥加密。显式开通 SFTP 后，数据库保存 SSH 登录名摘要与加盐密码校验值。Basic 账号、HMAC Access Key 的完整值仍从原凭据密文读取；API Key 使用单独分配的 SSH 登录别名。独立存储进程可以验证登录，无需应用主密钥。[机构鉴权与授权范围](institution-auth.md)
+
 QL 规则、SCRIPT 函数和外数请求/响应脚本共用受限成员白名单；文件、进程、反射、类加载器、系统属性和环境变量不在允许范围。安全策略依据 [QLExpress 官方安全策略说明](https://github.com/alibaba/QLExpress/blob/main/README-source.adoc)。
 
 Java/Spring Bean 函数属于宿主原生代码，QLExpress 的成员白名单不能约束其方法内部实现。现在除了精确匹配的平台内置方法，只有部署代码中带 `@ScriptCallable` 的公开方法可以绑定。管理端的方法目录、运行时绑定，以及 SDK 的远程/冻结函数加载均检查此授权；先检查方法，再创建 Java 实例或获取 Bean。账户的 `function:native` 权限不能替代此部署授权。

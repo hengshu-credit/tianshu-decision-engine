@@ -41,6 +41,8 @@ public final class ConsolePermissionCodes {
         definitions.add(new PermissionDefinition("function:native", "配置原生函数（需全局管理员）", "函数管理", "ACTION", null, 503));
         addGovernedResource(definitions, "rule", "规则管理", "/rule", 600);
         addGovernedResource(definitions, "experiment", "分流管理", "/experiment", 700);
+        definitions.add(new PermissionDefinition("institution-auth:view", "查看全局机构鉴权配置", "机构鉴权", "ACTION", null, 710));
+        definitions.add(new PermissionDefinition("institution-auth:manage", "管理全局机构鉴权及凭据", "机构鉴权", "ACTION", null, 711));
         addGovernedResource(definitions, "project", "项目管理", "/project", 800);
         addGovernedResource(definitions, "list", "名单管理", "/list", 820);
         definitions.add(new PermissionDefinition(

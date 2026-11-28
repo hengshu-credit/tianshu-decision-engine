@@ -15,7 +15,7 @@
       </div>
       <div class="detail-actions uiue-detail-header__actions">
         <el-button
-          v-permission="'experiment:edit'"
+          v-permission="form.scope === 'GLOBAL' || form.projectId ? { code: 'experiment:edit', projectId: form.projectId, scope: form.scope } : 'experiment:edit'"
           size="small"
           type="primary"
           :loading="saving"
@@ -36,17 +36,26 @@
       class="base-form"
     >
       <el-row :gutter="12">
-        <el-col :span="5">
+        <el-col :span="4">
+          <el-form-item label="作用范围">
+            <el-select v-model="form.scope" :disabled="!!contextProjectId || !!form.id" aria-label="实验作用范围" @change="onScopeChange">
+              <el-option label="项目级" value="PROJECT" />
+              <el-option v-if="form.scope === 'GLOBAL' || canCreateGlobal" label="全局" value="GLOBAL" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col v-if="form.scope === 'PROJECT'" :span="4">
           <el-form-item label="项目" prop="projectId">
             <project-resource-select
-              v-model:value="form.projectId"
+              v-model="form.projectId"
+              :disabled="!!contextProjectId"
               style="width: 100%"
               @change="onProjectChange"
               @select="onProjectSelected"
             />
           </el-form-item>
         </el-col>
-        <el-col :span="5">
+        <el-col :span="4">
           <el-form-item label="实验编码" prop="experimentCode">
             <el-input
               v-model="form.experimentCode"
@@ -54,7 +63,7 @@
             />
           </el-form-item>
         </el-col>
-        <el-col :span="5">
+        <el-col :span="4">
           <el-form-item label="实验名称" prop="experimentName">
             <el-input
               v-model="form.experimentName"
@@ -62,7 +71,7 @@
             />
           </el-form-item>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="5">
           <el-form-item label="请求键">
             <operand-picker
               :value="form.requestKeyOperand"
@@ -859,6 +868,7 @@ export default {
       activeTab: 'champion',
       saving: false,
       contentLoaded: true,
+      contextProjectId: null,
       rulesForProject: [],
       ruleFieldMap: {},
       ruleVersionFields: {},
@@ -914,6 +924,7 @@ export default {
   },
   mixins: [pageTabState('activeTab', ['champion', 'test', 'inputFields', 'outputFields', 'logs']), configurationDraftMixin(vm => ({ form: vm.form, inputValidationConfigMap: vm.inputValidationConfigMap })), varPickerMixin, workspaceTabTitleMixin(vm => vm.form.experimentName)],
   computed: {
+    canCreateGlobal() { return hasPermission('experiment:edit', { scope: 'GLOBAL' }) },
     editorFunctions() {
       return this.$data.projectFunctions || []
     },
@@ -1037,22 +1048,28 @@ export default {
   },
   async created() {
     if (this.isCreateMode) {
-      this.form = this.emptyForm()
-      const projectId = routeProjectId(
-        this.$route,
-        this.$store && this.$store.state.currentProject
-      )
-      if (projectId) await this.applyProjectContext(projectId)
-      this.markConfigurationSaved()
+      await this.initializeNewExperiment()
       return
     }
     await this.loadDetail()
     await this.loadLogs()
   },
+  activated() {
+    if (this.isCreateMode && this.form.id) this.initializeNewExperiment()
+  },
   methods: {
     ...historicalVersionMethods,
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     versionDisplayLabel,
+    async initializeNewExperiment() {
+      this.form = this.emptyForm()
+      this.ruleVersionFields = {}
+      this.inputValidationConfigMap = {}
+      this.activeTab = 'champion'
+      this.contextProjectId = routeProjectId(this.$route, this.$store && this.$store.state.currentProject)
+      await this.applyProjectContext(this.contextProjectId)
+      this.markConfigurationSaved()
+    },
     async applyProjectContext(projectId) {
       const id = normalizeProjectId(projectId)
       const project = (this.projects || []).find(item => normalizeProjectId(item.id) === id)
@@ -1064,6 +1081,7 @@ export default {
     emptyForm() {
       return {
         id: null,
+        scope: 'PROJECT',
         projectId: null,
         projectCode: '',
         experimentCode: '',
@@ -1148,6 +1166,7 @@ export default {
       this.form = {
         ...this.emptyForm(),
         ...JSON.parse(JSON.stringify(data)),
+        scope: normalizeProjectId(data.projectId) ? 'PROJECT' : 'GLOBAL',
         routingErrorPolicy: data.routingErrorPolicy || 'FALLBACK',
         requestKeyOperand: this.parseRequestKeyOperand(data.requestKeyPath),
         groups: (data.groups || []).map((g) => this.normalizeGroupForEdit(g)),
@@ -1158,16 +1177,17 @@ export default {
     },
     async loadRules(projectId) {
       const requestId = ++this.rulesRequestId
-      if (!projectId) {
-        this.rulesForProject = []
-        this.ruleFieldMap = {}
-        return
-      }
+      const global = this.form.scope === 'GLOBAL'
+      this.rulesForProject = []
+      this.ruleFieldMap = {}
+      if (!projectId && !global) return
       const rows = []
       let pageNum = 1
       const pageSize = 200
       while (true) {
-        const res = await listProjectDefinitions(projectId, { pageNum, pageSize, status: 1 })
+        const params = { pageNum, pageSize, status: 1 }
+        if (global) params.scope = 'GLOBAL'
+        const res = await listProjectDefinitions(global ? 0 : projectId, params)
         if (requestId !== this.rulesRequestId) return
         const page = res && res.data ? res.data : res
         const records = Array.isArray(page) ? page : (page && page.records) || []
@@ -1176,7 +1196,9 @@ export default {
         if (records.length < pageSize || (total > 0 && rows.length >= total)) break
         pageNum += 1
       }
-      this.rulesForProject = normalizeRuleOptions(rows)
+      const available = global ? rows.filter(rule => rule.scope === 'GLOBAL' && !normalizeProjectId(rule.projectId)
+        && Number(rule.status) === 1 && Number(rule.publishedVersion) > 0) : rows
+      this.rulesForProject = normalizeRuleOptions(available)
       this.loadRuleFieldMap()
       this.repairLegacyGroupRuleRefs()
     },
@@ -1198,7 +1220,7 @@ export default {
           rule = this.rulesForProject.find(
             (item) => String(item.id) === String(group.ruleId)
           )
-        } else if (group.ruleCode) {
+        } else if (group.ruleCode && this.form.scope !== 'GLOBAL') {
           const matches = this.rulesForProject.filter(
             (item) => String(item.ruleCode) === String(group.ruleCode)
           )
@@ -1286,30 +1308,35 @@ export default {
       })
       return result
     },
+    onScopeChange() {
+      this.onProjectChange(null)
+    },
+    onProjectSelected(project) { this.form.projectCode = project?.projectCode || '' },
     onProjectChange(projectId) {
+      this.form.projectId = normalizeProjectId(projectId)
+      this.form.projectCode = ''
       this.form.groups.forEach((g) => {
         g.ruleId = null
         g.ruleCode = ''
+        g.versionMode = 'LATEST'
+        g.versionBindingId = null
       })
+      this.ruleVersionFields = {}
       this.loadRules(projectId)
       this.loadExperimentRefs(projectId)
     },
-    onProjectSelected(project) {
-      this.form.projectCode = project?.projectCode || ''
-    },
     async loadExperimentRefs(projectId) {
       const requestId = ++this.refsRequestId
-      if (!projectId) {
-        this.projectIdForRefs = null
-        this.projectRefs = []
-        this.projectVars = []
+      if (!projectId && this.form.scope !== 'GLOBAL') {
+        this.clearReferenceCatalog()
         this.fieldValidationOptions = []
         return
       }
-      this.projectIdForRefs = projectId
+      const refsProjectId = projectId || 0
+      this.projectIdForRefs = refsProjectId
       await this.refreshProjectRefs()
       if (requestId !== this.refsRequestId) return
-      const response = await listAvailableFieldValidations(projectId)
+      const response = await listAvailableFieldValidations(refsProjectId)
       if (requestId !== this.refsRequestId) return
       this.fieldValidationOptions = response?.data || []
     },
@@ -1421,6 +1448,14 @@ export default {
         this.$refs.form.validate(async (valid) => {
           if (!valid) return resolve(false)
           if (this.skipUnchangedConfiguration(this.form.id)) return resolve(true)
+          if (this.form.scope === 'GLOBAL') {
+            const available = new Set(this.rulesForProject.map(rule => String(rule.id)))
+            const missing = this.form.groups.find(group => group.ruleId != null && !available.has(String(group.ruleId)))
+            if (missing) {
+              this.$message.error('分组 ' + missing.groupCode + ' 的执行规则不可用，请重新选择已发布的全局规则')
+              return resolve(false)
+            }
+          }
           for (const group of this.form.groups) {
             if (!this.isConditionModeForGroup(group) || this.isFallbackGroup(group) || !group.conditionConfig) continue
             const error = this.conditionError(group)
@@ -1442,6 +1477,11 @@ export default {
           const submittedFingerprint = this.configurationFingerprint
           try {
             const data = { ...this.form, groups: this.prepareGroupsForSave() }
+            delete data.scope
+            if (this.form.scope === 'GLOBAL') {
+              data.projectId = null
+              data.projectCode = ''
+            }
             data.inputValidationConfig = JSON.stringify(this.prepareInputValidationConfig())
             data.requestKeyPath = data.requestKeyOperand
               ? JSON.stringify(data.requestKeyOperand)

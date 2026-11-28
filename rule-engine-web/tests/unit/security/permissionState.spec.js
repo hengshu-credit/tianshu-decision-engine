@@ -10,6 +10,16 @@ import {
 } from '@/security/permissionState'
 
 describe('控制台最终权限状态', () => {
+  test('机构鉴权只使用默认全局授权，管理还要求全局可编辑', () => {
+    const permissions = ['institution-auth:view', 'institution-auth:manage']
+    setCurrentUser({ permissions, defaultPermissions: [], projectPermissionOverrides: { 7: { 'institution-auth:manage': 'ALLOW' } } })
+    expect(hasPermission('institution-auth:manage', { projectId: 7 })).toBe(false)
+    setCurrentUser({ permissions, globalEditable: false })
+    expect(hasPermission('institution-auth:view', { scope: 'GLOBAL' })).toBe(true)
+    expect(hasPermission('institution-auth:manage', { scope: 'GLOBAL' })).toBe(false)
+    setCurrentUser({ permissions, globalEditable: true })
+    expect(hasPermission('institution-auth:manage', { scope: 'GLOBAL' })).toBe(true)
+  })
   test('重复的会话快照不刷新权限控件，同版本的项目授权变化仍立即生效', () => {
     const user = { userId: 2, permissionVersion: 1, permissions: ['field:edit'] }
     setCurrentUser(user)

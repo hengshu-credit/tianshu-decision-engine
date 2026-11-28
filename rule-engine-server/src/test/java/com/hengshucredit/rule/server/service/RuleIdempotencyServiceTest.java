@@ -7,6 +7,23 @@ import java.util.Map;
 import static org.junit.Assert.assertEquals;
 
 public class RuleIdempotencyServiceTest {
+    @org.junit.Test
+    public void institutionKeysAndPersistedCallerRemainStableAcrossTokenRenewal() {
+        var auth = com.hengshucredit.rule.server.auth.ProjectAuthContext.institution(2L, 3L, "institution", "API_KEY", null, true);
+        String digest = "0".repeat(64);
+        String scoped = ExecutionDispatch.credentialKey(digest, 2L, 3L);
+        org.junit.Assert.assertEquals(64, scoped.length());
+        org.junit.Assert.assertFalse(scoped.matches("[a-f0-9]{64}"));
+        org.junit.Assert.assertNotEquals(scoped, ExecutionDispatch.credentialKey(digest, 3L, 3L));
+        org.junit.Assert.assertNotEquals(scoped, ExecutionDispatch.credentialKey(digest, 2L, 4L));
+        org.junit.Assert.assertEquals(digest, ExecutionDispatch.credentialKey(digest, null, 3L));
+        var dispatch = ExecutionDispatch.of(auth.withToken(90L, "token", "VALID"), "SDK", true, null);
+        String stored = com.hengshucredit.rule.server.artifact.CanonicalJson.write(dispatch);
+        org.junit.Assert.assertEquals(dispatch, com.alibaba.fastjson.JSON.parseObject(stored, ExecutionDispatch.class));
+        org.junit.Assert.assertTrue(ExecutionDispatch.sameCaller(auth.withToken(91L, "next", "VALID"), stored));
+        org.junit.Assert.assertFalse(ExecutionDispatch.sameCaller(auth, null));
+    }
+
 
     @Test public void statusDtoKeepsTheSameExplicitNullsAsTheRawResultEndpoint() {
         var service=new RuleExecutionStateService();

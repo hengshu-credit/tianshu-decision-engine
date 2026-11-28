@@ -13,6 +13,7 @@ import com.hengshucredit.rule.model.entity.RuleAuthAccessLog;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleProjectAuth;
 import com.hengshucredit.rule.model.entity.RuleProjectAuthToken;
+import com.hengshucredit.rule.model.entity.RuleAuthInstitution;
 import com.hengshucredit.rule.model.security.GlobalAccessSignature;
 import com.hengshucredit.rule.server.auth.CachedBodyHttpServletRequest;
 import com.hengshucredit.rule.server.auth.CredentialCipher;
@@ -28,10 +29,14 @@ import com.hengshucredit.rule.server.mapper.RuleAuthAccessLogMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectAuthMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectAuthTokenMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
+import com.hengshucredit.rule.server.mapper.RuleAuthInstitutionMapper;
+import com.hengshucredit.rule.server.sftp.EngineSftpCredentials;
 import com.hengshucredit.rule.server.openapi.OpenApiStatus;
 import com.hengshucredit.rule.server.openapi.OpenApiStatuses;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,8 +55,10 @@ import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -65,6 +72,10 @@ public class ProjectAuthService {
 
     @Resource
     private RuleProjectAuthMapper authMapper;
+
+    @Resource private RuleAuthInstitutionMapper institutions;
+    @Value("${engine.sftp.username:engine-storage}")
+    private String storageLogin = "engine-storage";
 
     @Resource
     private RuleProjectMapper projectMapper;
@@ -176,7 +187,9 @@ public class ProjectAuthService {
         if (context == null || context.isTemporaryToken()) {
             throw new IllegalArgumentException("Base project credential is required");
         }
-        RuleProjectAuth auth = requireEnabledTokenAuth(context.getProjectId(), context.getAuthId());
+        RuleProjectAuth auth = requireEnabledTokenAuth(context.isInstitutionAccess() ? null : context.getProjectId(), context.getAuthId());
+        if (!Objects.equals(auth.getInstitutionId(), context.getInstitutionId()))
+            throw new IllegalArgumentException("凭据归属不匹配");
         String tokenValue = generateTokenValue();
         RuleProjectAuthToken token = persistToken(auth, tokenValue);
 
@@ -204,11 +217,10 @@ public class ProjectAuthService {
     private RuleProjectAuth requireEnabledTokenAuth(Long projectId, Long authId) {
         RuleProjectAuth auth = findAuthById(authId);
         if (auth == null || !Integer.valueOf(1).equals(auth.getStatus())
-                || !projectId.equals(auth.getProjectId())) {
+                || !Objects.equals(projectId, auth.getProjectId())) {
             throw new IllegalArgumentException("Project credential is not available");
         }
-        RuleProject project = findProjectById(projectId);
-        if (project == null || !Integer.valueOf(1).equals(project.getStatus())) {
+        if (directContext(auth) == null) {
             throw new IllegalArgumentException("Project is not available");
         }
         return auth;
@@ -244,6 +256,44 @@ public class ProjectAuthService {
     @Transactional
     public ProjectAuthDTO createAuth(Long projectId, ProjectAuthSaveRequest request) {
         requireProject(projectId);
+        if (request != null && (request.getInstitutionId() != null || StringUtils.hasText(request.getInstitutionName())))
+            throw new IllegalArgumentException("机构凭据请在机构鉴权入口创建");
+        return createCredential(projectId, null, request);
+    }
+
+    public List<ProjectAuthDTO> listInstitutionAuths() {
+        var rows = authMapper.selectList(new LambdaQueryWrapper<RuleProjectAuth>()
+                .isNotNull(RuleProjectAuth::getInstitutionId).orderByDesc(RuleProjectAuth::getId));
+        if (rows.isEmpty()) return List.of();
+        var owners = institutions.selectByIds(rows.stream().map(RuleProjectAuth::getInstitutionId).distinct().toList())
+                .stream().collect(Collectors.toMap(RuleAuthInstitution::getId, RuleAuthInstitution::getInstitutionName));
+        return rows.stream().map(auth -> toAuthDto(auth, false, owners.get(auth.getInstitutionId()))).toList();
+    }
+
+    @Transactional
+    public ProjectAuthDTO createInstitutionAuth(ProjectAuthSaveRequest request) {
+        if (request == null) throw new IllegalArgumentException("请填写机构凭据");
+        Long owner = request.getInstitutionId();
+        if (owner == null) {
+            String name = request.getInstitutionName();
+            if (!StringUtils.hasText(name) || name.trim().length() > 128)
+                throw new IllegalArgumentException("请填写不超过 128 字的机构名称");
+            var institution = new RuleAuthInstitution();
+            institution.setInstitutionName(name.trim());
+            institution.setStatus(1);
+            try {
+                institutions.insert(institution);
+            } catch (DuplicateKeyException duplicate) {
+                throw new IllegalArgumentException("机构名称已存在，请选择已有机构");
+            }
+            owner = institution.getId();
+        } else if (!institutionActive(owner)) {
+            throw new IllegalArgumentException("机构不存在或已停用");
+        }
+        return createCredential(null, owner, request);
+    }
+
+    private ProjectAuthDTO createCredential(Long projectId, Long institutionId, ProjectAuthSaveRequest request) {
         if (request == null) throw new IllegalArgumentException("Authentication configuration is required");
         String authType = normalizeAuthType(request.getAuthType());
         if (ProjectAuthType.LEGACY_TOKEN.equals(authType)) {
@@ -251,6 +301,13 @@ public class ProjectAuthService {
         }
         RuleProjectAuth auth = new RuleProjectAuth();
         auth.setProjectId(projectId);
+        auth.setInstitutionId(institutionId);
+        if (request.getManagementProjectId() != null) {
+            if (institutionId == null) throw new IllegalArgumentException("只有机构凭据可以关联管理项目");
+            requireProject(request.getManagementProjectId());
+            auth.setManagementProjectId(request.getManagementProjectId());
+        }
+        auth.setSftpRevision(0L);
         auth.setAuthCode(StringUtils.hasText(request.getAuthCode())
                 ? request.getAuthCode().trim()
                 : "AUTH_" + UUID.randomUUID().toString().replace("-", "").toUpperCase(Locale.ROOT));
@@ -268,6 +325,11 @@ public class ProjectAuthService {
     public ProjectAuthDTO updateAuth(Long projectId, Long authId, ProjectAuthSaveRequest request) {
         RuleProjectAuth auth = requireAuth(projectId, authId);
         if (request == null) throw new IllegalArgumentException("Authentication configuration is required");
+        if (request.getInstitutionId() != null && !request.getInstitutionId().equals(auth.getInstitutionId())) {
+            throw new IllegalArgumentException("不能变更已有凭据的机构归属");
+        }
+        if (request.getManagementProjectId() != null && !request.getManagementProjectId().equals(auth.getManagementProjectId()))
+            throw new IllegalArgumentException("不能变更已有凭据的管理归属项目");
         if (StringUtils.hasText(request.getAuthCode()) && !auth.getAuthCode().equals(request.getAuthCode().trim())) {
             throw new IllegalArgumentException("Authentication code cannot be changed");
         }
@@ -306,6 +368,8 @@ public class ProjectAuthService {
             auth.setLookupKey(lookupKey);
         }
         auth.setSecretCiphertext(credentialCipher.encrypt(secret));
+        if (Boolean.TRUE.equals(auth.getSftpEnabled()))
+            auth.setSftpPasswordHash(EngineSftpCredentials.hashPassword(secret));
         updateAuth(auth);
         return toAuthDto(auth, true);
     }
@@ -402,7 +466,8 @@ public class ProjectAuthService {
         if (request == null) return;
         RuleAuthAccessLog accessLog = new RuleAuthAccessLog();
         if (context != null) {
-            accessLog.setProjectId(context.getProjectId());
+            accessLog.setProjectId(context.isInstitutionAccess() ? null : context.getProjectId());
+            accessLog.setInstitutionId(context.getInstitutionId());
             accessLog.setProjectCode(context.getProjectCode());
             accessLog.setAuthId(context.getAuthId());
             accessLog.setAuthCode(context.getAuthCode());
@@ -544,11 +609,23 @@ public class ProjectAuthService {
     }
 
     protected void insertAuth(RuleProjectAuth auth) {
-        authMapper.insert(auth);
+        try {
+            authMapper.insert(auth);
+        } catch (DuplicateKeyException duplicate) {
+            throw new IllegalArgumentException("鉴权编码、凭据或 SFTP 登录名已被使用");
+        }
     }
 
     protected void updateAuth(RuleProjectAuth auth) {
-        authMapper.updateById(auth);
+        long revision = auth.getSftpRevision() == null ? 0 : auth.getSftpRevision();
+        auth.setSftpRevision(revision + 1);
+        try {
+            if (authMapper.update(auth, new LambdaQueryWrapper<RuleProjectAuth>()
+                    .eq(RuleProjectAuth::getId, auth.getId()).eq(RuleProjectAuth::getSftpRevision, revision)) != 1)
+                throw new IllegalArgumentException("凭据已变更，请刷新后重试");
+        } catch (DuplicateKeyException duplicate) {
+            throw new IllegalArgumentException("凭据或 SFTP 登录名已被使用");
+        }
     }
 
     protected void updateProject(RuleProject project) {
@@ -675,6 +752,7 @@ public class ProjectAuthService {
     private boolean isAccountDisabled(RuleProjectAuth auth) {
         if (auth == null) return false;
         if (!Integer.valueOf(1).equals(auth.getStatus())) return true;
+        if (auth.getInstitutionId() != null) return !institutionActive(auth.getInstitutionId());
         RuleProject project = findProjectById(auth.getProjectId());
         return project == null || !Integer.valueOf(1).equals(project.getStatus());
     }
@@ -694,7 +772,7 @@ public class ProjectAuthService {
         if (token == null || !matchesToken(token, tokenValue)) return null;
         RuleProjectAuth auth = findAuthById(token.getAuthId());
         if (!isUsable(auth, auth == null ? null : auth.getAuthType())
-                || !token.getProjectId().equals(auth.getProjectId())) {
+                || !Objects.equals(token.getProjectId(), auth.getProjectId())) {
             return null;
         }
         LocalDateTime now = currentDateTime();
@@ -715,9 +793,7 @@ public class ProjectAuthService {
                 log.warn("Unable to update project token last-used time: {}", token.getTokenCode(), e);
             }
         }
-        return ProjectAuthContext.temporary(context.getProjectId(), context.getProjectCode(),
-                context.getAuthId(), context.getAuthCode(), context.getAuthType(), token.getId(),
-                token.getTokenCode(), phase, context.getAccessPolicy(), context.isAsyncAccessLogEnabled());
+        return context.withToken(token.getId(), token.getTokenCode(), phase);
     }
 
     private ProjectAuthContext authenticateTokenBody(HttpServletRequest request) {
@@ -793,26 +869,33 @@ public class ProjectAuthService {
     ProjectAuthContext queuedContext(long projectId, ExecutionDispatch dispatch) {
         if (dispatch.globalKeyId() != null) {
             var global = properties.getGlobalAccess();
-            var project = findProjectById(projectId);
+            var project = projectId > 0 ? findProjectById(projectId) : null;
             return global != null && global.isEnabled() && dispatch.globalKeyId().equals(global.getKeyId())
-                    && project != null && Integer.valueOf(1).equals(project.getStatus())
+                    && dispatch.institutionId() == null
+                    && (projectId == 0 || project != null && Integer.valueOf(1).equals(project.getStatus()))
                     ? ProjectAuthContext.global(global.getKeyId(), new ProjectAccessPolicy()) : null;
         }
         var auth = findAuthById(dispatch.authId());
-        if (auth == null || !Integer.valueOf(1).equals(auth.getStatus()) || !java.util.Objects.equals(auth.getProjectId(), projectId)) return null;
+        if (auth == null || !Integer.valueOf(1).equals(auth.getStatus())
+                || !Objects.equals(auth.getInstitutionId(), dispatch.institutionId())) return null;
         var context = directContext(auth);
-        if (context == null || dispatch.tokenId() == null) return context;
+        if (context == null || !Objects.equals(context.getProjectId(), projectId)) return null;
+        if (dispatch.tokenId() == null) return context;
         var token = findTokenById(dispatch.tokenId());
         if (token == null || !Integer.valueOf(1).equals(token.getStatus()) || !auth.getId().equals(token.getAuthId())
-                || !auth.getProjectId().equals(token.getProjectId()) || token.getExpireTime() == null || token.getGraceExpireTime() == null
+                || !Objects.equals(auth.getProjectId(), token.getProjectId()) || token.getExpireTime() == null || token.getGraceExpireTime() == null
                 || currentDateTime().isAfter(token.getGraceExpireTime())) return null;
-        return ProjectAuthContext.temporary(projectId, context.getProjectCode(), auth.getId(), auth.getAuthCode(),
-                auth.getAuthType(), token.getId(), token.getTokenCode(),
-                currentDateTime().isAfter(token.getExpireTime()) ? "GRACE" : "VALID",
-                context.getAccessPolicy(), context.isAsyncAccessLogEnabled());
+        return context.withToken(token.getId(), token.getTokenCode(),
+                currentDateTime().isAfter(token.getExpireTime()) ? "GRACE" : "VALID");
     }
 
     private ProjectAuthContext directContext(RuleProjectAuth auth) {
+        if (auth.getInstitutionId() != null) {
+            if (auth.getProjectId() != null || !institutionActive(auth.getInstitutionId())) return null;
+            return ProjectAuthContext.institution(auth.getInstitutionId(), auth.getId(), auth.getAuthCode(), auth.getAuthType(),
+                    ProjectAccessPolicy.parse(auth.getAccessPolicyJson()), !Integer.valueOf(0).equals(auth.getAsyncAccessLogEnabled()));
+        }
+        if (auth.getProjectId() == null) return null;
         RuleProject project = findProjectById(auth.getProjectId());
         if (project == null || !Integer.valueOf(1).equals(project.getStatus())) return null;
         return ProjectAuthContext.direct(project.getId(), project.getProjectCode(), auth.getId(),
@@ -824,6 +907,11 @@ public class ProjectAuthService {
         return auth != null
                 && expectedType.equals(auth.getAuthType())
                 && Integer.valueOf(1).equals(auth.getStatus());
+    }
+
+    protected boolean institutionActive(Long id) {
+        RuleAuthInstitution institution = institutions.selectById(id);
+        return institution != null && Integer.valueOf(1).equals(institution.getStatus());
     }
 
     private boolean matchesSecret(RuleProjectAuth auth, String presented) {
@@ -1057,6 +1145,28 @@ public class ProjectAuthService {
         auth.setLookupKey(lookupKey);
         auth.setIdentifierCiphertext(credentialCipher.encrypt(identifier));
         auth.setSecretCiphertext(credentialCipher.encrypt(secret));
+        configureSftp(auth, request, identifier, secret);
+    }
+
+    private void configureSftp(RuleProjectAuth auth, ProjectAuthSaveRequest request, String identifier, String secret) {
+        if (request.getSftpEnabled() != null) auth.setSftpEnabled(request.getSftpEnabled());
+        if (!Boolean.TRUE.equals(auth.getSftpEnabled())) {
+            auth.setSftpPasswordHash(null);
+            auth.setSftpLoginHash(null);
+            return;
+        }
+        if (ProjectAuthType.LEGACY_TOKEN.equals(auth.getAuthType()))
+            throw new IllegalArgumentException("SFTP 密码登录请选择 Basic、API Key 或 HMAC 鉴权");
+        if (ProjectAuthType.BASIC.equals(auth.getAuthType()) || ProjectAuthType.HMAC_SHA256.equals(auth.getAuthType())) {
+            EngineSftpCredentials.validateLogin(identifier, storageLogin);
+            auth.setSftpLoginHash(EngineSftpCredentials.loginHash(identifier));
+        } else {
+            if (auth.getSftpLogin() == null) auth.setSftpLogin("auth-" + UUID.randomUUID());
+            auth.setSftpLoginHash(EngineSftpCredentials.loginHash(auth.getSftpLogin()));
+        }
+        if (auth.getSftpPasswordHash() == null || StringUtils.hasText(request.getSecret())) {
+            auth.setSftpPasswordHash(EngineSftpCredentials.hashPassword(secret));
+        }
     }
 
     private String normalizeAuthType(String authType) {
@@ -1101,9 +1211,18 @@ public class ProjectAuthService {
     }
 
     private ProjectAuthDTO toAuthDto(RuleProjectAuth auth, boolean full) {
+        RuleAuthInstitution owner = auth.getInstitutionId() == null ? null : institutions.selectById(auth.getInstitutionId());
+        return toAuthDto(auth, full, owner == null ? null : owner.getInstitutionName());
+    }
+
+    private ProjectAuthDTO toAuthDto(RuleProjectAuth auth, boolean full, String institutionName) {
         ProjectAuthDTO dto = new ProjectAuthDTO();
         dto.setId(auth.getId());
         dto.setProjectId(auth.getProjectId());
+        dto.setInstitutionId(auth.getInstitutionId());
+        dto.setInstitutionName(institutionName);
+        dto.setSftpEnabled(Boolean.TRUE.equals(auth.getSftpEnabled()));
+        dto.setManagementProjectId(auth.getManagementProjectId());
         dto.setAuthCode(auth.getAuthCode());
         dto.setAuthName(auth.getAuthName());
         dto.setAuthType(auth.getAuthType());
@@ -1111,6 +1230,10 @@ public class ProjectAuthService {
                 : credentialCipher.decrypt(auth.getIdentifierCiphertext());
         String secret = credentialCipher.decrypt(auth.getSecretCiphertext());
         dto.setIdentifierMasked(mask(identifier));
+        if (Boolean.TRUE.equals(auth.getSftpEnabled())) {
+            if (ProjectAuthType.API_KEY.equals(auth.getAuthType())) dto.setSftpLogin(auth.getSftpLogin());
+            else if (full) dto.setSftpLogin(identifier);
+        }
         dto.setSecretMasked(mask(secret));
         if (full) {
             dto.setIdentifier(identifier);
@@ -1156,9 +1279,10 @@ public class ProjectAuthService {
     }
 
     private RuleProjectAuth requireAuth(Long projectId, Long authId) {
-        requireProject(projectId);
+        if (projectId != null) requireProject(projectId);
         RuleProjectAuth auth = authId == null ? null : findAuthById(authId);
-        if (auth == null || !projectId.equals(auth.getProjectId())) {
+        if (auth == null || !Objects.equals(projectId, auth.getProjectId())
+                || ((projectId == null) != (auth.getInstitutionId() != null))) {
             throw new IllegalArgumentException("Authentication configuration not found for project");
         }
         return auth;

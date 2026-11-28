@@ -1,6 +1,8 @@
 package com.hengshucredit.rule.server.sftp;
 
 import com.hengshucredit.rule.server.security.ConsoleProjectAccess;
+import com.hengshucredit.rule.server.security.ConsoleAccessDeniedException;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.upload.UploadSecurity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -16,10 +18,12 @@ import java.nio.file.StandardCopyOption;
 public class EngineSftpFiles {
     private final DefaultSftpClient client;
     private final ConsoleProjectAccess access;
+    private final EngineSftpAccounts accounts;
 
-    public EngineSftpFiles(DefaultSftpClient client, ConsoleProjectAccess access) {
+    public EngineSftpFiles(DefaultSftpClient client, ConsoleProjectAccess access, EngineSftpAccounts accounts) {
         this.client = client;
         this.access = access;
+        this.accounts = accounts;
     }
 
     public String projectPath(Long project, String path) {
@@ -35,6 +39,20 @@ public class EngineSftpFiles {
 
     public byte[] readProject(Long project, String path) {
         return client.read("/projects/" + project + "/" + projectPath(project,path), 10L << 20);
+    }
+
+    /** 只从可信 HTTP/执行身份获得收件目录；文件路径由 SSH 客户端所见根目录起算。 */
+    public String credentialPath(ProjectAuthContext auth, String relative) {
+        if (auth == null || auth.getAuthId() == null || auth.getAuthId() <= 0)
+            throw new ConsoleAccessDeniedException("读取鉴权收件目录需要有效的调用身份");
+        Long project = auth.isInstitutionAccess() ? null : auth.getProjectId();
+        var credential = accounts.activeCredential(auth.getAuthId(), project, auth.getInstitutionId());
+        if (credential == null) throw new ConsoleAccessDeniedException("此凭据的 SFTP 收件目录未启用");
+        return "/" + credential.directory() + "/" + DefaultSftpClient.relative(relative);
+    }
+
+    public byte[] readCredential(ProjectAuthContext auth, String relative) {
+        return client.read(credentialPath(auth, relative), 10L << 20);
     }
 
     public MultipartFile input(MultipartFile uploaded, String address) {

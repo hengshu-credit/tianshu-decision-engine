@@ -69,12 +69,11 @@ public class RuleRuntimeController {
             @PathVariable String experimentCode,
             @RequestBody(required = false) RuleExperimentExecuteRequest request,
             HttpServletRequest httpRequest) {
-        return executeExperiment(experimentCode, request == null ? new RuleExperimentExecuteRequest() : request, httpRequest, null);
+        return executeExperiment(experimentCode, request == null ? new RuleExperimentExecuteRequest() : request, httpRequest, null, ProjectAuthContext.from(httpRequest));
     }
 
     private ApiResponse<RuleExperimentExecuteResult> executeExperiment(String experimentCode, RuleExperimentExecuteRequest request,
-                                                                      HttpServletRequest httpRequest, String resumeTrace) {
-        ProjectAuthContext auth = ProjectAuthContext.from(httpRequest);
+                                                                      HttpServletRequest httpRequest, String resumeTrace, ProjectAuthContext auth) {
         if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
             return ApiResponse.fail(PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
@@ -86,20 +85,20 @@ public class RuleRuntimeController {
             var experiment = experimentService.getOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleExperiment>()
                     .eq(com.hengshucredit.rule.model.entity.RuleExperiment::getExperimentCode, experimentCode)
                     .eq(com.hengshucredit.rule.model.entity.RuleExperiment::getStatus, 1));
-            Long executionProjectId = auth.isGlobalAccess() ? experiment == null ? null : experiment.getProjectId()
-                    : auth.getProjectId();
-            if (experiment == null || !executionProjectId.equals(experiment.getProjectId())) {
+            if (!RuleExperimentService.availableToCaller(experiment, auth)) {
                 return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Experiment not found");
             }
+            Long executionProjectId = experiment.getProjectId() == null ? Long.valueOf(0) : experiment.getProjectId();
             String recoveryMode = com.hengshucredit.rule.server.openapi.OpenApiContract.IdempotencyConfig.requireRecoveryMode(
                     httpRequest.getParameter("externalRecoveryMode"));
+            var dispatch = ExecutionDispatch.of(auth, request.getClientAppName(), true, recoveryMode);
             String digest = "FIXED".equals(request.getVersionMode()) ? experimentService.fixedFingerprint(experiment,request.getVersionId())
                     : experimentService.executionFingerprint(experiment);
             boolean submit = executionQueue != null && resumeTrace == null;
             var decision = submit
                     ? experimentStateService.enqueue(executionProjectId, experiment.getId(), experimentCode, request, digest,
-                        ExecutionDispatch.of(auth, request.getClientAppName(), true, recoveryMode))
-                    : experimentStateService.begin(executionProjectId, experiment.getId(), experimentCode, request, digest, resumeTrace);
+                        dispatch)
+                    : experimentStateService.begin(executionProjectId, experiment.getId(), experimentCode, request, digest, resumeTrace, dispatch);
             acceptedTrace = decision.getTraceId();
             activeDecision = decision.isClaimed() ? decision : null;
             if (decision.getStatus() == RuleExperimentExecutionStateService.Status.COMPLETED) {
@@ -131,8 +130,8 @@ public class RuleRuntimeController {
             }
             decision.setExternalRecoveryMode(submit ? decision.acceptedRecoveryMode() : recoveryMode);
             final var running = decision;
-            RuleExperimentExecuteResult result = experimentStateService.withLease(running, () -> experimentService.executeForProject(
-                    experimentCode, executionProjectId, request, running.getTraceId()));
+            RuleExperimentExecuteResult result = experimentStateService.withLease(running, () -> experimentService.executeForCaller(
+                    experimentCode, auth, request, running.getTraceId()));
             experimentStateService.complete(decision, result);
             activeDecision = null;
             return ApiResponse.ok(result);
@@ -185,7 +184,8 @@ public class RuleRuntimeController {
                     var group = last.getProductionGroup();
                     if (group != null && group.getTraceId() != null) {
                         var child = stateService.findByRootTraceId(group.getTraceId());
-                        if (child != null && java.util.Objects.equals(child.projectId(), experiment.projectId())) {
+                        if (child != null && java.util.Objects.equals(child.projectId(), experiment.projectId())
+                                && ExecutionDispatch.sameCaller(auth, child.dispatchJson())) {
                             if ("SUCCEEDED".equals(experiment.status())
                                     && child.resultJson() != null)
                                 status.setResult(
@@ -197,16 +197,7 @@ public class RuleRuntimeController {
                 return ApiResponse.ok(status);
             }
         }
-        boolean projectAllowed;
-        if (auth.isGlobalAccess()) {
-            projectAllowed = state != null;
-        } else if (state != null && state.projectId() != null && state.projectId() > 0) {
-            projectAllowed = state.projectId().equals(auth.getProjectId());
-        } else {
-            projectAllowed = state != null && definitionService.isDefinitionAvailableInProject(
-                    state.definitionId(), auth.getProjectId());
-        }
-        if (state == null || !projectAllowed) {
+        if (!canReadState(auth, state, true)) {
             return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Execution status not found");
         }
         RuleExecutionStatus status = new RuleExecutionStatus();
@@ -280,7 +271,7 @@ public class RuleRuntimeController {
                     ? ApiResponse.ok(RuleExperimentExecutionStateService.readResult(experiment.resultJson()))
                     : ApiResponse.fail(PlatformCode.RESULT_PENDING, "实验结果尚未就绪");
         }
-        if (state == null || (!auth.isGlobalAccess() && !sameProject(state, auth.getProjectId()))) {
+        if (!canReadState(auth, state, false)) {
             return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Execution result not found");
         }
         if (state.resultJson() == null || state.resultJson().isBlank() || !isTerminalSuccess(state)) {
@@ -304,15 +295,19 @@ public class RuleRuntimeController {
             if (experiment != null) {
                 if (experiment.request() == null) return ApiResponse.fail(PlatformCode.RESOURCE_CONFLICT, "历史实验未保存原请求，请按原订单号重试");
                 if (params != null) experiment.request().setParams(params);
-                return executeExperiment(experiment.experimentCode(), experiment.request(), httpRequest, traceId);
+                var original = executionQueue == null ? auth : executionQueue.resumeIdentity(auth, experiment.projectId(), experiment.dispatchJson());
+                if (original == null) return ApiResponse.fail(PlatformCode.PERMISSION_DENIED, null);
+                return executeExperiment(experiment.experimentCode(), experiment.request(), httpRequest, traceId, original);
             }
         }
-        if (state == null || (!auth.isGlobalAccess() && !sameProject(state, auth.getProjectId()))) {
+        if (!canReadState(auth, state, false)) {
             return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Execution state not found");
         }
+        var executionAuth = executionQueue == null ? auth : executionQueue.resumeIdentity(auth, state.projectId(), state.dispatchJson());
+        if (executionAuth == null) return ApiResponse.fail(PlatformCode.PERMISSION_DENIED, null);
         var originalDispatch = state.dispatch();
         if (originalDispatch != null && originalDispatch.openContract()) {
-            try { openContracts.resolve(auth.getAuthId(), auth.getAuthCode(), state.ruleCode()); }
+            try { openContracts.resolve(executionAuth.getAuthId(), executionAuth.getAuthCode(), state.ruleCode()); }
             catch (com.hengshucredit.rule.server.openapi.OpenApiException denied) { return ApiResponse.fail(PlatformCode.PERMISSION_DENIED, null); }
         }
         if (state.resultJson() != null && !state.resultJson().isBlank() && isTerminalSuccess(state)) {
@@ -327,6 +322,8 @@ public class RuleRuntimeController {
         }
         var publishedQuery = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<RulePublished>()
                 .eq(RulePublished::getDefinitionId, state.definitionId()).eq(RulePublished::getStatus, 1);
+        if (executionAuth.isInstitutionAccess()) publishedQuery.inSql(RulePublished::getDefinitionId,
+                com.hengshucredit.rule.server.mapper.RulePublishedMapper.GLOBAL_DEFINITION);
         if (state.currentRevisionId() != null) {
             publishedQuery.eq(RulePublished::getRevisionId, state.currentRevisionId());
         } else {
@@ -353,11 +350,11 @@ public class RuleRuntimeController {
                 if (groupOptions != null) {
                     var saved = JSON.parseObject(state.dispatchJson());
                     return executeService.executePublishedWithOptions(published, resumeParams, state.projectId(), saved.getString("clientAppName"),
-                            groupOptions, groupOptions.isDryRun() ? "EXPERIMENT_TEST" : "EXPERIMENT_LIVE").getResult();
+                            groupOptions, groupOptions.isDryRun() ? "EXPERIMENT_TEST" : "EXPERIMENT_LIVE", executionAuth).getResult();
                 }
                 return executeService.executePublished(published,
                             resumeParams,
-                            state.projectId(), originalDispatch == null ? "RUNTIME_RESUME" : originalDispatch.clientAppName(), auth,
+                            state.projectId(), originalDispatch == null ? "RUNTIME_RESUME" : originalDispatch.clientAppName(), executionAuth,
                             originalDispatch == null || originalDispatch.traceEnabled(),
                             originalDispatch == null || (originalDispatch.recordTrace() == null ? originalDispatch.traceEnabled() : originalDispatch.recordTrace()));
             });
@@ -372,12 +369,16 @@ public class RuleRuntimeController {
     private RuleExperimentExecutionStateService.TraceRequest experimentByTrace(String trace, ProjectAuthContext auth) {
         if (experimentStateService == null) return null;
         var found = experimentStateService.byTrace(trace);
-        return found != null && (auth.isGlobalAccess() || java.util.Objects.equals(found.projectId(), auth.getProjectId()))
+        return found != null && ExecutionDispatch.sameCaller(auth, found.dispatchJson())
+                && (auth.isGlobalAccess() || java.util.Objects.equals(found.projectId(), auth.getProjectId()))
                 ? found : null;
     }
 
-    private boolean sameProject(RuleExecutionStateService.State state, Long projectId) {
-        return state != null && state.projectId() != null && state.projectId().equals(projectId);
+    private boolean canReadState(ProjectAuthContext auth, RuleExecutionStateService.State state, boolean allowLegacyStatus) {
+        if (state == null || !ExecutionDispatch.sameCaller(auth, state.dispatchJson())) return false;
+        if (auth.isGlobalAccess() || java.util.Objects.equals(state.projectId(), auth.getProjectId())) return true;
+        return allowLegacyStatus && !auth.isInstitutionAccess() && (state.projectId() == null || state.projectId() == 0)
+                && definitionService.isDefinitionAvailableInProject(state.definitionId(), auth.getProjectId());
     }
 
     private boolean isTerminalSuccess(RuleExecutionStateService.State state) {
@@ -395,6 +396,7 @@ public class RuleRuntimeController {
         if (auth == null || (!auth.isGlobalAccess() && auth.getProjectId() == null)) {
             return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
+        if (auth.isInstitutionAccess()) return ApiResponse.fail(PlatformCode.PERMISSION_DENIED, null);
         Map<String, Object> payload = runtimeCallLogService.payloadByCallId(callId,
                 auth.isGlobalAccess() ? null : auth.getProjectId());
         if (payload == null || payload.isEmpty()) return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "External call not found");

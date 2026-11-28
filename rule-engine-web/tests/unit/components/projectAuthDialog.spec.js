@@ -69,7 +69,7 @@ describe('ProjectAuthDialog', () => {
     const permissions = []
     const wrapper = await mountDialog(permissions)
 
-    expect(permissions).toContain('project:edit')
+    expect(permissions).toContainEqual({ code: 'project:edit', projectId: 7, scope: 'PROJECT' })
     wrapper.unmount()
   })
 
@@ -185,6 +185,29 @@ describe('ProjectAuthDialog', () => {
     expect(wrapper.vm.fullCredential.identifier).toBe('partner')
     expect(wrapper.vm.fullCredential.secret).toBe('secret')
     expect(wrapper.vm.fullDialogVisible).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('编辑已有 Basic 凭据保留空白账号密码，只有明确查看时才读取明文', async () => {
+    const wrapper = await mountDialog()
+    await wrapper.vm.openEditAuth(wrapper.vm.authList[0])
+    expect(projectApi.getProjectAuthFull).not.toHaveBeenCalled()
+    expect(wrapper.vm.authForm).toMatchObject({ id: 11, identifier: '', secret: '' })
+    for (const field of ['identifier', 'secret']) {
+      let error
+      wrapper.vm.authRules[field][0].validator({ field }, '', value => { error = value })
+      expect(error).toBeUndefined()
+    }
+    wrapper.unmount()
+  })
+
+  test('HMAC 一步登录 SFTP 复用 Access Key 与 Secret', async () => {
+    const wrapper = await mountDialog()
+    Object.assign(wrapper.vm.authForm, { authType: 'HMAC_SHA256', sftpEnabled: true, identifier: 'caller-key', secret: 'test-only-secret' })
+    const payload = wrapper.vm.buildAuthPayload()
+    expect(payload).toMatchObject({ authType: 'HMAC_SHA256', sftpEnabled: true, identifier: 'caller-key', secret: 'test-only-secret' })
+    expect(payload).not.toHaveProperty('sftpPublicKey')
+    expect(wrapper.vm.sftpHelp).toContain('Access Key')
     wrapper.unmount()
   })
 

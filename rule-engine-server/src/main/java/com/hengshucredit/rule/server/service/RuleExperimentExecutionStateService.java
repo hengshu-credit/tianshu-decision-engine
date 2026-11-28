@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
@@ -95,11 +96,11 @@ public class RuleExperimentExecutionStateService {
                             String configDigest, ExecutionDispatch dispatch) {
         boolean keyed = request.getRequestKey() != null && !request.getRequestKey().isBlank();
         String key = sha256(keyed ? request.getRequestKey().trim() : UUID.randomUUID().toString());
+        if (dispatch != null) key = ExecutionDispatch.credentialKey(key, dispatch.institutionId(), dispatch.authId());
         String json = CanonicalJson.write(request);
         String digest = sha256(json);
         if (keyed) deleteExpired(projectId, experimentId, key);
-        String trace = com.hengshucredit.rule.core.trace.TraceIdGenerator.generate("EX", "P",
-                com.hengshucredit.rule.core.trace.TraceIdGenerator.projectScopeCode(projectId));
+        String trace = newTrace(projectId);
         jdbcTemplate.update("INSERT INTO rule_experiment_execution_state "
                         + "(project_id,experiment_id,experiment_code,request_key_hash,request_digest,request_json,experiment_trace_id,config_digest,"
                         + "status,attempt_no,dispatch_json,expire_time) VALUES (?,?,?,?,?,?,?,?,'QUEUED',0,?,DATE_ADD(NOW(6),INTERVAL 1 DAY)) "
@@ -126,27 +127,32 @@ public class RuleExperimentExecutionStateService {
     public Decision begin(Long projectId, Long experimentId, String experimentCode,
                           RuleExperimentExecuteRequest request, String configDigest,
                           String traceId) {
+        return begin(projectId, experimentId, experimentCode, request, configDigest, traceId, null);
+    }
+
+    @org.springframework.transaction.annotation.Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
+    public Decision begin(Long projectId, Long experimentId, String experimentCode, RuleExperimentExecuteRequest request,
+                          String configDigest, String traceId, ExecutionDispatch dispatch) {
         String requestKey = request == null ? null : request.getRequestKey();
         boolean keyed = requestKey != null && !requestKey.isBlank();
         if (!keyed && traceId == null) return Decision.disabled();
         State original = traceId == null ? null : readState("experiment_trace_id=? AND project_id=? AND experiment_id=?", traceId, projectId, experimentId);
         if (traceId != null && original == null) return Decision.conflict();
         String keyHash = original == null ? sha256(requestKey.trim()) : original.keyHash();
+        if (original == null && dispatch != null) keyHash = ExecutionDispatch.credentialKey(keyHash, dispatch.institutionId(), dispatch.authId());
         String requestJson = CanonicalJson.write(request);
         String requestDigest = sha256(requestJson);
         if (original == null) deleteExpired(projectId, experimentId, keyHash);
         State state = original == null ? find(projectId, experimentId, keyHash) : original;
         if (state == null) {
             String owner = UUID.randomUUID().toString();
-            String rootTrace = traceId == null || traceId.isBlank() ? com.hengshucredit.rule.core.trace.TraceIdGenerator.generate(
-                    com.hengshucredit.rule.core.trace.TraceIdGenerator.moduleTypeCode("EXPERIMENT"), "P",
-                    com.hengshucredit.rule.core.trace.TraceIdGenerator.projectScopeCode(projectId)) : traceId;
+            String rootTrace = traceId == null || traceId.isBlank() ? newTrace(projectId) : traceId;
             int inserted = jdbcTemplate.update("INSERT IGNORE INTO rule_experiment_execution_state "
                             + "(project_id, experiment_id, experiment_code, request_key_hash, request_digest, request_json, "
-                            + "experiment_trace_id, config_digest, status, attempt_no, lease_owner, lease_until, expire_time) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', 1, ?, DATE_ADD(NOW(6), INTERVAL 120 SECOND), "
+                            + "experiment_trace_id, config_digest, dispatch_json, status, attempt_no, lease_owner, lease_until, expire_time) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', 1, ?, DATE_ADD(NOW(6), INTERVAL 120 SECOND), "
                             + "DATE_ADD(NOW(6), INTERVAL 86400 SECOND))",
-                    projectId, experimentId, experimentCode, keyHash, requestDigest, requestJson, rootTrace, configDigest, owner);
+                    projectId, experimentId, experimentCode, keyHash, requestDigest, requestJson, rootTrace, configDigest, dispatch == null ? null : CanonicalJson.write(dispatch), owner);
             state = find(projectId, experimentId, keyHash);
             if (inserted == 1) return Decision.claimed(state, owner, configDigest);
         }
@@ -239,15 +245,21 @@ public class RuleExperimentExecutionStateService {
                 errorMessage, decision.state.id(), decision.owner);
     }
 
+    private static String newTrace(Long projectId) {
+        return projectId == null || projectId == 0
+                ? TraceIdGenerator.generate("EX", "G", TraceIdGenerator.GLOBAL_SCOPE_CODE)
+                : TraceIdGenerator.generate("EX", "P", TraceIdGenerator.projectScopeCode(projectId));
+    }
+
     public record TraceRequest(Long projectId, String experimentCode, RuleExperimentExecuteRequest request, String status,
-                               int attemptNo, String resultJson, String error, LocalDateTime expireTime) {}
+                               int attemptNo, String resultJson, String error, LocalDateTime expireTime, String dispatchJson) {}
 
     public TraceRequest byTrace(String traceId) {
-        return jdbcTemplate.query("SELECT project_id,experiment_code,request_json,status,attempt_no,result_json,error_message,expire_time "
+        return jdbcTemplate.query("SELECT project_id,experiment_code,request_json,status,attempt_no,result_json,error_message,expire_time,dispatch_json "
                 + "FROM rule_experiment_execution_state WHERE experiment_trace_id=? AND (expire_time>NOW(6) OR status IN ('QUEUED','RUNNING') OR dispatch_json IS NOT NULL AND status<>'SUCCEEDED')",
                 (rs, ignored) -> new TraceRequest(rs.getLong(1), rs.getString(2),
                         JSON.parseObject(rs.getString(3), RuleExperimentExecuteRequest.class), rs.getString(4),
-                        rs.getInt(5), rs.getString(6), rs.getString(7), rs.getObject(8, LocalDateTime.class)), traceId)
+                        rs.getInt(5), rs.getString(6), rs.getString(7), rs.getObject(8, LocalDateTime.class), rs.getString(9)), traceId)
                 .stream().findFirst().orElse(null);
     }
 

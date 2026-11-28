@@ -1,14 +1,14 @@
 <template>
   <el-dialog
     class="project-auth-dialog"
-    title="项目调用鉴权"
+    :title="institution ? '机构调用鉴权' : '项目调用鉴权'"
     :model-value="visible"
     width="1180px"
     top="5vh"
     append-to-body
     @close="$emit('update:visible', false)"
   >
-    <div class="project-context">
+    <div v-if="!institution" class="project-context">
       <div>
         <div class="project-name">
           {{ project.projectName || '未命名项目' }}
@@ -19,6 +19,7 @@
         可为外部调用方生成临时 Token。有效时长和冗余时长由所选鉴权配置决定。
       </div>
     </div>
+    <p v-else class="project-help">机构凭据用于调用全局规则和分流实验。同一机构可以配置多组相同鉴权方式的凭据。</p>
 
     <el-tabs v-model="activeTab" @tab-click="onTabClick">
       <el-tab-pane label="鉴权配置" name="auth">
@@ -27,7 +28,7 @@
             列表仅显示脱敏值，完整账号、密码和密钥可随时再次查看。
           </div>
           <el-button
-            v-permission="'project:edit'"
+            v-permission="editPermission"
             type="primary"
             size="small"
             :icon="ElIconPlus"
@@ -42,6 +43,10 @@
           size="small"
           empty-text="暂无鉴权配置"
         >
+          <el-table-column v-if="institution" prop="institutionName" label="机构名称" min-width="130" />
+          <el-table-column v-if="institution" label="管理归属项目" min-width="130">
+            <template #default="{ row }">{{ row.managementProjectName || (row.managementProjectId ? '项目 #' + row.managementProjectId : '未关联') }}</template>
+          </el-table-column>
           <el-table-column
             prop="authCode"
             label="鉴权编码"
@@ -77,6 +82,9 @@
               </div>
             </template>
           </el-table-column>
+          <el-table-column label="SFTP 登录" min-width="96">
+            <template #default="{ row }">{{ row.sftpEnabled ? '已开通' : '未开通' }}</template>
+          </el-table-column>
           <el-table-column
             label="访问策略"
             min-width="190"
@@ -95,7 +103,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(['完整值', '编辑', '重置密钥', '生成临时 Token', 'Token 记录', '停用'])" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" :width="operationColumnWidth(institution ? ['完整值', '编辑', '重置密钥', '停用'] : ['完整值', '编辑', '重置密钥', '生成临时 Token', 'Token 记录', '停用'])" align="center" fixed="right">
             <template v-slot="{ row }">
               <div class="auth-row-actions">
                 <el-button
@@ -103,12 +111,12 @@
                   size="small"
                   type="primary"
                   @click="viewFullAuth(row)"
-                  v-permission="'project:edit'"
+                  v-permission="editPermission"
                   >完整值</el-button
                 >
                 <el-button
                   v-if="row.authType !== 'LEGACY_TOKEN'"
-                  v-permission="'project:edit'"
+                  v-permission="editPermission"
                   link
                   size="small"
                   type="warning"
@@ -119,7 +127,7 @@
                   v-if="
                     row.authType === 'API_KEY' || row.authType === 'HMAC_SHA256'
                   "
-                  v-permission="'project:edit'"
+                  v-permission="editPermission"
                   link
                   size="small"
                   type="warning"
@@ -128,7 +136,7 @@
                 >
                 <el-button
                   v-if="row.authType === 'LEGACY_TOKEN'"
-                  v-permission="'project:edit'"
+                  v-permission="editPermission"
                   link
                   size="small"
                   type="warning"
@@ -136,7 +144,8 @@
                   >重置令牌</el-button
                 >
                 <el-button
-                  v-permission="{ code: 'project:edit', projectId: project.id, scope: 'PROJECT' }"
+                  v-if="!institution"
+                  v-permission="editPermission"
                   link
                   size="small"
                   type="primary"
@@ -148,11 +157,12 @@
                   link
                   size="small"
                   type="info"
+                  v-if="!institution"
                   @click="openTokens(row)"
                   >Token 记录</el-button
                 >
                 <el-button
-                  v-permission="'project:edit'"
+                  v-permission="editPermission"
                   link
                   size="small"
                   :type="row.status === 1 ? 'warning' : 'success'"
@@ -166,7 +176,7 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="临时 Token" name="tokens">
+      <el-tab-pane v-if="!institution" label="临时 Token" name="tokens">
         <div class="section-toolbar token-toolbar">
           <el-select
             v-model="selectedAuthId"
@@ -257,7 +267,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane label="访问审计" name="logs">
+      <el-tab-pane v-if="!institution" label="访问审计" name="logs">
         <el-form
           :inline="true"
           size="small"
@@ -402,9 +412,26 @@
         ref="authForm"
         :model="authForm"
         :rules="authRules"
+        :disabled="savingAuth"
         label-width="120px"
         size="small"
       >
+        <template v-if="institution">
+          <el-form-item v-if="institutions.length" label="所属机构">
+            <el-select v-model="authForm.institutionId" :disabled="!!authForm.id" clearable filterable
+              placeholder="选择已有机构，或留空新建机构" style="width: 100%">
+              <el-option v-for="org in institutions" :key="org.id" :value="org.id" :label="org.name" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="!authForm.institutionId" label="新机构名称" prop="institutionName">
+            <el-input v-model="authForm.institutionName" maxlength="128" placeholder="填写机构名称" />
+          </el-form-item>
+          <el-form-item label="管理归属项目">
+            <project-resource-select v-model="authForm.managementProjectId" :disabled="!!authForm.id"
+              clearable :placeholder="authForm.id ? '未关联项目' : '可选，搜索项目名称或编码'" aria-label="管理归属项目" />
+          </el-form-item>
+          <p class="form-section-help">关联项目仅用于管理，此凭据可调用全局规则和分流实验。</p>
+        </template>
         <el-form-item label="鉴权编码" prop="authCode"
           ><el-input
             v-model="authForm.authCode"
@@ -419,6 +446,7 @@
             v-model="authForm.authType"
             :disabled="!!authForm.id"
             style="width: 100%"
+            @change="clearTypeCredentials"
           >
             <el-option label="账号密码（Basic）" value="BASIC" />
             <el-option label="API Key" value="API_KEY" />
@@ -427,13 +455,14 @@
         </el-form-item>
         <template v-if="authForm.authType === 'BASIC'">
           <el-form-item label="账号" prop="identifier"
-            ><el-input v-model="authForm.identifier" autocomplete="off"
+            ><el-input v-model="authForm.identifier" autocomplete="off" :placeholder="authForm.id ? '留空保留原账号' : '请输入账号'"
           /></el-form-item>
           <el-form-item label="密码" prop="secret"
             ><el-input
               v-model="authForm.secret"
               show-password
               autocomplete="new-password"
+              :placeholder="authForm.id ? '留空保留原密码' : '请输入密码'"
           /></el-form-item>
         </template>
         <template v-else-if="authForm.authType === 'API_KEY'">
@@ -452,22 +481,29 @@
             ><el-input
               v-model="authForm.secret"
               show-password
-              placeholder="新建时留空则自动生成"
+              :placeholder="credentialPlaceholder"
           /></el-form-item>
         </template>
         <template v-else-if="authForm.authType === 'HMAC_SHA256'">
           <el-form-item label="Access Key"
             ><el-input
               v-model="authForm.identifier"
-              placeholder="新建时留空则自动生成"
+              :placeholder="credentialPlaceholder"
           /></el-form-item>
           <el-form-item label="Secret"
             ><el-input
               v-model="authForm.secret"
               show-password
-              placeholder="新建时留空则自动生成"
+              :placeholder="credentialPlaceholder"
           /></el-form-item>
         </template>
+        <div class="form-section">
+          <div class="form-section-title">SFTP 登录</div>
+          <el-form-item label="开通 SFTP">
+            <el-switch v-model="authForm.sftpEnabled" aria-label="开通 SFTP" />
+          </el-form-item>
+          <p v-if="authForm.sftpEnabled" class="form-section-help">{{ sftpHelp }}</p>
+        </div>
         <div class="form-section">
           <div class="form-section-title">临时 Token 生命周期</div>
           <el-form-item label="有效时长（秒）"
@@ -585,7 +621,7 @@
           ><el-button size="small" @click="authFormVisible = false"
             >取消</el-button
           ><el-button
-            v-permission="'project:edit'"
+            v-permission="editPermission"
             size="small"
             type="primary"
             :loading="savingAuth"
@@ -614,6 +650,10 @@
         ><el-button link @click="copyValue(fullCredential.identifier)"
           >复制</el-button
         >
+      </div>
+      <div v-if="fullCredential.sftpEnabled && fullCredential.sftpLogin" class="secret-row">
+        <span class="secret-label">SFTP 登录名</span><code>{{ fullCredential.sftpLogin }}</code>
+        <el-button link @click="copyValue(fullCredential.sftpLogin)">复制</el-button>
       </div>
       <div class="secret-row">
         <span class="secret-label">令牌 / 密钥</span
@@ -672,6 +712,11 @@ import { reservedCodeRule } from '@/utils/reservedContentCode'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import { operationColumnWidth as getOperationColumnWidth } from '@/utils/operationColumnWidth'
+import ProjectResourceSelect from '@/components/ProjectResourceSelect.vue'
+import {
+  listInstitutionAuths, createInstitutionAuth, updateInstitutionAuth,
+  updateInstitutionAuthStatus, getInstitutionAuthFull, regenerateInstitutionAuthSecret,
+} from '@/api/institutionAuth'
 import {
   listProjectAuths,
   createProjectAuth,
@@ -691,7 +736,7 @@ import {
 export default {
   data() {
     const validateBasicField = (rule, value, callback) => {
-      if (this.authForm.authType === 'BASIC' && !String(value || '').trim()) {
+      if (!this.authForm.id && this.authForm.authType === 'BASIC' && !String(value || '').trim()) {
         callback(
           new Error(rule.field === 'identifier' ? '请输入账号' : '请输入密码')
         )
@@ -708,6 +753,7 @@ export default {
     }
     return {
       activeTab: 'auth',
+      dialogGeneration: 0,
       authLoading: false,
       authList: [],
       authFormVisible: false,
@@ -715,6 +761,7 @@ export default {
       authForm: this.emptyAuthForm(),
       authPolicy: this.emptyAccessPolicy(),
       authRules: {
+        institutionName: [{ required: true, whitespace: true, message: '请填写机构名称', trigger: 'blur' }],
         authCode: [
           { ...reservedCodeRule, validator: (rule, value, callback) => this.authForm.id ? callback() : reservedCodeRule.validator(rule, value, callback) },
           { required: true, message: '请输入鉴权编码', trigger: 'blur' },
@@ -763,16 +810,56 @@ export default {
     }
   },
   name: 'ProjectAuthDialog',
+  components: { ProjectResourceSelect },
   props: {
     visible: { type: Boolean, default: false },
     project: { type: Object, default: () => ({}) },
+    institution: { type: Boolean, default: false },
   },
   computed: {
+    authApi() {
+      if (this.institution) return {
+        list: listInstitutionAuths, create: createInstitutionAuth, update: updateInstitutionAuth,
+        setStatus: updateInstitutionAuthStatus, full: getInstitutionAuthFull, regenerate: regenerateInstitutionAuthSecret,
+      }
+      const projectId = this.project.id
+      return {
+        list: () => listProjectAuths(projectId),
+        create: data => createProjectAuth(projectId, data),
+        update: (id, data) => updateProjectAuth(projectId, id, data),
+        setStatus: (id, status) => updateProjectAuthStatus(projectId, id, status),
+        full: id => getProjectAuthFull(projectId, id),
+        regenerate: id => regenerateProjectAuthSecret(projectId, id),
+      }
+    },
+    institutions() {
+      const byId = new Map()
+      for (const row of this.authList) {
+        if (row.institutionId) byId.set(row.institutionId, { id: row.institutionId, name: row.institutionName })
+      }
+      return Array.from(byId.values())
+    },
+    editPermission() {
+      return this.institution ? { code: 'institution-auth:manage', scope: 'GLOBAL' }
+        : { code: 'project:edit', projectId: this.project.id, scope: 'PROJECT' }
+    },
+    credentialPlaceholder() { return this.authForm.id ? '留空保留原值' : '新建时留空则自动生成' },
+    sftpHelp() {
+      if (this.authForm.authType === 'HMAC_SHA256') return '使用本配置的 Access Key 作为 SFTP 登录名，Secret 作为密码。'
+      if (this.authForm.authType === 'BASIC') return '使用本配置的账号与密码直接登录 SFTP。'
+      return '使用 SFTP 登录名和本配置的 API Key 直接登录。保存后可在「完整值」中查看登录名。'
+    },
     selectedAuth() {
       return this.authList.find(auth => auth.id === this.selectedAuthId)
     },
   },
   watch: {
+    authFormVisible(value) {
+      if (!value) this.authForm = this.emptyAuthForm()
+    },
+    fullDialogVisible(value) {
+      if (!value) this.fullCredential = {}
+    },
     fullTokenDialogVisible(value) {
       if (!value) this.fullToken = null
     },
@@ -781,7 +868,8 @@ export default {
       immediate: true,
 
       handler(value) {
-        if (value && this.project.id) {
+        this.dialogGeneration++
+        if (value && (this.institution || this.project.id)) {
           this.selectedAuthId = null
           this.authList = []
           this.tokenList = []
@@ -789,6 +877,9 @@ export default {
           this.activeTab = 'auth'
           this.loadAuths()
         } else {
+          this.authFormVisible = false
+          this.fullDialogVisible = false
+          this.fullCredential = {}
           this.tokenListRequest++
           this.tokenLoading = false
           this.issuingAuth = null
@@ -798,11 +889,14 @@ export default {
       },
     },
   },
+  beforeUnmount() { this.dialogGeneration++ },
   methods: {
     operationColumnWidth(labels) { return getOperationColumnWidth(labels) },
     emptyAuthForm() {
       return {
         id: null,
+        ...(this.institution ? { institutionId: null, institutionName: '', managementProjectId: null } : {}),
+        sftpEnabled: false,
         authCode: '',
         authName: '',
         authType: 'BASIC',
@@ -827,11 +921,12 @@ export default {
       }
     },
     async loadAuths() {
+      const generation = this.dialogGeneration
       this.authLoading = true
       try {
         const projectId = this.project.id
-        const res = await listProjectAuths(projectId)
-        if (this.visible && projectId === this.project.id) this.authList = res.data || []
+        const res = await this.authApi.list()
+        if (this.visible && generation === this.dialogGeneration && projectId === this.project.id) this.authList = res.data || []
       } finally {
         this.authLoading = false
       }
@@ -847,15 +942,23 @@ export default {
       this.authPolicy = this.emptyAccessPolicy()
       this.authFormVisible = true
     },
-    async openEditAuth(row) {
-      const res = await getProjectAuthFull(this.project.id, row.id)
-      this.authForm = { ...this.emptyAuthForm(), ...res.data }
-      this.authPolicy = this.parseAccessPolicy(this.authForm.accessPolicyJson)
+    clearTypeCredentials() {
+      this.authForm.identifier = ''
+      this.authForm.secret = ''
+      this.$refs.authForm?.clearValidate(['identifier', 'secret'])
+    },
+    openEditAuth(row) {
+      const form = this.emptyAuthForm()
+      for (const field of Object.keys(form)) {
+        if (field !== 'identifier' && field !== 'secret' && row[field] != null) form[field] = row[field]
+      }
+      this.authForm = form
+      this.authPolicy = this.parseAccessPolicy(row.accessPolicyJson)
       this.authFormVisible = true
     },
     submitAuth() {
       this.$refs.authForm.validate(async (valid) => {
-        if (!valid) return
+        if (!valid || this.savingAuth) return
         let payload
         try {
           payload = this.buildAuthPayload()
@@ -866,9 +969,9 @@ export default {
         this.savingAuth = true
         try {
           if (this.authForm.id) {
-            await updateProjectAuth(this.project.id, this.authForm.id, payload)
+            await this.authApi.update(this.authForm.id, payload)
           } else {
-            await createProjectAuth(this.project.id, payload)
+            await this.authApi.create(payload)
           }
           this.$message.success('鉴权配置已保存')
           this.authFormVisible = false
@@ -919,7 +1022,13 @@ export default {
         requestTimeoutMs: Number(this.authPolicy.requestTimeoutMs || 0),
       }
       this.validateAccessPolicy(policy)
-      return { ...this.authForm, accessPolicyJson: JSON.stringify(policy) }
+      const payload = { ...this.authForm, accessPolicyJson: JSON.stringify(policy) }
+      if (payload.institutionId) delete payload.institutionName
+      if (this.institution && !payload.institutionId && !payload.institutionName?.trim()) {
+        throw new Error('请选择所属机构或填写新机构名称')
+      }
+      if (payload.id || !payload.managementProjectId) delete payload.managementProjectId
+      return payload
     },
     validateAccessPolicy(policy) {
       if (policy.ipWhitelist.length > 256)
@@ -1002,18 +1111,21 @@ export default {
     },
     async toggleAuth(row) {
       const status = row.status === 1 ? 0 : 1
-      await updateProjectAuthStatus(this.project.id, row.id, status)
+      await this.authApi.setStatus(row.id, status)
       this.$message.success(status === 1 ? '鉴权已启用' : '鉴权已停用')
       await this.loadAuths()
     },
     async viewFullAuth(row) {
+      const generation = this.dialogGeneration
       if (row.authType === 'LEGACY_TOKEN') {
         const res = await getFullToken(this.project.id)
+        if (generation !== this.dialogGeneration) return
         this.fullCredential = { identifier: '', secret: res.data || '' }
         this.fullDialogVisible = true
         return
       }
-      const res = await getProjectAuthFull(this.project.id, row.id)
+      const res = await this.authApi.full(row.id)
+      if (generation !== this.dialogGeneration) return
       this.fullCredential = res.data || {}
       this.fullDialogVisible = true
     },
@@ -1034,13 +1146,16 @@ export default {
       }
     },
     async regenerateAuth(row) {
+      const generation = this.dialogGeneration
       try {
         await this.$confirm(
           '重置后原 API Key 或 HMAC Secret 立即失效，已签发的临时 Token 不受影响。确认继续吗？',
           '重置鉴权密钥',
           { type: 'warning' }
         )
-        const res = await regenerateProjectAuthSecret(this.project.id, row.id)
+        if (generation !== this.dialogGeneration) return
+        const res = await this.authApi.regenerate(row.id)
+        if (generation !== this.dialogGeneration) return
         this.fullCredential = res.data || {}
         this.fullDialogVisible = true
         this.$message.success('密钥已重置，请立即更新调用方配置')

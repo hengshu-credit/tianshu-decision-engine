@@ -89,6 +89,21 @@ describe('ExperimentDetail', () => {
     vi.clearAllMocks()
   })
 
+  test('全局实验的候选仅包含已发布的全局规则，并保留 ID 关联和字段元数据', async () => {
+    const global = { id: 8, ruleCode: 'GLOBAL_RULE', projectId: 0, scope: 'GLOBAL', status: 1,
+      publishedVersion: 2, modelType: 'SCRIPT', inputFieldsJson: [{ scriptName: 'age' }] }
+    listProjectDefinitions.mockResolvedValueOnce({ data: { records: [
+      global, { ...global, id: 9, projectId: 12, scope: 'PROJECT' },
+      { ...global, id: 10, status: 0 }, { ...global, id: 11, publishedVersion: null },
+    ], total: 4 } })
+    const ctx = createContext()
+    ctx.form.scope = 'GLOBAL'
+    await ctx.loadRules(null)
+    expect(listProjectDefinitions).toHaveBeenCalledWith(0, { pageNum: 1, pageSize: 200, status: 1, scope: 'GLOBAL' })
+    expect(ctx.rulesForProject.map(rule => rule.id)).toEqual([8])
+    expect(ctx.ruleFieldMap[8].input[0].scriptName).toBe('age')
+  })
+
   test('新建实验只采用显式项目上下文，不默认第一个项目', async () => {
     const ctx = createContext({
       projects: [

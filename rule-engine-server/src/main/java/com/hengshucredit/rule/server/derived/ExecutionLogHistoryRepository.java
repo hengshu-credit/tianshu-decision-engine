@@ -127,6 +127,10 @@ public class ExecutionLogHistoryRepository {
         parameters.add(search == null ? Timestamp.valueOf(before) : before);
         scope.appendRuleFilter(sql, parameters, "l.root_rule_id");
         scope.excludeCurrent(sql, parameters, "l.trace_id");
+        if (scope.credentialId() != null) {
+            sql.append(" AND l.auth_id = ?");
+            parameters.add(scope.credentialId());
+        }
         if (scope.projectId() != null) {
             sql.append(" AND l.execution_project_id = ?");
             parameters.add(scope.projectId());

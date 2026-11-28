@@ -22,6 +22,18 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 
 public class ExecutionLogHistoryRepositoryTest {
+    @Test public void globalInstitutionHistoryFiltersRootRevisionsByOriginalCredential() {
+        var jdbc = new CapturingJdbc();
+        var scope = new HistoryScope("GLOBAL", null, List.of(), "now", 83L);
+        var repository = new ExecutionLogHistoryRepository(jdbc);
+        repository.query(scope, LocalDateTime.now().minusHours(1), LocalDateTime.now(), Set.of(), Map.of());
+        assertTrue(jdbc.sql.contains("l.auth_id = ?"));
+        assertTrue(jdbc.boundValues.contains(83L));
+        var indexed = new IndexedHistoryCount(jdbc);
+        assertTrue(indexed.count(new IndexedHistoryCount.Selection(scope, LocalDateTime.now(), null),
+                List.of(LocalDateTime.now().minusHours(1))).isEmpty());
+    }
+
     @Test public void fieldWindowsReadPriorOrdersByTraceAndResolveSystemValuesFromRootLog() {
         var jdbc = new CapturingJdbc();
         jdbc.roots = List.of(root("{\"version\":1,\"fields\":{\"VARIABLE:5\":\"caller\"}}"));

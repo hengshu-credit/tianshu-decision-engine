@@ -33,6 +33,17 @@ public class RuleIdempotencyService {
     @Resource private ExecutionLeaseHeartbeat heartbeat;
 
     public Decision begin(RulePublished published, Long projectId, Map<String, Object> params) {
+        return begin(published, projectId, params, null);
+    }
+
+    public Decision submit(RulePublished published, Long projectId, Map<String, Object> params,
+                           ExecutionDispatch dispatch, boolean durableQueue) {
+        if (durableQueue) return enqueue(published, projectId, params, dispatch);
+        if (dispatch != null && dispatch.institutionId() != null) return begin(published, projectId, params, dispatch);
+        return begin(published, projectId, params);
+    }
+
+    private Decision begin(RulePublished published, Long projectId, Map<String, Object> params, ExecutionDispatch dispatch) {
         OpenApiContract.IdempotencyConfig config = config(published);
         if (config == null || !config.isEnabled()) {
             current.remove();
@@ -40,6 +51,10 @@ public class RuleIdempotencyService {
         }
         IdempotencyKeyCalculator.Result calculatedKey = resolveKey(published, projectId, params, config);
         String keyHash = calculatedKey.keyHash();
+        if (dispatch != null && dispatch.institutionId() != null) {
+            keyHash = ExecutionDispatch.credentialKey(keyHash, dispatch.institutionId(), dispatch.authId());
+            return begin(published, projectId, params, keyHash, config.getTtlSeconds(), CanonicalJson.write(dispatch));
+        }
         return begin(published, projectId, params, keyHash, config.getTtlSeconds(), null);
     }
 
@@ -49,6 +64,7 @@ public class RuleIdempotencyService {
         int ttl = keyed ? config.getTtlSeconds() : 86400;
         Long scope = projectId == null ? 0L : projectId;
         String key = keyed ? resolveKey(published, scope, params, config).keyHash() : sha256(UUID.randomUUID().toString());
+        if (dispatch != null) key = ExecutionDispatch.credentialKey(key, dispatch.institutionId(), dispatch.authId());
         var original = ExecutionRequestSnapshot.capture(params);
         String hash = sha256(CanonicalJson.write(original.digestInput()));
         if (keyed) stateService.deleteExpired(scope, published.getDefinitionId(), key);
@@ -78,7 +94,15 @@ public class RuleIdempotencyService {
         dispatch.put("skipApiSources", options.isSkipApiSources());
         dispatch.put("clientAppName", appName);
         dispatch.put("listMatchTime", options.getListMatchTime());
-        return begin(published, projectId, params, sha256("EXPERIMENT:" + groupOrder), 86400, CanonicalJson.write(dispatch));
+        String key = sha256("EXPERIMENT:" + groupOrder);
+        var auth = options.getProjectAuthContext();
+        if (auth != null && auth.isInstitutionAccess()) {
+            dispatch.put("institutionId", auth.getInstitutionId());
+            dispatch.put("authId", auth.getAuthId());
+            dispatch.put("tokenId", auth.getTokenId());
+            key = ExecutionDispatch.credentialKey(key, auth.getInstitutionId(), auth.getAuthId());
+        }
+        return begin(published, projectId, params, key, 86400, CanonicalJson.write(dispatch));
     }
 
     private Decision begin(RulePublished published, Long projectId, Map<String, Object> params, String keyHash, int ttlSeconds, String groupDispatch) {
@@ -86,7 +110,8 @@ public class RuleIdempotencyService {
         Long stateProjectId = projectId == null ? 0L : projectId;
         int leaseSeconds = executionLeaseSeconds();
         // An experiment trace is unique for its lifetime, including a long wait for repair.
-        if (groupDispatch == null) stateService.deleteExpired(stateProjectId, published.getDefinitionId(), keyHash);
+        boolean experimentGroup = groupDispatch != null && JSON.parseObject(groupDispatch).containsKey("parentExperimentTrace");
+        if (!experimentGroup) stateService.deleteExpired(stateProjectId, published.getDefinitionId(), keyHash);
         RuleExecutionStateService.State state = stateService.find(stateProjectId, published.getDefinitionId(), keyHash);
         try {
             if (state == null) {
@@ -122,7 +147,7 @@ public class RuleIdempotencyService {
                 return decision;
             }
             String owner = UUID.randomUUID().toString();
-            if (!samePublished && groupDispatch != null) return Decision.conflict();
+            if (!samePublished && experimentGroup) return Decision.conflict();
             boolean claimed = stateService.claimAttempt(state.id(), owner, leaseSeconds, ttlSeconds,
                     published.getRevisionId(), published.getArtifactDigest(), state.attemptNo(), false);
             if (!claimed) {

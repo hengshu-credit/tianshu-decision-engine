@@ -109,7 +109,7 @@ docker compose --env-file .env.server -f docker/docker-compose.sftp.yml -f docke
 
 把日志中完整的 SHA256:… 填入 .env.server 的 ENGINE_SFTP_HOST_FINGERPRINT，保存后再启动 server。保留 SFTP 的 sftp-data 命名卷，重建容器后继续使用同一主机密钥。
 
-外部合作方需要上传文件时，可直接发布 TCP 2222，或由 Nginx Proxy Manager 的 Stream 转发到 SFTP。按项目开通公钥账号，并在外网核对主机指纹和登录结果，见 [SFTP 公网接入](sftp-public-access.md)。
+外部合作方可直接连 TCP 2222，或通过 Nginx Proxy Manager 的 Stream 连接 SFTP。可使用控制台公钥上传账户，也可为项目或机构凭据开通 SSH 密码登录。[SFTP 公网接入](sftp-public-access.md) · [机构鉴权](institution-auth.md)
 
 **ClamD** 是 ClamAV 的扫描服务，上传 ONNX 等模型和导入含模型的项目时会使用。**方式 B / C** 直接通过容器网络连接：
 

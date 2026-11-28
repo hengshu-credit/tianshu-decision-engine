@@ -156,7 +156,12 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
         return switch (table) {
             case "rule_project" -> (Boolean.TRUE.equals(mutation.get()) || projectContentRequest() ? projectPermission(scope, a + ".id", "project:view")
                     : projectLabels(scope, a + ".id")) + mutationPermission(scope, a + ".id", "project", false);
-            case "rule_project_auth", "rule_project_auth_token", "rule_auth_access_log" -> projectPermission(scope, a + ".project_id", "project:view") + mutationPermission(scope, a + ".project_id", "project", false);
+            case "rule_project_auth" -> "((" + a + ".institution_id IS NULL AND "
+                    + projectPermission(scope, a + ".project_id", "project:view")
+                    + mutationPermission(scope, a + ".project_id", "project", false) + ") OR ("
+                    + a + ".institution_id IS NOT NULL AND " + institutionPermission(scope) + "))";
+            case "rule_auth_institution" -> institutionPermission(scope);
+            case "rule_project_auth_token", "rule_auth_access_log" -> projectPermission(scope, a + ".project_id", "project:view") + mutationPermission(scope, a + ".project_id", "project", false);
             case "rule_definition_input_field", "rule_definition_output_field", "rule_definition_content", "rule_definition_version",
                  "rule_revision", "rule_api_doc_scenario", "rule_regression_evidence_latest", "rule_published", "rule_lifecycle_event", "rule_designer_save_operation",
                  "rule_publish_outbox", "rule_version_binding" -> child(scope, a, "definition_id", "rule_definition", depth);
@@ -305,6 +310,12 @@ public class ConsoleDataPermissionHandler implements MultiDataPermissionHandler 
         if (!Boolean.TRUE.equals(mutation.get())) return "";
         String code = actionPermission(module);
         return " AND " + (global ? scopedPermission(scope, column, code) : projectPermission(scope, column, code));
+    }
+
+    private String institutionPermission(ConsoleProjectAccess.Scope scope) {
+        boolean allowed = scope.globalCan("institution-auth:manage")
+                || (!Boolean.TRUE.equals(mutation.get()) && scope.globalCan("institution-auth:view"));
+        return allowed ? "1 = 1" : "1 = 0";
     }
 
     private String scopedPermission(ConsoleProjectAccess.Scope scope, String column, String permission) {

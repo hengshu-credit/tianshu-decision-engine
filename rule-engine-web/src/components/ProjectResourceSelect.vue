@@ -8,7 +8,7 @@
     option-value-key="id"
     placeholder="搜索项目名称或编码"
     @update:value="$emit('update:modelValue', $event)"
-    @change="$emit('change', $event)"
+    @change="selectProject"
     @load-error="loadError = '项目读取失败，请重新打开或搜索'"
   />
   <span v-if="loadError" role="alert" class="project-select-error">{{ loadError }}</span>
@@ -31,7 +31,7 @@ export default {
     projects: { type: Array, default: () => [] },
     status: { type: Number, default: 1 },
   },
-  emits: ['update:modelValue', 'change'],
+  emits: ['update:modelValue', 'change', 'select'],
   data() { return { selectedProject: null, knownProjects: {}, labelRequestId: 0, loadError: '' } },
   watch: {
     modelValue: { immediate: true, handler() { this.resolveSelectedProject() } },
@@ -39,6 +39,10 @@ export default {
   },
   beforeUnmount() { this.labelRequestId++ },
   methods: {
+    selectProject(id) {
+      this.$emit('change', id)
+      this.$emit('select', this.knownProjects[String(id)] || this.projects.find(item => String(item.id) === String(id)) || null)
+    },
     async fetchProjects({ query, pageNum, pageSize }) {
       this.loadError = ''
       const response = await listProjects({ keyword: query, pageNum, pageSize, status: this.status })

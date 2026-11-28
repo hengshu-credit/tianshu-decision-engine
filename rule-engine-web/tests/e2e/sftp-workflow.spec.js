@@ -1,6 +1,118 @@
 const { test, expect } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 
+test('规则与实验共用机构凭据，支持同类多账号、SFTP 和脱敏编辑', async ({ page }) => {
+  test.setTimeout(90000)
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const base = '/api/rule/institution-auth'
+  const permissions = ['rule:view', 'experiment:view', 'institution-auth:view', 'institution-auth:manage']
+  const configurations = [
+    { institution: '甲机构', authType: 'BASIC', identifier: 'partner_1' },
+    { institution: '甲机构', authType: 'BASIC', identifier: 'partner_2', projectId: 1, existing: true },
+    { institution: '乙机构', authType: 'HMAC_SHA256', identifier: 'partner_AK', projectId: 1 },
+    { institution: '乙机构', authType: 'API_KEY', identifier: '', existing: true },
+  ]
+  const auths = []
+  let reveals = 0
+  const apiData = new Map([
+    ['/api/auth/console/config', { loginEnabled: true }],
+    ['/api/auth/console/me', { userId: 1, username: 'operator', permissions, defaultPermissions: permissions, globalEditable: true }],
+    ['/api/auth/console/preferences/theme', {}],
+    ['POST /api/rule/console/activity', null],
+    ['/api/rule/experiment/list', { records: [], total: 0 }],
+    [base, () => auths],
+    ['POST ' + base, ({ request }) => {
+      const { identifier, secret, ...data } = request.postDataJSON()
+      const expected = configurations[auths.length]
+      expect(identifier).toBe(expected.identifier)
+      expect(secret).toBe('test-only-password')
+      expect(data.authType).toBe(expected.authType)
+      expect(data.managementProjectId ?? null).toBe(expected.projectId ?? null)
+      expect(data).not.toHaveProperty('projectId')
+      expect(data).not.toHaveProperty('sftpPublicKey')
+      expect(data.sftpEnabled).toBe(true)
+      const existing = auths.find(row => row.institutionId === data.institutionId)
+      if (expected.existing) expect(existing?.institutionName).toBe(expected.institution)
+      const row = { ...data, id: auths.length + 1, institutionId: existing?.institutionId || auths.length + 10,
+        institutionName: existing?.institutionName || data.institutionName, identifierMasked: 'p****', secretMasked: '****' }
+      auths.push(row)
+      return row
+    }],
+    ['PUT ' + base + '/2', ({ request }) => {
+      expect(request.postDataJSON()).toMatchObject({ id: 2, institutionId: 10, identifier: '', secret: '', authName: '备用账号' })
+      expect(request.postDataJSON()).not.toHaveProperty('managementProjectId')
+      auths[1].authName = request.postDataJSON().authName
+      return auths[1]
+    }],
+    ['PUT ' + base + '/2/status', ({ url }) => {
+      expect(url.searchParams.get('status')).toBe('0')
+      auths[1].status = 0
+      return auths[1]
+    }],
+    [base + '/2/full', () => {
+      reveals++
+      return { ...auths[1], sftpLogin: 'partner_2', identifier: 'partner_2', secret: 'test-only-password' }
+    }],
+  ])
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+  await page.goto(origin + '/#/rule')
+  await page.getByRole('button', { name: '机构鉴权', exact: true }).click()
+  const list = page.getByRole('dialog', { name: '机构调用鉴权', exact: true })
+  for (const [index, { institution, authType, identifier, existing, projectId }] of configurations.entries()) {
+    await list.getByRole('button', { name: '新增鉴权', exact: true }).click()
+    const form = page.getByRole('dialog', { name: '新增鉴权', exact: true })
+    if (existing) {
+      await form.getByRole('combobox', { name: '所属机构' }).click()
+      await page.getByRole('option', { name: institution, exact: true }).click()
+    } else {
+      await form.getByRole('textbox', { name: /新机构名称/ }).fill(institution)
+    }
+    if (projectId) {
+      await form.getByRole('combobox', { name: '管理归属项目' }).click()
+      await page.getByRole('option', { name: /E2E 项目/ }).click()
+    }
+    await form.getByRole('textbox', { name: /鉴权编码/ }).fill('PARTNER_' + (index + 1))
+    await form.getByRole('textbox', { name: /显示名称/ }).fill('账号 ' + (index + 1))
+    if (authType !== 'BASIC') {
+      await form.locator('.el-form-item').filter({ hasText: '鉴权方式' }).locator('.el-select').click()
+      await page.getByRole('option', { name: authType === 'API_KEY' ? 'API Key' : 'HMAC-SHA256', exact: true }).click()
+    }
+    if (identifier) await form.getByLabel(authType === 'BASIC' ? /账号$/ : 'Access Key', { exact: true }).fill(identifier)
+    const secretLabel = { BASIC: /密码$/, HMAC_SHA256: 'Secret', API_KEY: 'API Key' }[authType]
+    await form.getByLabel(secretLabel, { exact: true }).fill('test-only-password')
+    await form.locator('.el-form-item').filter({ hasText: '开通 SFTP' }).locator('.el-switch').click()
+    await expect(form.getByText('SSH 公钥', { exact: true })).toHaveCount(0)
+    await form.getByRole('button', { name: '保存', exact: true }).click()
+    await expect(form).toBeHidden()
+  }
+  await list.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.goto(origin + '/#/experiment')
+  await page.getByRole('button', { name: '机构鉴权', exact: true }).click()
+  await expect(list.getByRole('row').filter({ hasText: '甲机构' })).toHaveCount(2)
+  await expect(list.getByRole('row').filter({ hasText: '乙机构' })).toHaveCount(2)
+  const row = list.getByRole('row').filter({ hasText: 'PARTNER_2' })
+  await page.setViewportSize({ width: 550, height: 830 })
+  expect(await list.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await row.getByRole('button', { name: '编辑', exact: true }).click()
+  const edit = page.getByRole('dialog', { name: '编辑鉴权', exact: true })
+  expect(await edit.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  await expect(edit.getByRole('combobox', { name: '管理归属项目' })).toBeDisabled()
+  await expect(edit.getByLabel(/密码$/)).toHaveValue('')
+  await edit.getByRole('textbox', { name: /显示名称/ }).fill('备用账号')
+  await edit.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(row).toContainText('备用账号')
+  expect(reveals).toBe(0)
+  await row.getByRole('button', { name: '完整值', exact: true }).click()
+  const full = page.getByRole('dialog', { name: '完整鉴权值', exact: true })
+  await expect(full.getByText('SFTP 登录名', { exact: true })).toBeVisible()
+  await expect(full.getByText('test-only-password', { exact: true })).toBeVisible()
+  await full.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(page.getByText('test-only-password', { exact: true })).toHaveCount(0)
+  await row.getByRole('button', { name: '停用', exact: true }).click()
+  await expect(row.getByRole('button', { name: '启用', exact: true })).toBeVisible()
+  harness.assertClean()
+})
+
 async function expectCompactSftpLayout(page) {
   await expect.poll(async () => {
     const tabs = await page.locator('.sftp-tabs').boundingBox()

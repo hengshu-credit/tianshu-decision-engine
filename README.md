@@ -396,6 +396,8 @@ Java/Spring Bean 原生实现属于可信服务器代码能力，配置、导入
 
 ## 部署与系统接入
 
+合作机构可通过控制台配置 Basic、API Key 或 HMAC 凭据，调用全局规则与分流实验，并用同一套凭据登录 SFTP 交件。[配置机构鉴权](docs/institution-auth.md)
+
 从打包到上线的命令见[三种部署方式速查](docs/deployment-quickstart.md)，包含六项基础服务、JAR 直跑、分离部署、full、多副本与日常更新。
 
 ### 在数据库客户端查看 ER 图

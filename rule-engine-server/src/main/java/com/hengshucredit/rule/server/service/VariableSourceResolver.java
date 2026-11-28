@@ -748,6 +748,7 @@ public class VariableSourceResolver {
         copy.setInvocationCache(source.getInvocationCache());
         copy.setRuntimeSnapshot(source.getRuntimeSnapshot());
         copy.setExecutionProjectId(source.getExecutionProjectId());
+        copy.setProjectAuthContext(source.getProjectAuthContext());
         copy.setHistoryFieldDefinitions(source.getHistoryFieldDefinitions());
         copy.setListMatchTime(source.getListMatchTime());
         copy.setRequiredScriptNames(source.getRequiredScriptNames() == null
@@ -2015,6 +2016,11 @@ public class VariableSourceResolver {
         long start = System.currentTimeMillis();
         LocalDateTime startTime = LocalDateTime.now();
         RuleDbDatasource datasource = loadDbDatasource(datasourceId);
+        var caller = options.getProjectAuthContext();
+        if (caller != null && caller.isInstitutionAccess()
+                && (datasource == null || !"GLOBAL".equals(datasource.getScope())
+                || datasource.getProjectId() != null && datasource.getProjectId() != 0))
+            throw new IllegalArgumentException("数据库数据源不可用");
         Map<String, Object> request = buildDbLogRequest(datasource, variable, config, sql, queryParams, maxRows, startTime);
         request.put("queryTimeoutSeconds", queryOptions.queryTimeoutSeconds());
         request.put("maxContentBytes", queryOptions.maxContentBytes());
@@ -2058,18 +2064,31 @@ public class VariableSourceResolver {
         Long datasourceId = longValue(config.get("sftpDatasourceId"));
         boolean internal = Boolean.TRUE.equals(config.get("engineSftp"));
         Long project = options.getExecutionProjectId() != null ? options.getExecutionProjectId() : variable.getProjectId();
-        if (internal && (datasourceId != null || project == null || project <= 0))
+        var auth = options.getProjectAuthContext();
+        boolean institution = auth != null && auth.isInstitutionAccess();
+        if (internal && (datasourceId != null || (!institution && (project == null || project <= 0))))
             throw new IllegalArgumentException("内置 SFTP 需要明确的执行项目");
         if (!internal && (datasourceId == null || datasourceId <= 0)) throw new IllegalArgumentException("SFTP变量缺少 sftpDatasourceId");
-        // 外部数据源 ID 为正。内置文件以执行项目隔离，包括跨规则及根规则内的缓存。
-        Long cacheNamespace = internal ? Long.valueOf(-project) : datasourceId;
+        if (institution && !internal) {
+            // 先核对主表的当前归属，再访问文件缓存或建立远程连接。
+            var source = sftpConnectPools.datasource(datasourceId);
+            if (!"GLOBAL".equals(source.getScope()) || (source.getProjectId() != null && source.getProjectId() != 0))
+                throw new com.hengshucredit.rule.server.security.ConsoleAccessDeniedException("机构调用仅可读取全局 SFTP 数据源");
+        }
+        // 机构收件目录的完整路径包含机构和鉴权 ID，跨请求与根执行缓存均按该路径隔离。
+        Long cacheNamespace = internal ? Long.valueOf(institution ? 0L : -project) : datasourceId;
         Object path = config.get("remotePath");
         Object configuredPath = path instanceof Map<?, ?>
                 ? ExternalApiRequestPlan.evaluate(path, params, sourceReferencePaths(variable, options))
                 : parseConfiguredValue(path, params);
         String evaluatedPath = stringValue(configuredPath).trim();
         // 账户归属必须在根执行缓存、跨请求缓存及远端访问之前验证。
-        String remotePath = internal ? engineSftpFiles.projectPath(project, evaluatedPath) : evaluatedPath;
+        boolean credentialInbox = internal && (institution || evaluatedPath.startsWith("@inbox/"));
+        String inboxPath = evaluatedPath.startsWith("@inbox/") ? evaluatedPath.substring("@inbox/".length()) : evaluatedPath;
+        if (credentialInbox && !institution && (auth == null || !java.util.Objects.equals(auth.getProjectId(), project)))
+            throw new com.hengshucredit.rule.server.security.ConsoleAccessDeniedException("读取鉴权收件目录需要项目调用身份");
+        String remotePath = credentialInbox ? engineSftpFiles.credentialPath(auth, inboxPath)
+                : internal ? engineSftpFiles.projectPath(project, evaluatedPath) : evaluatedPath;
         if (!hasText(remotePath)) throw new IllegalArgumentException("SFTP变量缺少远端文件路径");
         String fileAddress = stringValue(parseConfiguredValue(config.get("fileAddress"), params)).trim();
         boolean uploadEnabled = hasText(fileAddress);
@@ -2144,9 +2163,11 @@ public class VariableSourceResolver {
                                 retryCount, retryBackoffMs, retryBackoffMultiplier);
                         uploadedBytes.set(source.length);
                     }
-                    java.util.concurrent.Callable<byte[]> read = () -> internal
-                            ? engineSftpFiles.readProject(project, resolvedPath)
-                            : readSftpFile(datasourceId, resolvedPath, retryCount, retryBackoffMs, retryBackoffMultiplier, actualRetryCount);
+                    java.util.concurrent.Callable<byte[]> read = () -> {
+                        if (credentialInbox) return engineSftpFiles.readCredential(auth, inboxPath);
+                        if (internal) return engineSftpFiles.readProject(project, resolvedPath);
+                        return readSftpFile(datasourceId, resolvedPath, retryCount, retryBackoffMs, retryBackoffMultiplier, actualRetryCount);
+                    };
                     if (sftpFileCache == null) return read.call();
                     SftpFileCache.LoadResult cachedLoad = sftpFileCache.load(cacheKey, cacheSeconds, read);
                     runtimeCacheHit.set(cachedLoad.cacheHit() || cachedLoad.shared());

@@ -29,11 +29,7 @@ public class OpenApiErrorResponder {
             OpenApiContractService.ResolvedContract resolved = contractService.resolve(
                     authContext.getAuthId(), request.getHeader("X-Auth-Code"), ruleCode(request.getRequestURI()));
             contract = resolved.getContract();
-            String scopeCode = resolved.getProject().getTraceScopeCode();
-            if (scopeCode == null || scopeCode.trim().isEmpty()) {
-                scopeCode = TraceIdGenerator.projectScopeCode(resolved.getProject().getId());
-            }
-            traceId = TraceIdGenerator.generate("AP", "P", scopeCode);
+            traceId = resolved.newTraceId();
         } catch (RuntimeException ignored) {
         }
         Map<String, Object> values = new LinkedHashMap<>();

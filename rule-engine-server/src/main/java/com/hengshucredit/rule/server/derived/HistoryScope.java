@@ -4,11 +4,15 @@ import java.util.Collections;
 import java.util.List;
 
 /** Identifies the execution project and the set of root definitions included in a history query. */
-record HistoryScope(String type, Long projectId, List<Long> ruleIds, String excludedTrace) {
+record HistoryScope(String type, Long projectId, List<Long> ruleIds, String excludedTrace, Long credentialId) {
+    HistoryScope(String type, Long projectId, List<Long> ruleIds, String excludedTrace) {
+        this(type, projectId, ruleIds, excludedTrace, null);
+    }
     HistoryScope(String type, Long projectId, List<Long> ruleIds) { this(type, projectId, ruleIds, null); }
     HistoryScope {
         if (!"GLOBAL".equals(type)) {
-            DerivedVariableConfig.require(projectId != null && projectId > 0, "当前项目范围需要明确执行项目");
+            if (credentialId != null) projectId = 0L;
+            DerivedVariableConfig.require(credentialId != null || projectId != null && projectId > 0, "当前项目范围需要明确执行项目");
         } else {
             projectId = null;
         }

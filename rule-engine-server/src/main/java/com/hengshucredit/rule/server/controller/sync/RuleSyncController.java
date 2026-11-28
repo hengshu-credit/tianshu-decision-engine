@@ -131,19 +131,22 @@ public class RuleSyncController {
     }
 
     private ApiResponse<RuleResult> executeBody(String ruleCode, Map<String, Object> body, HttpServletRequest request) {
+        ProjectAuthContext auth = ProjectAuthContext.from(request);
+        boolean institution = auth != null && auth.isInstitutionAccess();
         ProjectScope scope = resolveProjectScope(request);
-        if (scope == null) {
-            return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.TOKEN_INVALID, "Unauthorized project token");
+        if (!institution && scope == null) {
+            return ApiResponse.fail(PlatformCode.TOKEN_INVALID, "Unauthorized project token");
         }
-        RulePublished published = publishedMapper.selectOne(
-                appendProjectScope(new LambdaQueryWrapper<RulePublished>()
-                        .eq(RulePublished::getRuleCode, ruleCode)
-                        .eq(RulePublished::getStatus, 1), scope));
+        var query = new LambdaQueryWrapper<RulePublished>().eq(RulePublished::getRuleCode, ruleCode)
+                .eq(RulePublished::getStatus, 1);
+        RulePublished published = publishedMapper.selectOne(institution
+                ? query.inSql(RulePublished::getDefinitionId, RulePublishedMapper.GLOBAL_DEFINITION)
+                : appendProjectScope(query, scope));
         if (published == null) {
             return ApiResponse.fail(PlatformCode.RULE_NOT_FOUND, "Rule not found");
         }
-        Long executionProjectId = scope.global ? resolveDefinitionProjectId(published) : scope.projectId;
-        if (executionProjectId == null || (!scope.global && executionProjectId <= 0)) {
+        Long executionProjectId = institution ? Long.valueOf(0) : scope.global ? resolveDefinitionProjectId(published) : scope.projectId;
+        if (executionProjectId == null || (!institution && !scope.global && executionProjectId <= 0)) {
             return ApiResponse.fail(com.hengshucredit.rule.model.PlatformCode.RESOURCE_NOT_FOUND, "Rule project not found");
         }
         com.hengshucredit.rule.model.RuleExecutionRequest input;
@@ -152,14 +155,12 @@ public class RuleSyncController {
         Map<String, Object> params = input.getParams();
         String clientAppName = input.getClientAppName();
         boolean traceEnabled = input.getTraceEnabled() == null || input.getTraceEnabled();
-        ProjectAuthContext auth = ProjectAuthContext.from(request);
         String mode;
         try { mode = OpenApiContract.IdempotencyConfig.requireRecoveryMode(request.getParameter("externalRecoveryMode")); }
         catch (IllegalArgumentException invalid) { return ApiResponse.fail(invalid); }
         RuleIdempotencyService.Decision idempotency = idempotencyService == null ? null
-                : executionQueue == null ? idempotencyService.begin(published,executionProjectId,params)
-                : idempotencyService.enqueue(published,executionProjectId,params,
-                    ExecutionDispatch.of(auth,clientAppName,traceEnabled,mode));
+                : idempotencyService.submit(published, executionProjectId, params,
+                        ExecutionDispatch.of(auth, clientAppName, traceEnabled, mode), executionQueue != null);
         if (idempotency == null) {
             return ApiResponse.ok(executeService.executePublished(published, params, executionProjectId, clientAppName,
                     ProjectAuthContext.from(request), traceEnabled, traceEnabled));
@@ -273,29 +274,7 @@ public class RuleSyncController {
 
     private LambdaQueryWrapper<RulePublished> appendProjectScope(LambdaQueryWrapper<RulePublished> wrapper,
                                                                  ProjectScope scope) {
-        if (scope.global) {
-            return wrapper;
-        }
-        wrapper.and(w -> {
-            boolean hasProjectCode = scope.projectCode != null && !scope.projectCode.isEmpty();
-            if (hasProjectCode) {
-                w.eq(RulePublished::getProjectCode, scope.projectCode);
-                if (scope.projectId != null) {
-                    w.or().exists(buildLinkedGlobalRuleExistsSql(scope.projectId));
-                }
-            } else if (scope.projectId != null) {
-                w.exists(buildLinkedGlobalRuleExistsSql(scope.projectId));
-            } else {
-                w.apply("1 = 0");
-            }
-        });
-        return wrapper;
-    }
-
-    private static String buildLinkedGlobalRuleExistsSql(Long projectId) {
-        return "SELECT 1 FROM rule_definition_ref rdr " +
-                "WHERE rdr.definition_id = rule_published.definition_id " +
-                "AND rdr.project_id = " + projectId;
+        return scope.global ? wrapper : RulePublishedMapper.restrictToProject(wrapper, scope.projectId);
     }
 
     private RulePublished withOutputScriptNames(RulePublished published) {
@@ -409,21 +388,22 @@ public class RuleSyncController {
 
     private ProjectScope resolveProjectScope(HttpServletRequest request) {
         ProjectAuthContext auth = ProjectAuthContext.from(request);
+        if (auth != null && auth.isInstitutionAccess()) return null;
         if (auth != null && auth.isGlobalAccess()) {
-            return new ProjectScope(null, null, true);
+            return new ProjectScope(null, true);
         }
         Long projectId = asLong(request.getAttribute("projectId"));
-        String projectCode = asString(request.getAttribute("projectCode"));
         if (projectId == null) {
             return null;
         }
-        return new ProjectScope(projectId, projectCode, false);
+        return new ProjectScope(projectId, false);
     }
 
     private Long resolveDefinitionProjectId(RulePublished published) {
         if (published == null || published.getDefinitionId() == null || definitionService == null) return null;
         RuleDefinition definition = definitionService.getById(published.getDefinitionId());
-        return definition == null ? null : definition.getProjectId();
+        if (definition == null) return null;
+        return definition.getProjectId() == null && "GLOBAL".equals(definition.getScope()) ? Long.valueOf(0) : definition.getProjectId();
     }
 
     static boolean isAuthorizedProject(Long requestedProjectId, Long tokenProjectId) {
@@ -440,18 +420,12 @@ public class RuleSyncController {
         return null;
     }
 
-    private static String asString(Object value) {
-        return value == null ? null : String.valueOf(value);
-    }
-
     private static class ProjectScope {
         private final Long projectId;
-        private final String projectCode;
         private final boolean global;
 
-        private ProjectScope(Long projectId, String projectCode, boolean global) {
+        private ProjectScope(Long projectId, boolean global) {
             this.projectId = projectId;
-            this.projectCode = projectCode;
             this.global = global;
         }
     }

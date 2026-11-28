@@ -2,6 +2,62 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
 
+test('从实验管理创建全局实验、选择已发布全局规则并重新编辑同一草稿', async ({ page }) => {
+  const origin = process.env.E2E_DEV_BASE_URL || 'http://tianshu.local'
+  const permissions = ['experiment:view', 'experiment:edit', 'rule:view']
+  let snapshot
+  const rule = { id: 81, ruleCode: 'GLOBAL_APPROVED', ruleName: '已发布全局规则', projectId: 0,
+    scope: 'GLOBAL', status: 1, publishedVersion: 1, modelType: 'SCRIPT' }
+  const apiData = new Map([
+    ['/api/auth/console/config', { loginEnabled: true }],
+    ['/api/auth/console/me', { userId: 1, username: 'operator', permissions, defaultPermissions: permissions }],
+    ['/api/auth/console/preferences/theme', {}], ['POST /api/rule/console/activity', null],
+    ['/api/rule/experiment/list', { records: [], total: 0 }],
+    ['/api/rule/definition/project-list/0', ({ url }) => {
+      expect(url.searchParams.get('scope')).toBe('GLOBAL')
+      expect(url.searchParams.get('status')).toBe('1')
+      return { records: [rule, { ...rule, id: 82, scope: 'PROJECT', projectId: 1, ruleName: '项目私有规则' },
+        { ...rule, id: 83, ruleName: '未发布规则', publishedVersion: 0 }], total: 3 }
+    }],
+    ['/api/rule/definition/81/published-versions', [{ version: 1, bindingId: 94 }]],
+    ['/api/rule/field-validation/available', []],
+    ['/api/rule/experiment/logs', { records: [], total: 0 }],
+    ['/api/rule/experiment/21', () => ({ ...snapshot, id: 21 })],
+    ['POST /api/rule/governance/drafts', ({ request }) => {
+      const draft = request.postDataJSON()
+      expect(draft).toMatchObject({ resourceType: 'EXPERIMENT', action: snapshot ? 'UPDATE' : 'CREATE', projectId: null })
+      snapshot = JSON.parse(draft.snapshotJson)
+      expect(snapshot).toMatchObject({ projectId: null, groups: [{ ruleId: 81, ruleCode: 'GLOBAL_APPROVED' }] })
+      return { id: 52, resourceId: 21, status: 'EDITING' }
+    }],
+  ])
+  const harness = await installDistRoutes(page, { origin, liveStatic: Boolean(process.env.E2E_DEV_BASE_URL), apiData })
+  await page.goto(origin + '/#/experiment')
+  await page.getByRole('button', { name: '新建实验', exact: true }).click()
+  await page.locator('.base-form .el-form-item').filter({ hasText: '作用范围' }).locator('.el-select').click()
+  await page.getByRole('option', { name: '全局', exact: true }).click()
+  await page.getByRole('textbox', { name: /实验编码$/ }).fill('EXP_GLOBAL')
+  await page.getByRole('textbox', { name: /实验名称$/ }).fill('全局分流实验')
+  await page.getByPlaceholder('选择要执行的规则').first().click()
+  const picker = page.locator('.fp-panel:visible')
+  await expect(picker.locator('.fp-row').filter({ hasText: '已发布全局规则' })).toBeVisible()
+  await expect(picker.locator('.fp-row').filter({ hasText: /项目私有规则|未发布规则/ })).toHaveCount(0)
+  await picker.locator('.fp-row').filter({ hasText: '已发布全局规则' }).dblclick()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page).toHaveURL(/#\/experiment\/detail\/21/)
+  await page.getByRole('navigation', { name: '主导航' }).getByRole('button', { name: '分流实验', exact: true }).click()
+  await page.getByRole('button', { name: '新建实验', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: /实验名称$/ })).toHaveValue('')
+  await expect(page.getByRole('combobox', { name: '实验作用范围' })).toBeEnabled()
+  await page.goto(origin + '/#/experiment/detail/21')
+  await expect(page.getByRole('combobox', { name: '实验作用范围' })).toBeDisabled()
+  await expect(page.getByRole('textbox', { name: /实验名称$/ })).toHaveValue('全局分流实验')
+  await page.getByRole('textbox', { name: /实验名称$/ }).fill('更新全局实验')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => snapshot?.experimentName).toBe('更新全局实验')
+  harness.assertClean()
+})
+
 test('模型字段数按实际数量显示数字进出，旧列表缺少汇总时读取对应详情', async ({ page }) => {
   const apiData = createManagementApiData()
   const list = apiData.get('/api/rule/model/list')

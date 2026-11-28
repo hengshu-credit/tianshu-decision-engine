@@ -5,6 +5,10 @@ import lombok.Data;
 @Data
 public class ProjectAuthSaveRequest {
     private Long id;
+    private Long institutionId;
+    private String institutionName;
+    private Boolean sftpEnabled;
+    private Long managementProjectId;
     private String authCode;
     private String authName;
     private String authType;

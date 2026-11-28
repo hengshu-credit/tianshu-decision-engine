@@ -708,7 +708,7 @@
               <div class="open-api-help">
                 调用地址
                 <code>POST /api/rule/openapi/{{ rule.ruleCode }}</code
-                >，业务 JSON 直接作为请求体，并携带项目鉴权与
+                >，业务 JSON 直接作为请求体，并携带{{ rule.scope === 'GLOBAL' ? '机构或已关联项目的鉴权凭据' : '项目鉴权凭据' }}与
                 <code>X-Auth-Code</code>。
               </div>
             </div>

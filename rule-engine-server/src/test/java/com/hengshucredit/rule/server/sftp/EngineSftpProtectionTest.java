@@ -32,10 +32,11 @@ public class EngineSftpProtectionTest {
             now.addAndGet(30000);
             assertTrue(guard.authenticate("192.0.2.1","SERVICE",()->true));
             assertTrue(guard.bans(1,20).getRecords().isEmpty());
-            assertTrue(guard.allowFileRequest(7)); assertTrue(guard.allowFileRequest(7));
-            assertFalse(guard.allowFileRequest(7)); assertTrue(guard.allowFileRequest(8));
+            assertTrue(guard.allowFileRequest("USER:7")); assertTrue(guard.allowFileRequest("USER:7"));
+            assertFalse(guard.allowFileRequest("USER:7")); assertTrue(guard.allowFileRequest("USER:8"));
+            assertTrue(guard.allowFileRequest("AUTH:7"));
             now.addAndGet(1000);
-            assertTrue(guard.allowFileRequest(7));
+            assertTrue(guard.allowFileRequest("USER:7"));
         }
     }
 

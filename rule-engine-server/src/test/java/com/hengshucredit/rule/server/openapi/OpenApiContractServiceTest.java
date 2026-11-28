@@ -93,6 +93,20 @@ public class OpenApiContractServiceTest {
         }
     }
 
+    @Test
+    public void institutionContractUsesOnlyGlobalPublicationsEvenWithAManagementProject() {
+        try (Fixture fixture = new Fixture()) {
+            fixture.auth.setInstitutionId(8L);
+            var resolved = fixture.resolve();
+            assertEquals(1, fixture.globalReads);
+            assertNull(resolved.getProject());
+            assertEquals(Long.valueOf(0), resolved.executionProjectId());
+            assertTrue(resolved.newTraceId().startsWith("APG0000"));
+            fixture.projection.setOpenApiConfigJson("{\"enabled\":false}");
+            assertThrows(OpenApiException.class, fixture::resolve);
+        }
+    }
+
     private static RuleDefinitionInputField input(String name, int status) {
         RuleDefinitionInputField field = new RuleDefinitionInputField();
         field.setVarId(11L); field.setRefType("VARIABLE"); field.setScriptName(name); field.setStatus(status);
@@ -115,6 +129,8 @@ public class OpenApiContractServiceTest {
                 List.of(input("publishedAge", 1)), List.of(output("publishedDecision", 1)));
         int liveFieldReads;
         int secondPublishedReads;
+        int globalReads;
+        final RuleProjectAuth auth = new RuleProjectAuth();
 
         Fixture() {
             published.setId(50L); published.setDefinitionId(10L); published.setRuleCode("R");
@@ -123,12 +139,12 @@ public class OpenApiContractServiceTest {
             published.setOpenApiConfigJson("{\"enabled\":true,"
                     + "\"successDataTemplate\":\"${response}\",\"errorDataTemplate\":{}}");
             BeanUtils.copyProperties(published, projection);
-            RuleProjectAuth auth = new RuleProjectAuth();
             auth.setId(5L); auth.setProjectId(7L); auth.setStatus(1);
             RuleProject project = new RuleProject();
             project.setId(7L); project.setProjectCode("P"); project.setStatus(1);
             singleton("authMapper", proxy(RuleProjectAuthMapper.class, (method, args) -> auth));
             singleton("publishedMapper", proxy(RulePublishedMapper.class, (method, args) -> {
+                if ("selectGlobalOpenApiContract".equals(method)) { globalReads++; return projection; }
                 if ("selectOpenApiContract".equals(method)) return projection;
                 if ("selectOne".equals(method)) { secondPublishedReads++; return published; }
                 throw new AssertionError("unexpected published access: " + method);

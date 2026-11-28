@@ -16,11 +16,21 @@ public class ProjectAuthContext {
     private final ProjectAccessPolicy accessPolicy;
     private final boolean asyncAccessLogEnabled;
     private final boolean globalAccess;
+    private final Long institutionId;
 
     private ProjectAuthContext(Long projectId, String projectCode, Long authId, String authCode,
                                String authType, Long tokenId, String tokenCode, String authPhase,
                                ProjectAccessPolicy accessPolicy, boolean asyncAccessLogEnabled,
                                boolean globalAccess) {
+        this(projectId, projectCode, authId, authCode, authType, tokenId, tokenCode, authPhase,
+                accessPolicy, asyncAccessLogEnabled, globalAccess, null);
+    }
+
+    private ProjectAuthContext(Long projectId, String projectCode, Long authId, String authCode,
+                               String authType, Long tokenId, String tokenCode, String authPhase,
+                               ProjectAccessPolicy accessPolicy, boolean asyncAccessLogEnabled,
+                               boolean globalAccess, Long institutionId) {
+        this.institutionId = institutionId;
         this.projectId = projectId;
         this.projectCode = projectCode;
         this.authId = authId;
@@ -83,6 +93,22 @@ public class ProjectAuthContext {
         return new ProjectAuthContext(null, null, -1L, keyId, ProjectAuthType.GLOBAL_KEY,
                 null, null, "DIRECT", accessPolicy, true, true);
     }
+
+    public static ProjectAuthContext institution(Long institutionId, Long authId, String code, String type,
+                                                  ProjectAccessPolicy policy, boolean logEnabled) {
+        if (institutionId == null || institutionId <= 0 || authId == null || authId <= 0)
+            throw new IllegalArgumentException("机构身份无效");
+        return new ProjectAuthContext(0L, null, authId, code, type, null, null, "DIRECT", policy,
+                logEnabled, false, institutionId);
+    }
+
+    public ProjectAuthContext withToken(Long id, String code, String phase) {
+        return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType, id, code, phase,
+                accessPolicy, asyncAccessLogEnabled, globalAccess, institutionId);
+    }
+
+    public Long getInstitutionId() { return institutionId; }
+    public boolean isInstitutionAccess() { return institutionId != null; }
 
     public void attach(HttpServletRequest request) {
         request.setAttribute(REQUEST_ATTRIBUTE, this);

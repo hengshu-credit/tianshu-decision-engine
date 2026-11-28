@@ -31,10 +31,13 @@ public class RuleExecutionSession {
 
     void setSourceExecutionPolicy(VariableResolveOptions options) {
         requestContext.setSourceExecutionPolicy(options.sourceExecutionPolicy());
+        options.installCallIdentity(requestContext);
     }
 
     VariableResolveOptions childSourceOptions() {
-        return VariableResolveOptions.fromSourceExecutionPolicy(requestContext.sourceExecutionPolicy());
+        var options = VariableResolveOptions.fromSourceExecutionPolicy(requestContext.sourceExecutionPolicy());
+        options.setProjectAuthContext(VariableResolveOptions.projectAuthContext(requestContext));
+        return options;
     }
     private final List<String> rootOutputScriptNames;
     private final Deque<String> ruleStack = new ArrayDeque<>();

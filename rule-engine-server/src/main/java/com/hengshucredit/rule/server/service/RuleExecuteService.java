@@ -422,7 +422,11 @@ public class RuleExecuteService {
         }
 
         RuleDefinition definition = definitionService.getById(published.getDefinitionId());
-        Long executionProjectId = projectId != null ? projectId : (definition == null ? null : definition.getProjectId());
+        if (authContext == null) authContext = VariableResolveOptions.currentProjectAuthContext();
+        boolean institution = authContext != null && authContext.isInstitutionAccess();
+        if (institution && !globalDefinition(definition)) throw new IllegalArgumentException("规则不可用");
+        Long executionProjectId = institution ? Long.valueOf(0)
+                : projectId != null ? projectId : (definition == null ? null : definition.getProjectId());
         ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot = verifiedSnapshot != null ? verifiedSnapshot : published.getArtifactId() == null
                 ? null : artifactRuntimeSnapshotService.load(
                         published.getArtifactId(), published.getDefinitionId(), executionProjectId);
@@ -449,6 +453,7 @@ public class RuleExecuteService {
         Set<String> explicitReferenceTargets = referencePlan.captureExplicitTargets(params);
         VariableResolveOptions effectiveOptions = withInputFields(resolveOptions, inputFields,
                 runtimeModelJson, directFields);
+        effectiveOptions.setProjectAuthContext(authContext);
         if (runtimeSnapshot != null) {
             com.hengshucredit.rule.server.derived.DerivedVariableService.prepareSnapshot(
                     effectiveOptions, runtimeModelJson, runtimeSnapshot);
@@ -687,6 +692,11 @@ public class RuleExecuteService {
             current = current.getCause();
         }
         return false;
+    }
+
+    static boolean globalDefinition(RuleDefinition definition) {
+        return definition != null && "GLOBAL".equals(definition.getScope())
+                && (definition.getProjectId() == null || definition.getProjectId() == 0);
     }
 
     private RuleDefinition publishedDefinition(RulePublished published, Long executionProjectId) {

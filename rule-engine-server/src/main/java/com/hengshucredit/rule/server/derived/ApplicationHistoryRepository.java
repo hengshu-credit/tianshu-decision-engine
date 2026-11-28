@@ -43,6 +43,10 @@ public class ApplicationHistoryRepository {
         parameters.add(Timestamp.valueOf(before));
         scope.appendRuleFilter(sql, parameters, "root_rule_id");
         scope.excludeCurrent(sql, parameters, "trace_id");
+        if (scope.credentialId() != null) {
+            sql.append(" AND EXISTS (SELECT 1 FROM rule_execution_log_current l WHERE l.trace_id=rule_application_history.trace_id AND l.auth_id=?)");
+            parameters.add(scope.credentialId());
+        }
         if (scope.projectId() != null) {
             sql.append(" AND project_id = ?");
             parameters.add(scope.projectId());

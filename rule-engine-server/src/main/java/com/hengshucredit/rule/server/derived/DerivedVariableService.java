@@ -143,7 +143,10 @@ public class DerivedVariableService {
         String scopeType = config.getString("scope");
         List<Long> ruleIds = "SELECTED_RULES".equals(scopeType) ? DerivedVariableConfig.selectedRuleIds(config)
                 : rootRuleId == null ? List.of() : List.of(rootRuleId);
-        HistoryScope scope = new HistoryScope(scopeType, projectId, ruleIds, (String) root.get("traceId"));
+        var caller = options != null && options.getProjectAuthContext() != null
+                ? options.getProjectAuthContext() : VariableResolveOptions.currentProjectAuthContext();
+        Long credentialId = caller != null && caller.isInstitutionAccess() ? caller.getAuthId() : null;
+        HistoryScope scope = new HistoryScope(scopeType, projectId, ruleIds, (String) root.get("traceId"), credentialId);
         var window = HistoryWindow.resolve(config, root.isEmpty() ? LocalDateTime.now() : context.startedAt(), input);
         LocalDateTime before = window.before();
         LocalDateTime from = window.from();

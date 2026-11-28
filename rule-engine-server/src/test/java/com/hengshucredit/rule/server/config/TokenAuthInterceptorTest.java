@@ -23,6 +23,18 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class TokenAuthInterceptorTest {
+    @org.junit.Test
+    public void institutionRoutesAllowOnlyExecutionAndItsOwnOrderOperations() {
+        for (String path : java.util.List.of("/api/rule/openapi/R", "/api/rule/sync/execute/R",
+                "/api/rule/runtime/experiment/execute/E", "/api/rule/runtime/executions/T/resume", "/api/rule/auth/token"))
+            org.junit.Assert.assertTrue(path, TokenAuthInterceptor.institutionRoute("POST", path));
+        org.junit.Assert.assertTrue(TokenAuthInterceptor.institutionRoute("GET", "/api/rule/runtime/executions/T/result"));
+        for (String path : java.util.List.of("/api/rule/sync/all", "/api/rule/sync/by-id/1", "/api/rule/sync/versions",
+                "/api/rule/sync/functions/all", "/api/rule/runtime/external-calls/A"))
+            org.junit.Assert.assertFalse(path, TokenAuthInterceptor.institutionRoute("GET", path));
+        org.junit.Assert.assertFalse(TokenAuthInterceptor.institutionRoute("POST", "/api/rule/log/report"));
+    }
+
 
     @Test
     public void protectsCurrentRuleSyncEndpoints() {

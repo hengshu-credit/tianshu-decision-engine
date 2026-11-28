@@ -111,6 +111,7 @@
             storage-key="tianshu:table-columns:rule-list"
           />
           <governance-workspace-toolbar resource-type="RULE" />
+          <institution-auth-action />
           <el-button
             v-permission="'rule:edit'"
             type="primary"
@@ -308,6 +309,7 @@ import { reservedCodeRule } from '@/utils/reservedContentCode'
 import GovernanceResourceStatus from '@/components/GovernanceResourceStatus.vue'
 import GovernancePublishAction from '@/components/GovernancePublishAction.vue'
 import GovernanceWorkspaceToolbar from '@/components/GovernanceWorkspaceToolbar.vue'
+import InstitutionAuthAction from '@/components/InstitutionAuthAction.vue'
 import { markRaw } from 'vue'
 import { Search as ElIconSearch, Plus as ElIconPlus } from '@element-plus/icons-vue'
 import {
@@ -416,7 +418,7 @@ export default {
     },
   },
   name: 'RuleList',
-  components: { GovernanceResourceStatus, GovernancePublishAction, GovernanceWorkspaceToolbar,
+  components: { GovernanceResourceStatus, GovernancePublishAction, GovernanceWorkspaceToolbar, InstitutionAuthAction,
     ProjectResourceSelect,
     RemoteFilterSelect,
     ProjectFilterSelect,

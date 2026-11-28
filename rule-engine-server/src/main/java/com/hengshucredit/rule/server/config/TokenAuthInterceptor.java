@@ -88,6 +88,11 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
             return false;
         }
         context.attach(request);
+        if (context.isInstitutionAccess() && !institutionRoute(request.getMethod(), uri)) {
+            projectAuthService.recordAccess(request, context, false, "RESOURCE_NOT_ALLOWED");
+            writeError(request, response, OpenApiStatuses.requestProductUnauthorized());
+            return false;
+        }
         ProjectAccessPolicy policy = context.getAccessPolicy();
         String clientIp = clientAddressResolver.resolve(request);
         if (!policy.getIpWhitelist().isEmpty()
@@ -185,6 +190,13 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         String limitName = OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED.equals(status.getCode())
                 ? "project-execution-guard" : "token-request-rate";
         response.setHeader("X-Rule-Limit-Name", queued == null ? limitName : "server-execution");
+    }
+
+    static boolean institutionRoute(String method, String uri) {
+        if ("GET".equals(method)) return uri.matches("/api/rule/runtime/executions/[^/]+(?:/result)?");
+        return "POST".equals(method) && (uri.equals("/api/rule/auth/token")
+                || uri.matches("/api/rule/(?:sync/execute|runtime/experiment/execute|openapi)/[^/]+")
+                || uri.matches("/api/rule/runtime/executions/[^/]+/resume"));
     }
 
     private static boolean deferredExecution(String uri) {

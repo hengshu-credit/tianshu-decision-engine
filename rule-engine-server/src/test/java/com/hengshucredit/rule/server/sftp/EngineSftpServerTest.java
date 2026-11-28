@@ -23,7 +23,7 @@ public class EngineSftpServerTest {
             var scope = new ConsoleProjectAccess.Scope(7L, Set.of(12L), Set.of());
             var storage = new EngineSftpFiles(fixture.nodeB, new ConsoleProjectAccess() {
                 @Override public Scope current() { return scope; }
-            });
+            }, accounts);
             assertThrows(IllegalArgumentException.class, () -> storage.input(null, null));
             var key = KeyPairGenerator.getInstance("EC").generateKeyPair();
             assertNull(accounts.authenticate("u7", key.getPublic()));

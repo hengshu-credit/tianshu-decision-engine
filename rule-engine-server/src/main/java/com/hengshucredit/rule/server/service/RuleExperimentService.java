@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.openapi.OpenApiContractCodec;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.compiler.ConditionCompiler;
@@ -413,6 +414,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         experiment.setGroups(groups);
         validateRuntimeGroups(experiment, groups);
+        validateGlobalRules(experiment, groups);
         String configDigest = configDigest(experiment, groups);
         if (runtimeRequest && experimentStates != null) experimentStates.verifyConfig(configDigest);
         String experimentTraceId = hasText(forcedExperimentTraceId)
@@ -512,10 +514,15 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 choices.add(testChoice);
                 var binding = durable ? findPublishedRule(experiment, testGroup) : null;
                 if (binding != null) experimentStates.pinTestStrategy(testGroup.getId(), binding);
-                java.util.concurrent.Callable<RuleExperimentGroupResult> task = () -> runTestGroup(experiment, testGroup,
-                        copyParams(testChoice.values == null ? params : testChoice.values), requestKey, requestTime, clientAppName,
-                        testChoice.reason, invokeExternal, experimentTraceId, configDigest,
-                        testChoice.routeTrace, durable, routeCache, recoveryMode, binding);
+                var context = RuntimeContextBridge.captureContext();
+                java.util.concurrent.Callable<RuleExperimentGroupResult> task = () -> {
+                    try (var scope = RuntimeContextBridge.installContext(context, null)) {
+                        return runTestGroup(experiment, testGroup,
+                                copyParams(testChoice.values == null ? params : testChoice.values), requestKey, requestTime, clientAppName,
+                                testChoice.reason, invokeExternal, experimentTraceId, configDigest,
+                                testChoice.routeTrace, durable, routeCache, recoveryMode, binding);
+                    }
+                };
                 var groupTask = new java.util.concurrent.FutureTask<>(consoleProjects == null ? task : consoleProjects.wrap(task));
                 try {
                     testExecutor.execute(groupTask);
@@ -560,6 +567,26 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     }
 
     /** 项目运行入口使用项目鉴权上下文限定实验范围，不能复用控制台管理执行入口。 */
+    public static boolean availableToCaller(RuleExperiment experiment, ProjectAuthContext auth) {
+        if (experiment == null || auth == null) return false;
+        if (auth.isGlobalAccess()) return true;
+        if (auth.isInstitutionAccess()) return experiment.getProjectId() == null || experiment.getProjectId() == 0;
+        return auth.getProjectId() != null && auth.getProjectId().equals(experiment.getProjectId());
+    }
+
+    public RuleExperimentExecuteResult executeForCaller(String code, ProjectAuthContext auth,
+                                                        RuleExperimentExecuteRequest request, String traceId) {
+        var experiment = findEnabledExperiment(code);
+        if (!availableToCaller(experiment, auth))
+            throw new IllegalArgumentException("分流实验不存在、未启用或无调用权限");
+        try (var scope = RuntimeContextBridge.installContext(RuntimeContextBridge.captureContext(), null)) {
+            var options = VariableResolveOptions.defaults();
+            options.setProjectAuthContext(auth);
+            options.installCallIdentity(RuntimeContextBridge.currentContext());
+            return execute(experiment, code, request, traceId, true);
+        }
+    }
+
     public RuleExperimentExecuteResult executeForProject(String experimentCode, Long projectId,
                                                          RuleExperimentExecuteRequest request) {
         return executeForProject(experimentCode, projectId, request, null);
@@ -722,6 +749,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         if (required.isEmpty()) return params;
         VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setProjectAuthContext(VariableResolveOptions.currentProjectAuthContext());
         options.setInvocationCache(routeCache);
         options.setSkipApiSources(skipApi);
         options.setRequiredScriptNames(required);
@@ -933,6 +961,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         boolean runtimeProduction = durableExecution && !"TEST".equals(stage);
         if (runtimeProduction && experimentStates != null) experimentStates.pinStrategy(group.getId(), published);
         VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setProjectAuthContext(VariableResolveOptions.currentProjectAuthContext());
         options.setExperimentGroup(new VariableResolveOptions.ExperimentGroup(
                 experiment.getId(), group.getId(), group.getGroupType(), experimentTraceId));
         options.setSkipApiSources(!invokeExternalSource);
@@ -1295,7 +1324,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     private void ensurePublishedRuleAvailable(RuleExperiment experiment, RulePublished published) {
         if (definitionService == null || definitionService.isDefinitionAvailableInProject(
-                published.getDefinitionId(), experiment.getProjectId())) {
+                published.getDefinitionId(), experiment.getProjectId() == null ? Long.valueOf(0) : experiment.getProjectId())) {
             return;
         }
         throw new IllegalArgumentException("规则不属于当前项目或未关联到当前项目: " + published.getDefinitionId());
@@ -1315,7 +1344,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             throw new IllegalArgumentException("规则不存在或未启用: "
                     + (group.getRuleId() == null ? group.getRuleCode() : group.getRuleId()));
         }
-        if (!definitionService.isDefinitionAvailableInProject(definition.getId(), experiment.getProjectId())) {
+        if (!definitionService.isDefinitionAvailableInProject(definition.getId(),
+                experiment.getProjectId() == null ? Long.valueOf(0) : experiment.getProjectId())) {
             throw new IllegalArgumentException("规则不属于当前项目或未关联到当前项目: " + definition.getId());
         }
         group.setRuleId(definition.getId());
@@ -1341,6 +1371,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 ? Collections.emptyList()
                 : experiment.getGroups();
         validateRuntimeGroups(experiment, groups);
+        validateGlobalRules(experiment, groups);
         prepareRouteConditions(experiment, groups);
     }
 
@@ -1390,6 +1421,33 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 && !hasFallbackGroup(testGroups)) {
             throw new IllegalArgumentException("测试组条件分流必须配置兜底动作");
         }
+    }
+
+    private void validateGlobalRules(RuleExperiment experiment, List<RuleExperimentGroup> groups) {
+        if (experiment.getProjectId() != null && experiment.getProjectId() != 0) return;
+        Set<Long> requiredIds = new LinkedHashSet<>();
+        Set<String> requiredCodes = new LinkedHashSet<>();
+        if (hasText(experiment.getConditionRuleCode())) requiredCodes.add(experiment.getConditionRuleCode());
+        for (var group : groups) {
+            if (group.getRuleId() != null) requiredIds.add(group.getRuleId());
+            else if (hasText(group.getRuleCode())) requiredCodes.add(group.getRuleCode());
+            else throw new IllegalArgumentException("实验组缺少执行规则");
+        }
+        var query = new LambdaQueryWrapper<RulePublished>()
+                .select(RulePublished::getDefinitionId, RulePublished::getRuleCode)
+                .eq(RulePublished::getStatus, 1)
+                .inSql(RulePublished::getDefinitionId, RulePublishedMapper.GLOBAL_DEFINITION)
+                .and(w -> {
+                    if (!requiredIds.isEmpty()) w.in(RulePublished::getDefinitionId, requiredIds);
+                    if (!requiredCodes.isEmpty()) w.or().in(RulePublished::getRuleCode, requiredCodes);
+                });
+        // 在计算任何分流条件之前一次核对整份配置，避免测试组或兜底策略把越权当作普通分流失败。
+        for (var published : publishedMapper.selectList(query)) {
+            requiredIds.remove(published.getDefinitionId());
+            requiredCodes.remove(published.getRuleCode());
+        }
+        if (!requiredIds.isEmpty() || !requiredCodes.isEmpty())
+            throw new IllegalArgumentException("全局实验的分组规则和条件规则必须是已发布的全局规则");
     }
 
     private List<RuleExperimentGroup> productionGroups(List<RuleExperimentGroup> groups) {

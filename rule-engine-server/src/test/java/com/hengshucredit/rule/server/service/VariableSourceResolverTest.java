@@ -77,7 +77,7 @@ public class VariableSourceResolverTest {
                 fixture.nodeA.publish("/projects/" + project + "/u7/result.json",
                         com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(bytes), new java.io.ByteArrayInputStream(bytes), bytes.length);
             }
-            setField(resolver, "engineSftpFiles", new com.hengshucredit.rule.server.sftp.EngineSftpFiles(fixture.nodeB, null));
+            setField(resolver, "engineSftpFiles", fixture.files(null));
             setField(resolver, "sftpFileCache", new SftpFileCache(new ExternalCallProperties(), (SftpFileDistributedCache) null));
             for (long project : List.of(1L, 2L, 1L)) {
                 Map<String,Object> values = resolver.resolve(project, Map.of("address", "u7/result.json"), VariableResolveOptions.defaults());
@@ -86,8 +86,69 @@ public class VariableSourceResolverTest {
             var restricted = new com.hengshucredit.rule.server.security.ConsoleProjectAccess() {
                 @Override public Scope current() { return new Scope(8L, java.util.Set.of(1L),java.util.Set.of()); }
             };
-            setField(resolver, "engineSftpFiles", new com.hengshucredit.rule.server.sftp.EngineSftpFiles(fixture.nodeB, restricted));
+            setField(resolver, "engineSftpFiles", fixture.files(restricted));
             org.junit.Assert.assertThrows(com.hengshucredit.rule.server.security.ConsoleAccessDeniedException.class, () -> resolver.resolve(1L, Map.of("address", "u7/result.json"), VariableResolveOptions.defaults()));
+        } finally {
+            try (var paths = java.nio.file.Files.walk(root)) {
+                for (var path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) java.nio.file.Files.delete(path);
+            }
+        }
+    }
+
+    @Test
+    public void institutionMustHaveGlobalSftpSourceEvenWithAPreviouslyCachedFile() throws Exception {
+        var variable = variable("report", "SFTP",
+                "{\"sftpDatasourceId\":9,\"remotePath\":\"/sample.txt\",\"outputFormat\":\"TEXT\",\"cacheSeconds\":60}");
+        var source = new RuleSftpDatasource();
+        source.setScope("GLOBAL");
+        source.setProjectId(0L);
+        var pools = new FakeSftpPools() {
+            @Override public RuleSftpDatasource datasource(Long id) { return source; }
+        };
+        var resolver = resolver(List.of(variable), new FakeApiService(Map.of()), new FakeDbPools(List.of()));
+        setField(resolver, "sftpConnectPools", pools);
+        setField(resolver, "sftpFileCache", new SftpFileCache(new ExternalCallProperties(), (SftpFileDistributedCache) null));
+        var options = VariableResolveOptions.defaults();
+        options.setProjectAuthContext(com.hengshucredit.rule.server.auth.ProjectAuthContext.institution(4L,4L,"key4","BASIC",null,true));
+        assertEquals("合同内容", resolver.resolve(0L, Map.of(), options).get("report"));
+        source.setProjectId(12L);
+        var nextRequest = VariableResolveOptions.defaults();
+        nextRequest.setProjectAuthContext(options.getProjectAuthContext());
+        org.junit.Assert.assertThrows(com.hengshucredit.rule.server.security.ConsoleAccessDeniedException.class,
+                () -> resolver.resolve(0L, Map.of(), nextRequest));
+    }
+
+    @Test
+    public void institutionInboxChecksIdentityBeforeReturningEvenAnAlreadyCachedFile() throws Exception {
+        var variable = variable("report", "SFTP",
+                "{\"engineSftp\":true,\"remotePath\":\"$.address\",\"outputFormat\":\"TEXT\",\"cacheSeconds\":60}");
+        variable.setProjectId(0L);
+        variable.setScope("GLOBAL");
+        var resolver = resolver(List.of(variable), new FakeApiService(Map.of()), new FakeDbPools(List.of()));
+        var root = java.nio.file.Files.createTempDirectory("sftp-institution-cache-");
+        try (var fixture = new com.hengshucredit.rule.server.sftp.EngineSftpFixture(root)) {
+            setField(resolver, "engineSftpFiles", fixture.files(null));
+            setField(resolver, "sftpFileCache", new SftpFileCache(new ExternalCallProperties(), (SftpFileDistributedCache) null));
+            for (int id : List.of(4,5)) {
+                fixture.database().update("INSERT INTO rule_auth_institution(id,institution_name) VALUES(?,?)", id, "机构" + id);
+                fixture.database().update("INSERT INTO rule_project_auth(id,institution_id,auth_code,auth_name,auth_type,lookup_key,"
+                        + "secret_ciphertext,sftp_enabled,sftp_login_hash) VALUES(?,?,?,?,'BASIC',?,'fixture',1,?)",
+                        id, id, "key" + id, "凭据" + id, "lookup" + id,
+                        com.hengshucredit.rule.server.sftp.EngineSftpCredentials.loginHash("sender" + id));
+                byte[] bytes = ("report" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                fixture.nodeA.publish("/organizations/i" + id + "/a" + id + "/shared.txt",
+                        com.hengshucredit.rule.server.artifact.Sha256Digests.bytes(bytes), new java.io.ByteArrayInputStream(bytes), bytes.length);
+            }
+            for (long id : List.of(4L,5L,4L)) {
+                var opts = VariableResolveOptions.defaults();
+                opts.setProjectAuthContext(com.hengshucredit.rule.server.auth.ProjectAuthContext.institution(id,id,"key" + id,"BASIC",null,true));
+                assertEquals("report" + id, resolver.resolve(0L, Map.of("address", "shared.txt"), opts).get("report"));
+            }
+            fixture.database().update("UPDATE rule_project_auth SET sftp_enabled=0 WHERE id=4");
+            var revoked = VariableResolveOptions.defaults();
+            revoked.setProjectAuthContext(com.hengshucredit.rule.server.auth.ProjectAuthContext.institution(4L,4L,"key4","BASIC",null,true));
+            org.junit.Assert.assertThrows(com.hengshucredit.rule.server.security.ConsoleAccessDeniedException.class,
+                    () -> resolver.resolve(0L, Map.of("address", "shared.txt"), revoked));
         } finally {
             try (var paths = java.nio.file.Files.walk(root)) {
                 for (var path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) java.nio.file.Files.delete(path);

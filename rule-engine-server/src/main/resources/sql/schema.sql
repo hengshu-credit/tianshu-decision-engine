@@ -23,11 +23,26 @@ CREATE TABLE IF NOT EXISTS `rule_project` (
   UNIQUE KEY `uk_access_token` (`access_token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则项目表';
 
+CREATE TABLE IF NOT EXISTS `rule_auth_institution` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '调用机构标识，同一机构的多种凭据共享此标识',
+  `institution_name` VARCHAR(128) NOT NULL COMMENT '用于识别调用方的机构名称',
+  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '机构状态：1=启用，0=停用全部机构凭据',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_auth_institution_name` (`institution_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='全局规则与分流实验的调用机构';
+
 CREATE TABLE IF NOT EXISTS `rule_project_auth` (
   `id`                    BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `project_id`            BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `project_id`            BIGINT       DEFAULT NULL            COMMENT '项目凭据的归属项目ID，独立机构凭据为空',
   `auth_code`             VARCHAR(128) NOT NULL                COMMENT '鉴权配置编码',
   `auth_name`             VARCHAR(128) NOT NULL                COMMENT '鉴权配置名称',
+  `institution_id`        BIGINT DEFAULT NULL COMMENT '全局调用机构标识，普通项目凭据为空',
+  `management_project_id` BIGINT DEFAULT NULL COMMENT '机构凭据可选的管理归属项目，不授予该项目的执行权限',
+  `sftp_enabled`          TINYINT NOT NULL DEFAULT 0 COMMENT '本凭据是否同时允许 SFTP 交件：1=开通，0=关闭',
+  `sftp_login`            VARCHAR(128) DEFAULT NULL COMMENT '系统给 API Key 分配的 SSH 登录别名，使用原凭据标识时为空',
+  `sftp_login_hash`       CHAR(64) DEFAULT NULL COMMENT '已开通 SFTP 的登录名定位摘要，按原始大小写和完整字节计算',
+  `sftp_password_hash`    VARCHAR(255) DEFAULT NULL COMMENT '仅用于 SFTP 密码认证的加盐单向验证值',
+  `sftp_revision`         BIGINT NOT NULL DEFAULT 0 COMMENT 'SFTP 授权修订号，撤权或轮换后令旧会话失效',
   `auth_type`             VARCHAR(32)  NOT NULL                COMMENT '项目凭据类型：LEGACY_TOKEN=访问令牌，API_KEY=接口密钥，BASIC=账号密码，HMAC_SHA256=摘要签名',
   `lookup_key`            CHAR(64)     NOT NULL                COMMENT '凭据定位摘要',
   `identifier_ciphertext` TEXT         DEFAULT NULL            COMMENT '凭据标识密文',
@@ -43,6 +58,10 @@ CREATE TABLE IF NOT EXISTS `rule_project_auth` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_project_auth_code` (`auth_code`),
   UNIQUE KEY `uk_project_auth_lookup` (`lookup_key`),
+  UNIQUE KEY `uk_auth_sftp_login_hash` (`sftp_login_hash`),
+  KEY `idx_auth_institution` (`institution_id`, `status`),
+  CONSTRAINT `fk_auth_institution` FOREIGN KEY (`institution_id`) REFERENCES `rule_auth_institution` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `fk_auth_management_project` FOREIGN KEY (`management_project_id`) REFERENCES `rule_project` (`id`) ON DELETE RESTRICT,
   KEY `idx_project_auth_project` (`project_id`, `status`),
   KEY `idx_project_auth_type` (`auth_type`, `status`),
   CONSTRAINT `fk_project_auth_project` FOREIGN KEY (`project_id`) REFERENCES `rule_project` (`id`) ON DELETE CASCADE
@@ -50,7 +69,7 @@ CREATE TABLE IF NOT EXISTS `rule_project_auth` (
 
 CREATE TABLE IF NOT EXISTS `rule_project_auth_token` (
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-  `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `project_id`        BIGINT       DEFAULT NULL            COMMENT '签发凭据所属项目ID，机构令牌通过来源鉴权ID确定归属',
   `auth_id`           BIGINT       NOT NULL                COMMENT '来源鉴权配置ID',
   `token_code`        VARCHAR(128) NOT NULL                COMMENT '令牌展示编码',
   `lookup_key`        CHAR(64)     NOT NULL                COMMENT '令牌定位摘要',
@@ -73,6 +92,7 @@ CREATE TABLE IF NOT EXISTS `rule_project_auth_token` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目临时访问Token表';
 
 CREATE TABLE IF NOT EXISTS `rule_auth_access_log` (
+  `institution_id` BIGINT DEFAULT NULL COMMENT '本次请求认证的调用机构ID，非机构鉴权或认证失败时为空',
   `actor_user_id` BIGINT DEFAULT NULL COMMENT '操作所属控制台账户 ID，来源不明不向普通账户展示',
   `id`             BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`     BIGINT        DEFAULT NULL            COMMENT '项目ID',
@@ -1807,7 +1827,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_execution_state` (
   `project_id` BIGINT NOT NULL COMMENT '所属项目标识，关联 rule_project.id；0 表示全局资源',
   `experiment_id` BIGINT NOT NULL COMMENT '分流实验标识，关联 rule_experiment.id',
   `experiment_code` VARCHAR(128) NOT NULL COMMENT '实验编码快照',
-  `request_key_hash` CHAR(64) NOT NULL COMMENT '请求幂等键的 SHA-256 摘要',
+  `request_key_hash` CHAR(64) NOT NULL COMMENT '项目订单的 SHA-256 幂等摘要；机构订单为 I 加含机构和凭据标识的 63 位摘要',
   `request_digest` CHAR(64) NOT NULL COMMENT '请求内容的 SHA-256 摘要，用于检查幂等重试内容是否相同',
   `request_json` LONGTEXT NULL COMMENT '用于按实验追踪号恢复的原始实验请求，旧记录可能为空',
   `experiment_trace_id` CHAR(36) NOT NULL COMMENT '分流实验本次逻辑执行的唯一追踪标识',
@@ -2102,7 +2122,7 @@ CREATE TABLE IF NOT EXISTS `rule_execution_state` (
   `project_id`            BIGINT       DEFAULT NULL COMMENT '所属项目标识，关联 rule_project.id；0 表示全局资源',
   `definition_id`         BIGINT       NOT NULL COMMENT '规则定义标识，关联 rule_definition.id',
   `rule_code`             VARCHAR(128) NOT NULL COMMENT '规则编码快照',
-  `idempotency_key_hash`  CHAR(64)     NOT NULL COMMENT '请求幂等键的 SHA-256 摘要',
+  `idempotency_key_hash`  CHAR(64)     NOT NULL COMMENT '项目订单的 SHA-256 幂等摘要；机构订单为 I 加含机构和凭据标识的 63 位摘要',
   `request_digest`        CHAR(64)     NOT NULL COMMENT '请求内容的 SHA-256 摘要，用于检查幂等重试内容是否相同',
   `root_trace_id`         CHAR(36)     NOT NULL COMMENT '本次逻辑执行的根追踪标识',
   `dispatch_json` JSON DEFAULT NULL COMMENT '服务端接单上下文，保存鉴权标识、执行方式及恢复选项，不含凭据',

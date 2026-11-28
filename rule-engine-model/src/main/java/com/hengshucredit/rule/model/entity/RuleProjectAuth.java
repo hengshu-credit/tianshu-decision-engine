@@ -15,6 +15,16 @@ public class RuleProjectAuth {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long projectId;
+    private Long institutionId;
+    private Boolean sftpEnabled;
+    private String sftpLogin;
+    @TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
+    private String sftpLoginHash;
+    private Long managementProjectId;
+    @TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
+    @lombok.ToString.Exclude
+    private String sftpPasswordHash;
+    private Long sftpRevision;
     private String authCode;
     private String authName;
     private String authType;
@@ -31,4 +41,7 @@ public class RuleProjectAuth {
     private LocalDateTime createTime;
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updateTime;
+
+    @java.beans.Transient
+    public String getSftpPasswordHash() { return sftpPasswordHash; }
 }

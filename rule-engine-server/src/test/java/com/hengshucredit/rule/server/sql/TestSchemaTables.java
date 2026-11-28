@@ -42,8 +42,9 @@ public final class TestSchemaTables {
             ddl = ddl.replaceFirst("(?s)\\) ENGINE=.*", ")")
                     .replace(") STORED COMMENT", ") COMMENT")
                     .replace("AS (IF(", "AS (CASEWHEN(")
+                    .replace(" CHARACTER SET utf8mb4 COLLATE utf8mb4_bin", "")
                     .replaceAll("(?i)(\\b(?:KEY|INDEX)\\s+`)([^`]+)(`)", "$1" + table + "_$2$3");
-            if (table.equals("rule_external_api_config") || table.equals("rule_external_datasource")) {
+            if (table.equals("rule_external_api_config") || table.equals("rule_external_datasource") || table.equals("rule_project_auth")) {
                 // 凭据持久化的 H2 夹具按文本往返 JSON，MySQL 集成用例覆盖原生 JSON。
                 ddl = ddl.replaceAll("(?i)(`\\s+)JSON\\b", "$1LONGTEXT");
             }

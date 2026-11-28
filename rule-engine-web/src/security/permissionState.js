@@ -78,6 +78,11 @@ export function hasPermission(permissionCode, resource) {
   }
   if (!permissionCode) return true
   if (Array.isArray(permissionCode)) return permissionCode.some(code => hasPermission(code, resource))
+  if (permissionCode.startsWith('institution-auth:')) {
+    const user = currentUser.value
+    return Boolean(user?.defaultPermissions.includes(permissionCode)
+      && (permissionCode === 'institution-auth:view' || user.globalEditable))
+  }
   if (permissionCode.startsWith('system:')) return Boolean(currentUser.value && currentUser.value.defaultPermissions.includes(permissionCode) && (['system:view', 'system:audit'].includes(permissionCode) || currentUser.value.globalEditable))
   if (!currentUser.value) return !permissionEnforcementEnabled.value
   if (resource && typeof resource === 'object' && !permissionCode.startsWith('account:') && !permissionCode.startsWith('role:') && permissionCode !== 'function:native') {

@@ -84,6 +84,14 @@ public class ExecutionQueue {
         else admission.forProject(auth.getProjectId()).leave();
     }
 
+    /** 超级身份代为续跑机构订单时，文件目录和执行权限继续使用接单凭据。 */
+    public ProjectAuthContext resumeIdentity(ProjectAuthContext caller, Long projectId, String dispatchJson) {
+        if (!caller.isGlobalAccess() || dispatchJson == null) return caller;
+        var saved = JSON.parseObject(dispatchJson, ExecutionDispatch.class);
+        if (saved.institutionId() == null) return caller;
+        return authService.queuedContext(projectId, saved);
+    }
+
     public ProjectExecutionGuard.Permit permit(ProjectAuthContext auth) {
         return projectGuard.acquire(auth.getAuthId(), auth.getAccessPolicy());
     }
@@ -102,10 +110,10 @@ public class ExecutionQueue {
     }
 
     public RuleExperimentExecuteResult executeExperiment(RuleExperimentExecutionStateService.Decision claim,
-                                                 long projectId, String code, com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest request) {
+                                                 ProjectAuthContext auth, String code, com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest request) {
         try {
-            var result = experiments.withLease(claim, () -> experimentService.executeForProject(
-                    code, projectId, request, claim.getTraceId()));
+            var result = experiments.withLease(claim, () -> experimentService.executeForCaller(
+                    code, auth, request, claim.getTraceId()));
             experiments.complete(claim, result);
             return result;
         } catch (RuleExperimentExecutionStateService.StrategyInProgress running) {
@@ -138,7 +146,7 @@ public class ExecutionQueue {
         String table = experiment ? "rule_experiment_execution_state" : "rule_execution_state";
         String traceField = experiment ? "experiment_trace_id" : "root_trace_id";
         var candidates = jdbc.query("SELECT id,project_id," + traceField + ",status,attempt_no,dispatch_json FROM " + table
-                            + " WHERE dispatch_json IS NOT NULL AND (JSON_EXTRACT(dispatch_json,'$.authId') IS NOT NULL OR JSON_EXTRACT(dispatch_json,'$.globalKeyId') IS NOT NULL) AND ((status='QUEUED' AND (lease_until<=NOW(6) OR (lease_until IS NULL AND update_time<TIMESTAMPADD(MICROSECOND,-?,NOW(6))))) "
+                            + " WHERE dispatch_json IS NOT NULL AND JSON_EXTRACT(dispatch_json,'$.parentExperimentTrace') IS NULL AND (JSON_EXTRACT(dispatch_json,'$.authId') IS NOT NULL OR JSON_EXTRACT(dispatch_json,'$.globalKeyId') IS NOT NULL) AND ((status='QUEUED' AND (lease_until<=NOW(6) OR (lease_until IS NULL AND update_time<TIMESTAMPADD(MICROSECOND,-?,NOW(6))))) "
                             + "OR (status IN ('RUNNING','WAITING_EXTERNAL') AND lease_until<=NOW(6))) ORDER BY update_time,id LIMIT 8",
                     (rs,n) -> new Work(rs.getLong(1),rs.getLong(2),rs.getString(3),rs.getString(4),rs.getInt(5),
                             JSON.parseObject(rs.getString(6), ExecutionDispatch.class)), (admission.waitMillis() + 1000) * 1000);
@@ -173,7 +181,7 @@ public class ExecutionQueue {
         }
         try (var permit = permit(auth);
              var deadline = RequestDeadlineContext.limit(auth.getAccessPolicy().getRequestTimeoutMs())) {
-            if (experiment) recoverExperiment(work);
+            if (experiment) recoverExperiment(work, auth);
             else recoverRule(work, auth);
         } catch (ProjectExecutionGuard.Rejected busy) {
             // 该项目稍后再领取，其他项目仍可使用空余执行槽。
@@ -188,7 +196,7 @@ public class ExecutionQueue {
                 + "WHERE id=? AND attempt_no=? AND status=? AND (lease_until IS NULL OR lease_until<NOW(6))",detail,work.id(),work.attempt(),work.status());
     }
 
-    private void recoverExperiment(Work work) {
+    private void recoverExperiment(Work work, ProjectAuthContext auth) {
         var state = experiments.byTrace(work.trace());
         if (state == null || state.request() == null) {
             failBeforeStart("rule_experiment_execution_state", work, "缺少可恢复的原始实验请求");
@@ -202,7 +210,7 @@ public class ExecutionQueue {
         var claim = experiments.claimAccepted(work.id(),work.attempt(),work.trace());
         if (claim == null) return;
         claim.setExternalRecoveryMode("WAITING_EXTERNAL".equals(work.status()) ? "ORIGINAL_ONLY" : work.dispatch().externalRecoveryMode());
-        executeExperiment(claim,state.projectId(),state.experimentCode(),state.request());
+        executeExperiment(claim,auth,state.experimentCode(),state.request());
     }
 
     private void recoverRule(Work work, ProjectAuthContext auth) {
@@ -214,7 +222,9 @@ public class ExecutionQueue {
         }
         var published = publishedRules.selectOne(new LambdaQueryWrapper<RulePublished>()
                 .eq(RulePublished::getDefinitionId,state.definitionId()).eq(state.currentRevisionId()!=null,RulePublished::getRevisionId,state.currentRevisionId())
-                .eq(RulePublished::getStatus,1).last("LIMIT 1"));
+                .eq(RulePublished::getStatus,1)
+                .inSql(auth.isInstitutionAccess(), RulePublished::getDefinitionId, RulePublishedMapper.GLOBAL_DEFINITION)
+                .last("LIMIT 1"));
         if (published == null || !java.util.Objects.equals(published.getArtifactDigest(), state.artifactDigest())) {
             failBeforeStart("rule_execution_state",work,"接单时的已发布修订当前不可用");
             return;
@@ -222,7 +232,7 @@ public class ExecutionQueue {
         if (work.dispatch().openContract()) {
             try {
                 var contract = contracts.resolve(auth.getAuthId(), auth.getAuthCode(), state.ruleCode());
-                if (!java.util.Objects.equals(contract.getProject().getId(), state.projectId()) ||
+                if (!java.util.Objects.equals(contract.executionProjectId(), state.projectId()) ||
                         !java.util.Objects.equals(contract.getPublished().getDefinitionId(), state.definitionId()))
                     throw new IllegalArgumentException("开放规则授权已变更");
             } catch (IllegalArgumentException | com.hengshucredit.rule.server.openapi.OpenApiException denied) {

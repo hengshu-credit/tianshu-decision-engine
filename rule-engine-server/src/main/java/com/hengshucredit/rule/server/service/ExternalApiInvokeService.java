@@ -443,6 +443,10 @@ public class ExternalApiInvokeService {
         if (datasource.getStatus() != null && !Integer.valueOf(1).equals(datasource.getStatus())) {
             throw new IllegalArgumentException("外数数据源未启用");
         }
+        var caller = VariableResolveOptions.currentProjectAuthContext();
+        if (caller != null && caller.isInstitutionAccess()
+                && (!"GLOBAL".equals(datasource.getScope()) || datasource.getProjectId() != null && datasource.getProjectId() != 0))
+            throw new IllegalArgumentException("外数接口不可用");
         int retryCount = configuredRetryLimit(apiConfig);
         int retryIntervalMs = apiConfig.getRetryIntervalMs() == null ? 0 : Math.max(apiConfig.getRetryIntervalMs(), 0);
         // 内部规则结果受试运行/回放/历史时点限制影响，不得与正式请求共用缓存或 single-flight。
@@ -454,7 +458,10 @@ public class ExternalApiInvokeService {
         Map<String, Object> invokeParams = normalizeRequestParams(params);
         String configuredKey = responseCacheSeconds > 0
                 ? buildResponseCacheKey(apiConfig.getId(), apiConfig.getCacheKeyConfig(), invokeParams) : null;
-        String responseCacheKey = configuredKey == null ? null : apiConfig.getId() + ":" + sha256(plan.responseCacheIdentity() + ":" + configuredKey);
+        String cacheIdentity = plan.responseCacheIdentity();
+        if (caller != null && caller.isInstitutionAccess())
+            cacheIdentity = "INSTITUTION:" + caller.getInstitutionId() + ":" + caller.getAuthId() + ":" + cacheIdentity;
+        String responseCacheKey = configuredKey == null ? null : apiConfig.getId() + ":" + sha256(cacheIdentity + ":" + configuredKey);
         ExternalApiResponseCache.Lookup cachedResponse = responseCacheKey == null
                 ? null : externalApiResponseCache.get(apiConfig, responseCacheKey);
         long start = System.currentTimeMillis();

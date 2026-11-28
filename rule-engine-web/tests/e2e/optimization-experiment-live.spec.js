@@ -11,7 +11,7 @@ test('真实实验 UI 解释比例命中，并用固定旧版本执行空跑组'
   const errors = []; page.on('pageerror', error => errors.push(error.message))
   await ui.login(page, '/experiment')
   await page.getByRole('button', { name: '新建实验', exact: true }).click()
-  const project = page.locator('.base-form .el-form-item').first().locator('.el-select')
+  const project = page.locator('.base-form .el-form-item').filter({ has: page.getByText('项目', { exact: true }) }).locator('.el-select')
   await project.click(); await project.locator('input').fill(config.projectCode)
   await page.getByRole('option').filter({ hasText: config.projectCode }).click()
   await page.getByRole('textbox', { name: /实验编码$/ }).fill(code)

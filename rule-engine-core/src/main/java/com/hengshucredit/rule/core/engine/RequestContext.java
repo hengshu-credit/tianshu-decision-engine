@@ -35,6 +35,12 @@ public final class RequestContext {
 
     private SourceExecutionPolicy sourceExecutionPolicy = SourceExecutionPolicy.DEFAULT;
 
+    /** 随工作线程传递的已鉴权调用身份，仅由宿主在受信执行边界安装。 */
+    public interface CallIdentity {}
+    private CallIdentity callIdentity;
+    public CallIdentity callIdentity() { return callIdentity; }
+    public void setCallIdentity(CallIdentity identity) { callIdentity = identity; }
+
     public SourceExecutionPolicy sourceExecutionPolicy() { return sourceExecutionPolicy; }
     public void setSourceExecutionPolicy(SourceExecutionPolicy policy) {
         sourceExecutionPolicy = Objects.requireNonNull(policy);
@@ -345,6 +351,7 @@ public final class RequestContext {
         child.matchedConditions = matchedConditions;
         child.sourceStates = sourceStates;
         child.sourceExecutionPolicy = sourceExecutionPolicy;
+        child.callIdentity = callIdentity;
         child.traceEventListener = listener;
         child.functions = functions;
         child.functionBindingsPresent = functionBindingsPresent;

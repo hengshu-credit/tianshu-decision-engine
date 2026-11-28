@@ -22,6 +22,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Set;
+import java.security.PublicKey;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.apache.sshd.sftp.common.SftpConstants.*;
 
@@ -58,24 +60,14 @@ public final class EngineSftpServer {
         server.setKeyPairProvider(keys);
         server.setUserAuthFactories(List.of(UserAuthPublicKeyFactory.INSTANCE,
                 org.apache.sshd.server.auth.password.UserAuthPasswordFactory.INSTANCE));
-        server.setPasswordAuthenticator((login, supplied, session) -> {
-            boolean accepted = protection.authenticate(peer(session), subject(login), () -> username.equals(login)
-                    && java.security.MessageDigest.isEqual(password, supplied.getBytes(java.nio.charset.StandardCharsets.UTF_8)), session.getSessionId());
-            if (accepted) session.setAttribute(SERVICE, true);
-            return accepted;
-        });
-        server.setPublickeyAuthenticator((name, key, session) -> {
-            var identity = new java.util.concurrent.atomic.AtomicReference<EngineSftpAccounts.Identity>();
-            boolean accepted = protection.authenticate(peer(session), subject(name), () -> {
-                identity.set(accounts.authenticate(name, key));
-                return identity.get() != null;
-            });
-            if (accepted) session.setAttribute(IDENTITY, identity.get());
-            return accepted;
-        });
+        server.setPasswordAuthenticator((login, supplied, session) -> authenticate(session, login, supplied, null));
+        server.setPublickeyAuthenticator((login, key, session) -> authenticate(session, login, null, key));
         server.addSessionListener(new org.apache.sshd.common.session.SessionListener() {
             @Override public void sessionEvent(org.apache.sshd.common.session.Session session, Event event) {
-                if (event == Event.Authenticated) protection.authenticated(subject(session.getUsername()));
+                if (event == Event.Authenticated) {
+                    var id = session.getAttribute(IDENTITY);
+                    protection.authenticated(id == null ? "SERVICE" : id.subject());
+                }
             }
         });
         server.setForwardingFilter(RejectAllForwardingFilter.INSTANCE);
@@ -85,8 +77,7 @@ public final class EngineSftpServer {
                 if (Boolean.TRUE.equals(session.getAttribute(SERVICE))) return Files.createDirectories(storage);
                 var id = session.getAttribute(IDENTITY);
                 if (id == null) throw new IOException("需要身份验证");
-                Path scope = id.project() == null ? storage.resolve("private") : storage.resolve("projects").resolve(id.project().toString());
-                return Files.createDirectories(scope.resolve("u" + id.user()));
+                return Files.createDirectories(id.home(storage));
             }
         });
         var sftp = new SftpSubsystemFactory.Builder().build();
@@ -134,8 +125,26 @@ public final class EngineSftpServer {
         server.start();
     }
 
-    private String subject(String login) {
-        return username.equals(login) ? "SERVICE" : EngineSftpAccounts.subject(login);
+    private boolean authenticate(ServerSession session, String login, String supplied, PublicKey key) {
+        String address = peer(session);
+        if (username.equals(login)) {
+            boolean accepted = protection.authenticate(address, "SERVICE", () -> supplied != null
+                    && java.security.MessageDigest.isEqual(password, supplied.getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                    supplied == null ? null : session.getSessionId());
+            if (accepted) session.setAttribute(SERVICE, true);
+            return accepted;
+        }
+        String subject = accounts.subject(login);
+        var identity = new AtomicReference<EngineSftpAccounts.Identity>();
+        boolean accepted = protection.authenticate(address, subject, () -> {
+            if (subject != null && subject.startsWith("USER:") && key != null)
+                identity.set(accounts.authenticate(login, key));
+            else if (supplied != null)
+                identity.set(accounts.authenticateCredential(login, subject, address, supplied));
+            return identity.get() != null;
+        });
+        if (accepted) session.setAttribute(IDENTITY, identity.get());
+        return accepted;
     }
 
     private static String peer(ServerSession session) {
@@ -151,7 +160,7 @@ public final class EngineSftpServer {
     private void checkFileRate(ServerSession session) throws IOException {
         var identity = session.getAttribute(IDENTITY);
         if (identity == null) return;
-        while (!protection.allowFileRequest(identity.user())) {
+        while (!protection.allowFileRequest(identity.subject())) {
             if (!session.isOpen()) throw new IOException("上传账户会话已关闭");
             try { Thread.sleep(1000 - Math.floorMod(System.currentTimeMillis(), 1000)); }
             catch (InterruptedException interrupted) {

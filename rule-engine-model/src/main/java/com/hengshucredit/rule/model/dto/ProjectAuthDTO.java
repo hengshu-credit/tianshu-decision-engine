@@ -8,6 +8,11 @@ import java.time.LocalDateTime;
 public class ProjectAuthDTO {
     private Long id;
     private Long projectId;
+    private Long institutionId;
+    private String institutionName;
+    private Boolean sftpEnabled;
+    private Long managementProjectId;
+    private String sftpLogin;
     private String authCode;
     private String authName;
     private String authType;
