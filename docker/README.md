@@ -339,6 +339,8 @@ MySQL、Redis、Kafka 的更新、备份、恢复单独维护，应用升级不�
 
 ### 启动独立 SFTP
 
+外部上传方可使用公网 TCP 端口或 Nginx Proxy Manager Stream 接入。端口映射、上传账号和外网验收见 [SFTP 公网接入](../docs/sftp-public-access.md)。
+
 在一台存储主机部署一个实例。把同版本发布包内的 server.jar 放到稳定路径，在生效的服务端 env 中填写其绝对路径 `SFTP_SERVER_JAR`、SFTP 宿主机内网监听地址 `ENGINE_SFTP_BIND_ADDRESS`、端口 `ENGINE_SFTP_PORT` 和独立生成的 `ENGINE_SFTP_PASSWORD`。该实例还需要能连接控制台使用的 MySQL，以便验证上传账户的公钥、状态和项目授权。以下命令在已整理的安装根目录执行，平铺安装将 env 路径改为 `.env.server`。
 
 ```bash
