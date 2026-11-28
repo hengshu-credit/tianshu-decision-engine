@@ -508,7 +508,12 @@ class DeployTest(unittest.TestCase):
                  'docker/docker-compose.server.yml', 'docker/docker-compose.client.yml',
                  'docker/docker-compose.elasticsearch.yml', 'docker/docker-compose.elasticsearch.snapshot.yml',
                  'docker/docker-compose.elasticvue.yml', 'docker/rule-engine-elasticsearch/elasticvue.conf',
-                 'docker/rule-engine-elasticsearch/README.md', 'docker/rule-engine-elasticsearch/setup_es_user.py'}
+                 'docker/rule-engine-elasticsearch/README.md', 'docker/rule-engine-elasticsearch/setup_es_user.py',
+                 'docker/rule-engine-elasticsearch/log_replica_policy.py', 'docker/docker-compose.elasticvue2.yml',
+                 'docker/docker-compose.elasticvue.npm-network.yml',
+                 'docker/rule-engine-elasticsearch/elasticvue2/Dockerfile', 'docker/rule-engine-elasticsearch/elasticvue2/nginx.conf',
+                 'docker/rule-engine-elasticsearch/elasticvue2/tianshu.patch',
+                 'docker/rule-engine-elasticsearch/elasticvue2/snapshot-viewer.json'}
         for name in names:
             self.write(self.release / name, 'release file')
         deployment.install_app_definitions(self.release, destination, names)
@@ -520,6 +525,8 @@ class DeployTest(unittest.TestCase):
         es = destination / 'docker/docker-compose.elasticsearch.yml'
         self.assertEqual(es.read_text(), 'release file')
         self.assertEqual((destination / 'docker/docker-compose.elasticvue.yml').read_text(), 'release file')
+        for name in names:
+            self.assertTrue((destination / name).is_file(), name)
         self.assertEqual((destination / 'docker/rule-engine-elasticsearch/elasticvue.conf').read_text(), 'release file')
         self.assertFalse((destination / 'docker/rule-engine-elasticsearch/data').exists())
         self.write(es, 'existing ES definition with original volume')
@@ -544,6 +551,46 @@ class DeployTest(unittest.TestCase):
         with self.assertRaisesRegex(deployment.DeployError, '校验'):
             deployment.install_app_definitions(self.release, destination, set())
         self.assertFalse((destination / 'docker').exists())
+
+
+class ReplicaPolicyTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location(
+            'log_replica_policy', ROOT / 'docker/rule-engine-elasticsearch/log_replica_policy.py')
+        cls.policy = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.policy)
+
+    def run_policy(self, discovery, indices=None, successful=1):
+        writes = {}
+
+        def api(method, path, body=None, **kwargs):
+            if method == 'PUT':
+                writes[path] = body
+                return {'acknowledged': True}
+            if path.startswith('/_nodes/settings'):
+                return {'_nodes': {'total': 1, 'successful': successful},
+                        'nodes': {'n': {'settings': {'discovery': {'type': discovery}}}}}
+            if path.startswith('/qa-execution-log-v1-*/_settings'):
+                return indices or {}
+            return {}
+
+        self.policy.reconcile(api, 'qa')
+        return writes
+
+    def test_single_node_adopts_only_monthly_indices_with_default_redundancy(self):
+        indices = {'qa-execution-log-v1-' + suffix: {'settings': {'index.number_of_replicas': count}}
+                   for suffix, count in [('2026.10', '2'), ('2026.11', '1'), ('aux', '1')]}
+        writes = self.run_policy('single-node', indices)
+        setting = {'index.auto_expand_replicas': '0-1'}
+        self.assertEqual(writes.pop('/qa-execution-log-v1-2026.11/_settings'), setting)
+        self.assertEqual(writes.pop('/_component_template/qa-log-replicas-v1')['template']['settings'], setting)
+        self.assertFalse(writes)
+
+    def test_degraded_ha_or_incomplete_discovery_never_lowers_replication(self):
+        self.assertEqual(self.run_policy('multi-node'), {})
+        with self.assertRaisesRegex(ValueError, '节点配置返回不完整'):
+            self.run_policy('single-node', successful=0)
 
 
 if __name__ == '__main__':

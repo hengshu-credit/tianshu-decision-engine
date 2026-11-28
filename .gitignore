@@ -17,6 +17,7 @@
 /.env.client.local
 *.log
 *.tmp
+__pycache__/
 .vscode/
 rule-engine-web/public/vs/
 rule-engine-web/node_modules/

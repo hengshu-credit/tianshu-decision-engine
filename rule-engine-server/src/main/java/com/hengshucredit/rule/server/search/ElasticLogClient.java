@@ -182,6 +182,8 @@ public class ElasticLogClient {
                                 Map.of("type", "keyword"),
                                 "value",
                                 Map.of("type", "double"))));
+        // The deployment owns replica policy; refreshing mappings must preserve that policy.
+        var replicaPolicy = List.of(prefix + "-log-replicas-v1");
         for (String kind : List.of(EXECUTION, CALL, HISTORY, STEPS)) {
             String name = prefix + "-" + kind + "-v1";
             request(
@@ -191,6 +193,10 @@ public class ElasticLogClient {
                             Map.of(
                                     "index_patterns",
                                     List.of(name + "-*"),
+                                    "composed_of",
+                                    replicaPolicy,
+                                    "ignore_missing_component_templates",
+                                    replicaPolicy,
                                     "template",
                                     Map.of(
                                             "mappings",

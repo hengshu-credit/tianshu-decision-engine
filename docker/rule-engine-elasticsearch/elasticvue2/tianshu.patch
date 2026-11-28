@@ -1,0 +1,428 @@
+--- a/src/components/search/SearchDocuments.vue
++++ b/src/components/search/SearchDocuments.vue
+@@ -28,9 +28,10 @@
+         icon="terminal"
+         :label="t('search.form.open_in_rest')"
+         data-testid="search-open-rest"
++        :disable="emptySql"
+         @click="openInRest"
+       />
+-      <copy-button flat round :custom-handler="copyAsCurl" :title="t('search.form.copy_curl')" data-testid="search-copy-curl" />
++      <copy-button flat round :disable="emptySql" :custom-handler="copyAsCurl" :title="t('search.form.copy_curl')" data-testid="search-copy-curl" />
+     </div>
+   </div>
+
+@@ -38,7 +39,7 @@
+     <q-card-section>
+       <q-form @submit.prevent="submitSearch">
+         <div class="row q-col-gutter-md items-start">
+-          <div v-if="!isSql" class="col-12 col-md-4">
++          <div class="col-12 col-md-4">
+             <search-index-select v-model="searchStore.targets" :matched-indices="matchedIndices" />
+           </div>
+
+@@ -61,7 +62,7 @@
+                   <code-editor :key="searchStore.mode" v-model="sqlModel" language="sql" :commands="editorCommands" />
+                 </div>
+               </resizable-container>
+-              <div class="text-muted font-13">{{ t('search.sql.hint') }}</div>
++              <div class="text-muted font-13">{{ t(emptySql ? 'search.sql.choose_target' : 'search.sql.hint') }}</div>
+             </template>
+             <div v-else class="text-muted font-13 q-pt-sm">{{ t('search.form.mode.dsl_hint') }}</div>
+           </div>
+@@ -88,6 +89,7 @@
+             />
+             <q-btn
+               type="submit"
++              :disable="emptySql"
+               unelevated
+               no-caps
+               color="primary-dark"
+@@ -137,7 +139,7 @@
+   </q-card>
+
+   <q-card v-if="isSql">
+-    <loader-status :request-state="sql.requestState.value">
++    <loader-status v-if="!emptySql" :request-state="sql.requestState.value">
+       <search-sql-results
+         :columns="sql.columns.value"
+         :rows="sql.rows.value"
+@@ -265,4 +267,5 @@
+     else searchStore.sqlQuery = value
+   }
+ })
++const emptySql = computed(() => isSql.value && !sqlModel.value.trim())
+ </script>
+--- a/src/composables/components/predefinedclusters/PredefinedClusters.ts
++++ b/src/composables/components/predefinedclusters/PredefinedClusters.ts
+@@ -1,6 +1,7 @@
+ import { BuildFlavor, ConnectionState, ElasticsearchCluster, SecretStorage } from '../../../store/connection.ts'
+ import { v4 as uuidv4 } from 'uuid'
+ import { buildAuth } from '../../../helpers/predefinedClusters/buildAuth.ts'
++import { buildConfig } from '../../../buildConfig.ts'
+
+ export type PredefinedCluster = {
+   name?: string
+@@ -20,6 +21,27 @@
+   if (!clusters || clusters.length === 0) return
+
+   importNewClusters(clusters, loadRemainingClusters())
++}
++
++// Tianshu serves the UI and its authenticated ES proxy under the same base path.
++export const importTianshuCluster = () => {
++  const base = buildConfig.router.base
++  const uri = new URL(base + 'backend/', window.location.origin).href
++  const previous = loadConnectionState()
++  const saved = previous?.clusters ?? []
++  const managed = saved.find(cluster => cluster.predefined && cluster.uri === uri)
++  const cluster = buildPredefinedCluster({
++    name: '天枢 Elasticsearch',
++    uri,
++    username: 'tianshu_reader',
++    secretStorage: SecretStorage.session
++  }, managed)
++  const entry = [base.slice(0, -1), base, base + 'welcome'].includes(window.location.pathname)
++  const state: ConnectionState = {
++    clusters: managed ? saved.map(item => item.id === managed.id ? cluster : item) : [...saved, cluster],
++    activeClusterId: entry ? cluster.id : previous?.activeClusterId ?? cluster.id
++  }
++  localStorage.setItem('connection', JSON.stringify(state))
+ }
+
+ export const loadPredefinedClusters = async () => {
+--- a/src/composables/components/repositories/SnapshotRepositories.ts
++++ b/src/composables/components/repositories/SnapshotRepositories.ts
+@@ -32,16 +32,21 @@
+   const summary = computed(() => summarizeRepositories(repositories.value, policies.value || []))
+
+   const load = async () => {
+-    const [repositoriesResult, statusResult, policiesResult] = await Promise.allSettled([
+-      callElasticsearch((es) => es.catRepositories(REPOSITORIES_PARAMS)) as Promise<Record<string, EsSnapshotRepository>>,
++    const listed = await callElasticsearch((es) => es.catRepositories(REPOSITORIES_PARAMS)).catch(() => null)
++    if (listed === null) {
++      repositories.value = []
++      policies.value = null
++      running.value = null
++      return
++    }
++    const [statusResult, policiesResult] = await Promise.allSettled([
+       callEnrichment((es) => es.snapshotStatus({}, SNAPSHOT_STATUS_PARAMS)) as Promise<EsSnapshotStatusList>,
+       slm ? (callEnrichment((es) => es.catSlmPolicies(SLM_POLICIES_PARAMS)) as Promise<Record<string, EsSnapshotPolicy>>) : null
+     ])
+
+     policies.value = policiesResult.status === 'fulfilled' && policiesResult.value ? mapSlmPolicies(policiesResult.value) : null
+     running.value = statusResult.status === 'fulfilled' ? runningSnapshots(statusResult.value) : null
+-    repositories.value =
+-      repositoriesResult.status === 'fulfilled' ? mapRepositories(repositoriesResult.value, policies.value || []) : []
++    repositories.value = mapRepositories(listed as Record<string, EsSnapshotRepository>, policies.value || [])
+   }
+
+   onMounted(load)
+--- a/src/composables/components/search/SearchDocuments.ts
++++ b/src/composables/components/search/SearchDocuments.ts
+@@ -9,7 +9,7 @@
+ import { useSearchHistogram } from './SearchHistogram.ts'
+ import { useFieldValues } from './FieldValues.ts'
+ import { useSqlSearch } from './SqlSearch.ts'
+-import { sqlBody, defaultSqlQuery, type SqlMode } from '../../../helpers/search/sql.ts'
++import { sqlBody, sqlDraftForTargets, type SqlMode } from '../../../helpers/search/sql.ts'
+ import { queryKeyFor, searchEntry } from '../../../helpers/search/searchLibrary.ts'
+ import type { IdbSearchEntry } from '../../../db/types.ts'
+ import { parseJson } from '../../../helpers/json/parse'
+@@ -73,6 +73,9 @@
+     (['query', 'dsl', 'sql', 'esql'] as SearchMode[]).filter((mode) => !isSqlMode(mode) || !!sqlApiFor(mode))
+   )
+   const sqlText = (mode: SqlMode) => (mode === 'sql' ? searchStore.sqlQuery : searchStore.esqlQuery)
++  const syncSqlDraft = (mode: SqlMode, previous: string[]) => {
++    searchStore[queryKeyFor(mode)] = sqlDraftForTargets(mode, sqlText(mode), searchStore.targets, previous, session.capabilities.elasticsearch)
++  }
+   const { loadValues: loadFieldValues } = useFieldValues()
+   const catalogFields = computed(() => Object.keys(catalog.value).sort())
+   const timeFields = computed(() => dateFields(catalog.value))
+@@ -161,7 +164,7 @@
+     syncUrl()
+     if (isSqlMode(mode)) {
+       const api = sqlApiFor(mode)
+-      if (api) sql.run(api, mode, sqlText(mode))
++      if (api && sqlText(mode).trim()) sql.run(api, mode, sqlText(mode))
+       return
+     }
+
+@@ -203,6 +206,7 @@
+     })
+
+   const submitSearch = () => {
++    if (isSqlMode(searchStore.mode) && !sqlText(searchStore.mode).trim()) return
+     submit()
+     const entry = currentEntry()
+     if (entry) searchStore.addHistory(entry)
+@@ -286,9 +290,7 @@
+       dslSeed = stringifyJson(queryBody(), null, '\t')
+       searchStore.dslBody = dslSeed
+     }
+-    if (isSqlMode(mode) && !sqlText(mode).trim()) {
+-      searchStore[queryKeyFor(mode)] = defaultSqlQuery(mode, searchStore.targets, session.capabilities.elasticsearch)
+-    }
++    if (isSqlMode(mode)) syncSqlDraft(mode, searchStore.targets)
+     if (previous === 'dsl') searchStore.pagination.rowsPerPage = allowedRowsPerPage(searchStore.pagination.rowsPerPage)
+     if (mode === 'query' && previous === 'dsl') searchStore.pagination.sortBy = ''
+
+@@ -305,6 +307,7 @@
+     searchStore.targets = [...entry.targets]
+     searchStore.mode = modes.value.includes(entry.mode) ? entry.mode : 'query'
+     searchStore[queryKeyFor(entry.mode)] = entry.query
++    if (isSqlMode(entry.mode)) syncSqlDraft(entry.mode, entry.targets)
+     if (entry.mode === 'dsl') dslSeed = entry.query
+     searchStore.filters = entry.filters.map((filter) => ({ ...filter }))
+     searchStore.timeRange = entry.timeRange && { ...entry.timeRange }
+@@ -378,13 +381,16 @@
+   onMounted(() => {
+     hydrateFromUrl()
+     if (!modes.value.includes(searchStore.mode)) searchStore.mode = 'query'
++    if (isSqlMode(searchStore.mode)) syncSqlDraft(searchStore.mode, searchStore.targets)
+     searchTargets()
+     searchStore.loadLibrary()
+
+     watch(
+-      () => targetKey(searchStore.targets),
+-      () => {
++      () => [...searchStore.targets],
++      (_, previous) => {
+         if (suspendWatchers) return
++        syncSqlDraft('sql', previous)
++        syncSqlDraft('esql', previous)
+         searchStore.pagination.sortBy = ''
+         searchStore.resetPage()
+         searchTargets()
+--- a/src/helpers/search/sql.ts
++++ b/src/helpers/search/sql.ts
+@@ -32,6 +32,17 @@
+ }
+
+ export const defaultSqlQuery = (mode: SqlMode, targets: string[], isElasticsearch = true) => {
+-  const from = mode === 'esql' || !isElasticsearch ? targets.join(',') : `"${targets.join(',')}"`
++  const selected = targets.map(target => target.trim()).filter(target => target && target !== '*')
++  if (!selected.length) return ''
++  const from = mode === 'esql' || !isElasticsearch ? selected.join(',') : `"${selected.join(',')}"`
+   return mode === 'esql' ? `FROM ${from}\n| LIMIT 100` : `SELECT *\nFROM ${from}\nLIMIT 100`
+ }
++
++// Recognize only the empty templates persisted by older builds. Keep hand-written
++// SQL and ES|QL (including SELECT without FROM and ROW) exactly as entered.
++export const sqlDraftForTargets = (mode: SqlMode, draft: string, targets: string[], previous: string[], es: boolean) => {
++  const legacy = mode === 'sql' ? `SELECT *\nFROM ${es ? '""' : ''}\nLIMIT 100` : 'FROM \n| LIMIT 100'
++  return !draft.trim() || draft === legacy || draft === defaultSqlQuery(mode, previous, es)
++    ? defaultSqlQuery(mode, targets, es)
++    : draft
++}
+--- a/src/locales/cn.json
++++ b/src/locales/cn.json
+@@ -807,6 +807,7 @@
+     }
+   },
+   "repositories": {
++    "read_denied": "当前账号没有查看快照仓库的权限。需要访问时，请联系集群管理员授予快照监控权限（Elasticsearch: monitor_snapshot）。",
+     "heading": "存储",
+     "new_repository": {
+       "heading": "新建存储",
+@@ -999,6 +1000,7 @@
+       "filter_exists": "筛选存在此字段"
+     },
+     "sql": {
++      "choose_target": "请选择索引，或输入完整查询。",
+       "sql_label": "SQL 查询",
+       "esql_label": "ES{'|'}QL 查询",
+       "hint": "Ctrl+Enter 执行",
+--- a/src/locales/en.json
++++ b/src/locales/en.json
+@@ -807,6 +807,7 @@
+     }
+   },
+   "repositories": {
++    "read_denied": "Your account cannot list snapshot repositories. Ask your cluster administrator for snapshot monitoring access (Elasticsearch: monitor_snapshot).",
+     "heading": "Snapshot Repositories",
+     "new_repository": {
+       "heading": "New repository",
+@@ -999,6 +1000,7 @@
+       "filter_exists": "Filter for field present"
+     },
+     "sql": {
++      "choose_target": "Select an index or enter a complete query.",
+       "sql_label": "SQL query",
+       "esql_label": "ES{'|'}QL query",
+       "hint": "Ctrl+Enter to run",
+--- a/src/locales/fr.json
++++ b/src/locales/fr.json
+@@ -807,6 +807,7 @@
+     }
+   },
+   "repositories": {
++    "read_denied": "Votre compte ne peut pas lister les dépôts de snapshots. Demandez le droit de suivi des snapshots à votre administrateur (Elasticsearch : monitor_snapshot).",
+     "heading": "Dépôts de snapshots",
+     "new_repository": {
+       "heading": "Nouveau dépôt",
+@@ -999,6 +1000,7 @@
+       "filter_exists": "Filtrer sur la présence du champ"
+     },
+     "sql": {
++      "choose_target": "Sélectionnez un index ou saisissez une requête complète.",
+       "sql_label": "Requête SQL",
+       "esql_label": "Requête ES{'|'}QL",
+       "hint": "Ctrl+Entrée pour exécuter",
+--- a/src/locales/it.json
++++ b/src/locales/it.json
+@@ -807,6 +807,7 @@
+     }
+   },
+   "repositories": {
++    "read_denied": "Il tuo account non può elencare i repository degli snapshot. Chiedi all’amministratore il permesso di monitoraggio degli snapshot (Elasticsearch: monitor_snapshot).",
+     "heading": "Repository di Istantanee",
+     "new_repository": {
+       "heading": "Nuovo repository",
+@@ -999,6 +1000,7 @@
+       "filter_exists": "Filtra per presenza del campo"
+     },
+     "sql": {
++      "choose_target": "Seleziona un indice o inserisci una query completa.",
+       "sql_label": "Query SQL",
+       "esql_label": "Query ES{'|'}QL",
+       "hint": "Ctrl+Invio per eseguire",
+--- a/src/locales/jp.json
++++ b/src/locales/jp.json
+@@ -807,6 +807,7 @@
+     }
+   },
+   "repositories": {
++    "read_denied": "このアカウントにはスナップショットリポジトリの一覧を表示する権限がありません。管理者に監視権限を依頼してください（Elasticsearch: monitor_snapshot）。",
+     "heading": "スナップショットリポジトリ",
+     "new_repository": {
+       "heading": "新しいリポジトリ",
+@@ -999,6 +1000,7 @@
+       "filter_exists": "フィールドの存在で絞り込む"
+     },
+     "sql": {
++      "choose_target": "インデックスを選択するか、クエリを入力してください。",
+       "sql_label": "SQL クエリ",
+       "esql_label": "ES{'|'}QL クエリ",
+       "hint": "Ctrl+Enter で実行",
+--- a/src/locales/ko.json
++++ b/src/locales/ko.json
+@@ -807,6 +807,7 @@
+     }
+   },
+   "repositories": {
++    "read_denied": "현재 계정에는 스냅샷 저장소 목록을 볼 권한이 없습니다. 클러스터 관리자에게 모니터링 권한을 요청하세요 (Elasticsearch: monitor_snapshot).",
+     "heading": "스냅샷 저장소",
+     "new_repository": {
+       "heading": "새 저장소",
+@@ -999,6 +1000,7 @@
+       "filter_exists": "필드 존재 여부로 필터"
+     },
+     "sql": {
++      "choose_target": "인덱스를 선택하거나 쿼리를 입력하세요.",
+       "sql_label": "SQL 쿼리",
+       "esql_label": "ES{'|'}QL 쿼리",
+       "hint": "Ctrl+Enter로 실행",
+--- a/src/locales/ru.json
++++ b/src/locales/ru.json
+@@ -807,6 +807,7 @@
+     }
+   },
+   "repositories": {
++    "read_denied": "У этой учётной записи нет доступа к списку репозиториев снимков. Запросите у администратора право мониторинга снимков (Elasticsearch: monitor_snapshot).",
+     "heading": "Репозитории снимков",
+     "new_repository": {
+       "heading": "Новый репозиторий",
+@@ -999,6 +1000,7 @@
+       "filter_exists": "Фильтровать по наличию поля"
+     },
+     "sql": {
++      "choose_target": "Выберите индекс или введите запрос.",
+       "sql_label": "SQL-запрос",
+       "esql_label": "ES{'|'}QL-запрос",
+       "hint": "Ctrl+Enter для выполнения",
+--- a/src/locales/tw.json
++++ b/src/locales/tw.json
+@@ -807,6 +807,7 @@
+     }
+   },
+   "repositories": {
++    "read_denied": "目前帳號沒有檢視快照儲存庫的權限。請聯絡叢集管理員授予快照監控權限（Elasticsearch: monitor_snapshot）。",
+     "heading": "快照儲存庫",
+     "new_repository": {
+       "heading": "新增儲存庫",
+@@ -999,6 +1000,7 @@
+       "filter_exists": "篩選存在此欄位"
+     },
+     "sql": {
++      "choose_target": "請選擇索引，或輸入完整查詢。",
+       "sql_label": "SQL 查詢",
+       "esql_label": "ES{'|'}QL 查詢",
+       "hint": "Ctrl+Enter 執行",
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -9,8 +9,7 @@
+ import './assets/stylesheets/style.scss'
+ import { migrate } from './services/migrations.ts'
+ import { setUuid } from './services/Uuid.ts'
+-import { buildConfig } from './buildConfig.ts'
+-import { importPredefinedClusters } from './composables/components/predefinedclusters/PredefinedClusters.ts'
++import { importTianshuCluster } from './composables/components/predefinedclusters/PredefinedClusters.ts'
+ import { installTauriNavigatorClipboardShim } from './helpers/clipboard.ts'
+
+ const setup = async () => {
+@@ -18,7 +17,7 @@
+   await migrate()
+   setUuid()
+
+-  if (buildConfig.checkPredefinedClusters) await importPredefinedClusters()
++  importTianshuCluster()
+
+   const myApp = createApp(App)
+   myApp.use(Quasar, quasarOptions)
+--- a/tests/unit/helpers/searchSql.spec.ts
++++ b/tests/unit/helpers/searchSql.spec.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, it } from 'vitest'
+-import { defaultSqlQuery, sqlBody, sqlPage } from '../../../src/helpers/search/sql'
++import { defaultSqlQuery, sqlBody, sqlDraftForTargets, sqlPage } from '../../../src/helpers/search/sql'
+ import {
+   sameSearch,
+   searchEntry,
+@@ -38,6 +38,23 @@
+     expect(defaultSqlQuery('sql', ['logs-*', 'movies'])).toBe('SELECT *\nFROM "logs-*,movies"\nLIMIT 100')
+     expect(defaultSqlQuery('esql', ['logs-*', 'movies'])).toBe('FROM logs-*,movies\n| LIMIT 100')
+     expect(defaultSqlQuery('sql', ['a', 'b'], false)).toBe('SELECT *\nFROM a,b\nLIMIT 100')
++  })
++
++  it('starts with an empty editor until an index is selected', () => {
++    for (const mode of ['sql', 'esql'] as const) {
++      expect(defaultSqlQuery(mode, [])).toBe('')
++      expect(defaultSqlQuery(mode, ['*'])).toBe('')
++      const seed = defaultSqlQuery(mode, ['logs-a'])
++      expect(sqlDraftForTargets(mode, seed, [], ['logs-a'], true)).toBe('')
++      expect(sqlDraftForTargets(mode, seed, ['logs-b'], ['logs-a'], true)).toBe(defaultSqlQuery(mode, ['logs-b']))
++    }
++  })
++
++  it('repairs persisted empty templates and preserves user-authored statements', () => {
++    expect(sqlDraftForTargets('sql', 'SELECT *\nFROM ""\nLIMIT 100', [], [], true)).toBe('')
++    expect(sqlDraftForTargets('esql', 'FROM \n| LIMIT 100', [], [], true)).toBe('')
++    expect(sqlDraftForTargets('sql', 'SELECT 1', ['logs'], [], true)).toBe('SELECT 1')
++    expect(sqlDraftForTargets('esql', 'ROW x=1', [], [], true)).toBe('ROW x=1')
+   })
+ })
+
+--- a/src/components/repositories/SnapshotRepositories.vue
++++ b/src/components/repositories/SnapshotRepositories.vue
+@@ -14,7 +14,8 @@
+   />
+
+   <q-card>
+-    <loader-status :request-state="requestState" hide-progress>
++    <q-banner v-if="requestState.status === 403">{{ t('repositories.read_denied') }}</q-banner>
++    <loader-status v-else :request-state="requestState" hide-progress>
+       <snapshot-repositories-table :repositories="repositories" :slm="slm" @reload="load" />
+     </loader-status>
+   </q-card>

@@ -1,0 +1,7 @@
+services:
+  elasticvue:
+    networks: [rule-engine, npm-ingress]
+networks:
+  npm-ingress:
+    external: true
+    name: ${NPM_NETWORK:?Set NPM_NETWORK to the existing Proxy Manager network}

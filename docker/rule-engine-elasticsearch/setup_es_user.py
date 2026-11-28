@@ -1,11 +1,9 @@
 """为本机天枢 Elasticsearch 创建前缀受限的服务账号，重复执行时核对原凭据。"""
 import argparse
-import base64
 import getpass
-import json
 import re
-import urllib.error
-import urllib.request
+
+from log_replica_policy import client, reconcile
 
 
 def provision(port, prefix, admin_password, app_password):
@@ -14,21 +12,9 @@ def provision(port, prefix, admin_password, app_password):
     user = prefix + "_logs"
     role = prefix + "_log_access"
 
-    local = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-
-    def api(method, path, body=None, *, app=False, optional=False):
-        username, password = (user, app_password) if app else ("elastic", admin_password)
-        auth = base64.b64encode(f"{username}:{password}".encode()).decode()
-        req = urllib.request.Request(f"http://127.0.0.1:{port}{path}",
-                                     data=json.dumps(body).encode() if body is not None else None,
-                                     method=method, headers={"Authorization": "Basic " + auth, "Content-Type": "application/json"})
-        try:
-            with local.open(req, timeout=20) as reply:
-                return json.load(reply)
-        except urllib.error.HTTPError as err:
-            if optional and err.code == 404:
-                return {}
-            raise RuntimeError(f"{method} {path} 返回 HTTP {err.code}") from None
+    url = f"http://127.0.0.1:{port}"
+    api = client(url, "elastic", admin_password)
+    service_api = client(url, user, app_password)
 
     index_names = [f"{prefix}-{kind}-v1-*" for kind in ("execution-log", "runtime-call", "history-feature", "rule-step")]
     definition = {"cluster": ["manage_index_templates"],
@@ -37,7 +23,7 @@ def provision(port, prefix, admin_password, app_password):
     if old_user and (old_user.get("roles") != [role] or not old_user.get("enabled")):
         raise ValueError("同名用户的角色或启用状态与交付配置不符，请先核对")
     if old_user:
-        api("GET", "/_security/_authenticate", app=True)
+        service_api("GET", "/_security/_authenticate")
     old_role = api("GET", "/_security/role/" + role, optional=True).get(role)
     if old_role:
         rules = old_role.get("indices", [])
@@ -51,8 +37,9 @@ def provision(port, prefix, admin_password, app_password):
         api("PUT", "/_security/role/" + role, definition)
     if not old_user:
         api("PUT", "/_security/user/" + user, {"password": app_password, "roles": [role]})
-    if api("GET", "/_security/_authenticate", app=True).get("username") != user:
+    if service_api("GET", "/_security/_authenticate").get("username") != user:
         raise RuntimeError("服务账号复核失败")
+    reconcile(api, prefix)
     return user
 
 

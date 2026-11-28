@@ -74,6 +74,23 @@ bash install-release.sh 本次引擎发布包.zip
 
 ## 4. 验收和回切
 
+**日志副本策略。** 首次部署时，随包的 `setup_es_user.py` 在验证账号后读取 ES 的节点配置。只有集群完整返回、且唯一节点明确设置了 `discovery.type=single-node` 时，才为该前缀的执行日志、模块调用、历史特征和规则步骤月索引配置 `auto_expand_replicas=0-1`。单节点保存一份主分片；如需容忍节点故障，应部署多个数据节点并规划固定副本数。多节点发现模式的集群即使暂时只剩一台，也会保留缺失副本告警。
+
+**原有环境升级。** 升级到包含本修复的 server 后，使用 ES 运维账号在维护窗口执行一次下列命令。工具随发布包安装，支持重复执行。前缀使用当前部署的 `RULE_SEARCH_INDEX_PREFIX`。没有自定义该值时为 `tianshu`。
+
+```bash
+python3 docker/rule-engine-elasticsearch/log_replica_policy.py --url http://127.0.0.1:9200 --prefix tianshu
+```
+
+外部集群可以使用 `--url https://实际集群地址 --username 运维账号`，私有 CA 使用 `--ca-file` 指定。自动模式会保留现有月索引的自定义副本设置。部署方可显式传入 `--replicas 1`（或自身 SLA 要求的副本数）统一更新该前缀四类月索引和后续月份；将单节点部署改成高可用集群时应执行此步骤。显式设置固定副本数后，重复配置服务账号会沿用该策略。运维账号需要查看节点设置、管理模板以及更新目标索引设置的权限。天枢日常日志账号沿用原有权限。
+
+策略存储在 ES 组件模板 `<前缀>-log-replicas-v1` 中。server 重启重建月索引模板时会引用该组件；未配置组件时使用 ES 的原有默认值。现有的更高优先级自定义索引模板由部署方维护。升级后可分别核对实际月索引和未来月份的模板模拟结果（将月份、前缀替换成现场值）：
+
+```bash
+curl --fail -u elastic 'http://127.0.0.1:9200/_cat/shards/tianshu-*-v1-*?v'
+curl --fail -u elastic -X POST 'http://127.0.0.1:9200/_index_template/_simulate_index/tianshu-execution-log-v1-2030.01?filter_path=template.settings'
+```
+
 先核对 ES 的挂载类型和绝对路径。输出应为 `bind` 和以 `/docker/rule-engine-elasticsearch/data` 结尾的安装路径。
 
 ```bash
@@ -108,6 +125,27 @@ docker compose --env-file config/.env.server -f docker/docker-compose.elasticsea
 ```
 
 ## Elasticvue
+
+### Elasticvue 2 同域账密入口
+
+Elasticvue 2 Beta 的固定版本、天枢补丁与构建文件在 `docker/rule-engine-elasticsearch/elasticvue2/`。在安装目录使用本版独立 Compose 启动。它与旧部署共用服务名和端口；请沿用原 `ELASTICVUE_PROJECT`、`ENGINE_NETWORK` 和需要的 NPM 联网覆盖文件。升级时使用本次发布包内的 Compose 和整个 `elasticvue2/` 目录。旧版通过额外挂载提供的 dist 会遮盖镜像内的新版页面，本命令只指定新版 Compose。首次在线构建需要 GitHub、npm 和镜像源可达。
+
+```bash
+docker compose --env-file config/.env.server -f docker/docker-compose.elasticvue2.yml up -d --build elasticvue
+```
+
+平铺布局使用 `.env.server`。同机 NPM 有独立网络时，在 env 填入实际的 `NPM_NETWORK`，并追加 `-f docker/docker-compose.elasticvue.npm-network.yml`。NPM 在引擎域名下把 `/es/` 完整转发到 `http://elasticvue:8080`；`ELASTICVUE_PUBLIC_URL` 填写该域名下的完整 `/es/` 页面地址。进入页面只需输入个人 ES 账号密码。前端连接同域 `/es/backend/`，集群认证与授权由 ES 执行。使用镜像交付时，先加载同标签的镜像，再用上述命令中的 `--no-build` 替换 `--build`。
+
+**快照页**需要集群级快照监控权限。普通日志读者可继续使用原有索引权限。经授权的快照查看人员可附加独立角色，权限包括 `monitor_snapshot` 和用于读取生命周期策略的 `read_slm`。这些权限允许查看整个集群的快照元数据，管理员应按人员分配。以下命令在 ES 所在主机创建专用角色（已存在同名自定义角色时，先审阅其权限）。随后在 ES 用户或角色映射上为获批人员追加该角色，保留其原有角色。
+
+```bash
+curl --fail -u elastic -X PUT 'http://127.0.0.1:9200/_security/role/tianshu_snapshot_viewer' \
+  -H 'Content-Type: application/json' --data-binary @docker/rule-engine-elasticsearch/elasticvue2/snapshot-viewer.json
+```
+
+**SQL 和 ES|QL 搜索**支持在编辑器旁选择具体索引、别名或索引模式，也可以直接输入完整语句。未选择具体来源时等待输入。选定索引后会生成查询；自写语句在更换索引时保留。
+
+### Elasticvue 1 独立入口
 
 可选服务使用 [Elasticvue 官方镜像](https://github.com/cars10/elasticvue)。在本机打开 `http://127.0.0.1:8090`，或通过已有的 HTTPS 反向代理为 Elasticvue 分配独立域名。代理转发到 Elasticvue 的 8080 容器端口（同网络）或宿主机回环的 8090 端口（同主机）。端口可通过 `ELASTICVUE_HOST_PORT` 调整。
 

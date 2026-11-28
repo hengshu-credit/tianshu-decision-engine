@@ -1,0 +1,4 @@
+{
+  "cluster": ["monitor_snapshot", "read_slm"],
+  "indices": []
+}

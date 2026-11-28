@@ -14,7 +14,7 @@ APP = {'server', 'web', 'sdk', 'runtime-sdk'}
 BASE_FILES = {'docker-compose.yml', 'docker-compose.full.yml', 'docker-compose.server.yml',
               'docker-compose.client.yml', 'docker-compose.mysql.yml', 'docker-compose.redis.yml',
               'docker-compose.kafka.yml', 'docker-compose.clamd.yml', 'docker-compose.elasticsearch.yml',
-              'docker-compose.elasticvue.yml'}
+              'docker-compose.elasticvue.yml', 'docker-compose.elasticvue2.yml'}
 
 
 def output(args):

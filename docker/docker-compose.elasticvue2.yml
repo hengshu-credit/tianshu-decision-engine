@@ -1,0 +1,14 @@
+name: ${ELASTICVUE_PROJECT:-tianshu-elasticvue}
+services:
+  elasticvue:
+    image: tianshu-elasticvue:2.0.0-beta-69d1fd25-r2
+    build: ./rule-engine-elasticsearch/elasticvue2
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${ELASTICVUE_HOST_PORT:-8090}:8080"
+    networks: [rule-engine]
+
+networks:
+  rule-engine:
+    external: true
+    name: ${ENGINE_NETWORK:-${DEPLOY_PROJECT:-tianshu-server}-engine}

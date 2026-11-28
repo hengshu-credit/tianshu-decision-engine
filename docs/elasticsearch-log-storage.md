@@ -44,6 +44,8 @@ docker compose --env-file config/.env.server -f docker/docker-compose.elasticsea
 
 需要浏览索引、查询文档时，可单独启用 Elasticvue。控制台入口位于 **执行日志 → 运行状态 → 打开 Elasticvue**。部署、个人 ES 授权与按追踪号查询的步骤见 [Elasticvue 接入说明](../docker/rule-engine-elasticsearch/README.md#elasticvue)。
 
+Elasticvue 的未分配副本告警取自 ES 的真实分片状态。明确配置的单节点可在日志索引上使用弹性副本，高可用集群按部署方的冗余目标设置固定副本。已有环境升级时需要同时处理历史月索引和后续月份的索引模板，见[日志副本策略与升级命令](../docker/rule-engine-elasticsearch/README.md#4-验收和回切)。
+
 首次上线先升级所有写入节点并复核 schema，再统一启用检索。已有安装使用外层固定 Compose 时，需将新版 server 的 `RULE_SEARCH_*` 环境映射合并到现有定义并重建应用容器。普通安装脚本保留已有 Compose。ES 投递列和索引由 server 按包内 schema 自动升级。
 
 可选 `RULE_SEARCH_COMPACT_LOGS=true` 会在 ES 确认之后，将至少 4 KiB 的追踪正文无损压缩到 `rule_execution_log.es_trace_archive`，读取、重建和回放均支持数据库副本。两个字段的合并 SQL 为 `COALESCE(trace_info,CONVERT(UNCOMPRESS(es_trace_archive) USING utf8mb4))`。调用日志也会逐字节比较供应商原件与相应的留存副本。达到 4 KiB 且完全相同时，物理表仅保存一份，受控报文接口仍按原契约返回。直连表的旧报表需使用上述追踪表达式，并按 `es_body_aliases` 的请求位（1）、响应位（2）读取对应的 `raw_*_body`。切回当前版本的 MySQL 读取只需关闭 `RULE_SEARCH_ENABLED`。若回滚到不识别压缩列的旧二进制，需要先停写，将归档追踪解压回原字段，并按标志将共用的大报文复制回 `original_*_body` 后清零标志。
